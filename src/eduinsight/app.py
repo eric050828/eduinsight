@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from litemem import Memory
 from pydantic import BaseModel
 
@@ -85,6 +88,8 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+_STATIC_DIR = Path(__file__).parent / "static"
 
 
 # ------------------------------------------------------------------
@@ -188,3 +193,17 @@ async def get_grades(course_id: int, moodle_user_id: int) -> list[dict[str, Any]
         }
         for g in grades
     ]
+
+
+# ------------------------------------------------------------------
+# Static files & SPA
+# ------------------------------------------------------------------
+
+
+@app.get("/")
+async def index() -> FileResponse:
+    """Serve the student chat UI."""
+    return FileResponse(_STATIC_DIR / "index.html")
+
+
+app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")

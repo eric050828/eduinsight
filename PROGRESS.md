@@ -37,7 +37,18 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Auto-detects: GeminiEmbedder when GEMINI_API_KEY set, else StubEmbedder (offline)
   - 7 new tests (test_embeddings.py), 43 total
 
-## Phase 3: Learning Analytics
+## Phase 3: Frontend (Demo-Ready UI)
+- [x] Student chat UI (HTML/CSS/JS served via FastAPI StaticFiles)
+  - Modern chat interface at `/` with message bubbles
+  - Connects to existing `/chat` API endpoint
+  - Collapsible memory context display per response
+  - Student ID + topic controls in header
+  - Welcome screen with example questions
+  - Auto-resize textarea, Enter to send, typing indicator
+- [ ] Teacher dashboard UI (learning analytics view)
+- [ ] Demo scenario walkthrough
+
+## Phase 4: Learning Analytics (Backend)
 - [ ] Extract learning patterns from Lite-Mem memory
   - Weak topics per student
   - Common class-wide struggles
@@ -45,16 +56,16 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [ ] Teacher dashboard API endpoints
 - [ ] Tests
 
-## Phase 4: Moodle Plugin / Integration
+## Phase 5: Moodle Plugin / Integration
 - [ ] Moodle block plugin or LTI integration
 - [ ] Embed chat assistant in Moodle course page
 - [ ] Real-time analytics in Moodle teacher view
 
-## Phase 5: Demo & Polish
+## Phase 6: Demo & Polish
 - [ ] Demo scenario: student uses assistant for a semester
 - [ ] Export/import memory (Lite-Mem portable format)
 - [ ] InnoServe competition materials
 
 ## Current State
-Phase: 2 complete → Phase 3 (Learning Analytics)
-Next step: Extract learning patterns from Lite-Mem memory — start with weak topic detection per student
+Phase: 3 (Frontend) — Student chat UI complete
+Next step: Teacher dashboard UI — show per-student memory/analytics summary
