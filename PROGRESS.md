@@ -99,7 +99,15 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] Embed chat assistant in Moodle course page
   - Chat UI loads inside Moodle iframe via LTI 1.3 resource link launch
   - Full sidebar navigation, student selector, and chat interface visible
-- [ ] Real-time analytics in Moodle teacher view
+- [x] Real-time analytics in Moodle teacher view
+  - LTI role detection: parses `roles` claim from JWT (Instructor, TA, Admin, etc.)
+  - Role-based redirect: instructors → /teacher dashboard, students → / chat
+  - Teacher dashboard fetches real data from analytics API on page load
+  - Live stats: student count, total memories, per-student averages from /teacher/students
+  - Live difficulty ranking: common struggles from /analytics/class
+  - Live student table: per-student weak topics + preferences from /analytics/student/{id}
+  - LTI context displayed: course name, instructor name, "LTI 連線中" badge
+  - 8 new role detection tests (90 total)
 
 ## Phase 6: Demo & Polish
 - [ ] Demo scenario: student uses assistant for a semester
@@ -120,6 +128,6 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] 71 tests passing
 
 ## Current State
-Phase: 5 (Moodle Integration) — LTI 1.3 end-to-end verified with Docker Moodle
-Done: LTI 1.3 complete flow working (OIDC login → JWT validation → chat UI in Moodle iframe), 82 tests passing
-Next step: Add real-time analytics view accessible from Moodle teacher context
+Phase: 5 (Moodle Integration) — Complete ✅
+Done: LTI 1.3 full flow with role-based routing (instructor→dashboard, student→chat), real-time analytics in teacher view, 90 tests passing
+Next step: Phase 6 — Demo scenario (student uses assistant for a semester)

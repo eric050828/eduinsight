@@ -127,3 +127,78 @@ class TestLTIHelpers:
         info = _extract_course_info({})
         assert info["id"] == ""
         assert info["label"] == ""
+
+
+class TestLTIRoles:
+    def test_extract_roles_present(self) -> None:
+        """Roles are extracted from the LTI roles claim."""
+        from eduinsight.lti import _extract_roles
+        data = {
+            "https://purl.imsglobal.org/spec/lti/claim/roles": [
+                "http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor",
+                "http://purl.imsglobal.org/vocab/lis/v2/institution/person#Faculty",
+            ]
+        }
+        roles = _extract_roles(data)
+        assert len(roles) == 2
+        assert "Instructor" in roles[0]
+
+    def test_extract_roles_empty(self) -> None:
+        """Missing roles claim returns empty list."""
+        from eduinsight.lti import _extract_roles
+        assert _extract_roles({}) == []
+
+    def test_is_instructor_true(self) -> None:
+        """User with Instructor role is detected as instructor."""
+        from eduinsight.lti import _is_instructor
+        data = {
+            "https://purl.imsglobal.org/spec/lti/claim/roles": [
+                "http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor",
+            ]
+        }
+        assert _is_instructor(data) is True
+
+    def test_is_instructor_teaching_assistant(self) -> None:
+        """User with TeachingAssistant role is detected as instructor."""
+        from eduinsight.lti import _is_instructor
+        data = {
+            "https://purl.imsglobal.org/spec/lti/claim/roles": [
+                "http://purl.imsglobal.org/vocab/lis/v2/membership#TeachingAssistant",
+            ]
+        }
+        assert _is_instructor(data) is True
+
+    def test_is_instructor_admin(self) -> None:
+        """User with Administrator role is detected as instructor."""
+        from eduinsight.lti import _is_instructor
+        data = {
+            "https://purl.imsglobal.org/spec/lti/claim/roles": [
+                "http://purl.imsglobal.org/vocab/lis/v2/system/person#Administrator",
+            ]
+        }
+        assert _is_instructor(data) is True
+
+    def test_is_instructor_false_for_learner(self) -> None:
+        """User with only Learner role is not an instructor."""
+        from eduinsight.lti import _is_instructor
+        data = {
+            "https://purl.imsglobal.org/spec/lti/claim/roles": [
+                "http://purl.imsglobal.org/vocab/lis/v2/membership#Learner",
+            ]
+        }
+        assert _is_instructor(data) is False
+
+    def test_is_instructor_false_for_empty(self) -> None:
+        """No roles means not an instructor."""
+        from eduinsight.lti import _is_instructor
+        assert _is_instructor({}) is False
+
+    def test_is_instructor_institution_instructor(self) -> None:
+        """Institution-level Instructor role is also detected."""
+        from eduinsight.lti import _is_instructor
+        data = {
+            "https://purl.imsglobal.org/spec/lti/claim/roles": [
+                "http://purl.imsglobal.org/vocab/lis/v2/institution/person#Instructor",
+            ]
+        }
+        assert _is_instructor(data) is True

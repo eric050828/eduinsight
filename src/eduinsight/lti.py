@@ -337,13 +337,15 @@ async def lti_launch(request: Request) -> Response:
         user_id = _extract_user_id(launch_data)
         course_info = _extract_course_info(launch_data)
         user_name = _extract_user_name(launch_data)
+        instructor = _is_instructor(launch_data)
 
         logger.info(
-            "LTI launch: user=%s course=%s name=%s",
+            "LTI launch: user=%s course=%s name=%s role=%s",
             user_id, course_info.get("label", "?"), user_name,
+            "instructor" if instructor else "learner",
         )
 
-        # Redirect to chat UI with LTI context as query params
+        # Build query params with LTI context
         import urllib.parse
         params = {
             "lti": "1",
@@ -356,8 +358,12 @@ async def lti_launch(request: Request) -> Response:
             params["course"] = course_info["label"]
         if course_info.get("title"):
             params["course_name"] = course_info["title"]
+        if instructor:
+            params["role"] = "instructor"
 
-        redirect_url = f"/?{urllib.parse.urlencode(params)}"
+        # Redirect based on role: instructors → teacher dashboard, students → chat
+        base_path = "/teacher" if instructor else "/"
+        redirect_url = f"{base_path}?{urllib.parse.urlencode(params)}"
         response = RedirectResponse(url=redirect_url, status_code=302)
         return response
 
@@ -433,3 +439,39 @@ def _extract_course_info(launch_data: dict[str, Any]) -> dict[str, str]:
         "label": context.get("label", ""),
         "title": context.get("title", ""),
     }
+
+
+# Instructor role URI patterns (LTI 1.3 / LIS v2 vocabulary)
+_INSTRUCTOR_ROLE_PATTERNS = (
+    "#Instructor",
+    "#TeachingAssistant",
+    "#Administrator",
+    "#ContentDeveloper",
+    "#Mentor",
+)
+
+
+def _extract_roles(launch_data: dict[str, Any]) -> list[str]:
+    """Extract roles from LTI roles claim.
+
+    Returns the raw list of role URIs from the JWT.
+    """
+    return launch_data.get(
+        "https://purl.imsglobal.org/spec/lti/claim/roles", []
+    )
+
+
+def _is_instructor(launch_data: dict[str, Any]) -> bool:
+    """Check if the user has an instructor/admin role.
+
+    Matches against standard LIS v2 role URIs:
+      http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor
+      http://purl.imsglobal.org/vocab/lis/v2/institution/person#Instructor
+      etc.
+    """
+    roles = _extract_roles(launch_data)
+    for role in roles:
+        for pattern in _INSTRUCTOR_ROLE_PATTERNS:
+            if pattern in role:
+                return True
+    return False
