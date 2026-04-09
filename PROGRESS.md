@@ -119,7 +119,12 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Stats overview: total weeks, cumulative memories, struggle count, topic coverage
   - Direct links to chat as student 2001, teacher dashboard, and analytics API
   - 11 new tests (101 total)
-- [ ] Export/import memory (Lite-Mem portable format)
+- [x] Export/import memory (Lite-Mem portable format)
+  - GET /export/student/{id} — export single student's memory as MemoryBundle JSON
+  - GET /export/all — export all moodle students' memories (list of bundles)
+  - POST /import — upload MemoryBundle JSON file to import memories (merge mode)
+  - Roundtrip tested: export → clear → import → verify identical
+  - 9 new tests (110 total)
 - [ ] InnoServe competition materials
 
 ## Hotfix: Demo Memory Dedup (2026-04-10)
@@ -137,5 +142,5 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: Semester demo with 18-week timeline, time-spread memory seeding, trajectory visualization, 101 tests passing
-Next step: Export/import memory (Lite-Mem portable format) or InnoServe competition materials
+Done: Export/import memory via Lite-Mem portable format, 110 tests passing
+Next step: InnoServe competition materials

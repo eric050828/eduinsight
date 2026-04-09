@@ -8,16 +8,18 @@ Provides REST endpoints for:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from litemem import Memory
+from litemem.portable import MemoryBundle
 from pydantic import BaseModel
 
 from .analytics import (
@@ -492,6 +494,91 @@ async def demo_semester() -> SemesterDemoResponse:
         student_id=SEMESTER_STUDENT_ID,
         weeks_seeded=len(SEMESTER_WEEKS),
         total_memories=actual_total,
+    )
+
+
+# ------------------------------------------------------------------
+# Export / Import endpoints
+# ------------------------------------------------------------------
+
+
+class ExportResponse(BaseModel):
+    moodle_user_id: int
+    record_count: int
+    bundle: dict[str, Any]
+
+
+class ExportAllResponse(BaseModel):
+    students_exported: int
+    total_records: int
+    bundles: list[dict[str, Any]]
+
+
+class ImportResponse(BaseModel):
+    status: str
+    user_id: str
+    records_imported: int
+
+
+@app.get("/export/student/{moodle_user_id}", response_model=ExportResponse)
+async def export_student(moodle_user_id: int) -> ExportResponse:
+    """Export a student's memory as a portable MemoryBundle JSON."""
+    assistant = get_assistant()
+    mem = assistant.memory
+    user_id = f"moodle:{moodle_user_id}"
+
+    bundle = mem.export(user_id)
+    return ExportResponse(
+        moodle_user_id=moodle_user_id,
+        record_count=len(bundle.records),
+        bundle=bundle.to_dict(),
+    )
+
+
+@app.get("/export/all", response_model=ExportAllResponse)
+async def export_all() -> ExportAllResponse:
+    """Export all students' memories as portable MemoryBundle JSONs."""
+    assistant = get_assistant()
+    mem = assistant.memory
+
+    bundles: list[dict[str, Any]] = []
+    total_records = 0
+    for uid in mem.list_users():
+        if not uid.startswith("moodle:"):
+            continue
+        bundle = mem.export(uid)
+        bundles.append(bundle.to_dict())
+        total_records += len(bundle.records)
+
+    return ExportAllResponse(
+        students_exported=len(bundles),
+        total_records=total_records,
+        bundles=bundles,
+    )
+
+
+@app.post("/import", response_model=ImportResponse)
+async def import_memory(file: UploadFile) -> ImportResponse:
+    """Import a student's memory from a MemoryBundle JSON file.
+
+    Accepts a JSON file produced by the export endpoint.
+    Merges with existing memories (does not overwrite by default).
+    """
+    assistant = get_assistant()
+    mem = assistant.memory
+
+    try:
+        content = await file.read()
+        data = json.loads(content)
+        bundle = MemoryBundle.from_dict(data)
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid bundle JSON: {e}")
+
+    count = mem.import_bundle(bundle)
+    return ImportResponse(
+        status="imported",
+        user_id=bundle.user_id,
+        records_imported=count,
     )
 
 
