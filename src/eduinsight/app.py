@@ -9,6 +9,7 @@ Provides REST endpoints for:
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -257,6 +258,54 @@ async def teacher_student_memories(moodle_user_id: int) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------
+# Demo endpoints
+# ------------------------------------------------------------------
+
+
+class DemoResetResponse(BaseModel):
+    status: str
+    students_seeded: int
+    total_memories: int
+
+
+@app.post("/demo/reset", response_model=DemoResetResponse)
+async def demo_reset() -> DemoResetResponse:
+    """Reset the database and seed demo data.
+
+    This deletes all existing data and populates the database with
+    4 demo students for walkthrough purposes.
+    """
+    global _memory, _assistant
+
+    # Import seed data
+    from .demo_data import DEMO_STUDENTS
+
+    # Close current memory, recreate with fresh DB
+    db_path = settings.memory_db_path
+    for suffix in ("", "-wal", "-shm"):
+        p = db_path + suffix
+        if os.path.exists(p):
+            os.remove(p)
+
+    embedder = settings.memory_embedder or None
+    _memory = Memory(db_path, embedder=embedder)
+    _assistant = LearningAssistant(_memory, llm=_llm)
+
+    # Seed demo data
+    total = 0
+    for user_id, facts in DEMO_STUDENTS.items():
+        for fact in facts:
+            _memory.add(user_id, fact)
+        total += len(facts)
+
+    return DemoResetResponse(
+        status="seeded",
+        students_seeded=len(DEMO_STUDENTS),
+        total_memories=total,
+    )
+
+
+# ------------------------------------------------------------------
 # Static files & SPA
 # ------------------------------------------------------------------
 
@@ -271,6 +320,12 @@ async def index() -> FileResponse:
 async def teacher_dashboard() -> FileResponse:
     """Serve the teacher dashboard UI."""
     return FileResponse(_STATIC_DIR / "teacher.html")
+
+
+@app.get("/demo")
+async def demo_walkthrough() -> FileResponse:
+    """Serve the demo walkthrough page."""
+    return FileResponse(_STATIC_DIR / "demo.html")
 
 
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")

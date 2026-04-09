@@ -228,6 +228,7 @@
     <input type="number" id="user-id" value="1" min="1" style="width:64px">
     <label for="topic">Topic</label>
     <input type="text" id="topic" placeholder="(optional)" style="width:120px">
+    <a href="/demo" style="color:var(--primary);text-decoration:none;font-weight:500;font-size:13px">Demo</a>
     <span id="status-dot" title="API status"></span>
   </div>
 </header>
@@ -379,6 +380,21 @@ fetch('/health')
   .then(r => r.json())
   .then(() => { statusDot.classList.remove('offline'); })
   .catch(() => { statusDot.classList.add('offline'); });
+
+// Pick up demo params from URL hash (e.g. #student=1001&topic=DS&q=hello)
+if (window.location.hash) {
+  try {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    if (params.get('student')) document.getElementById('user-id').value = params.get('student');
+    if (params.get('topic')) document.getElementById('topic').value = params.get('topic');
+    if (params.get('q')) {
+      msgInput.value = params.get('q');
+      msgInput.focus();
+    }
+    // Clear hash so refreshing doesn't re-trigger
+    history.replaceState(null, '', '/');
+  } catch (e) { /* ignore parse errors */ }
+}
 </script>
 </body>
 </html>

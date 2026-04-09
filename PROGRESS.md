@@ -52,7 +52,14 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - API: `GET /teacher/students` (list with stats), `GET /teacher/students/{id}/memories`
   - Uses Lite-Mem `detailed_stats()` + `list()` for data — no custom DB queries
   - 5 new tests (48 total)
-- [ ] Demo scenario walkthrough
+- [x] Demo scenario walkthrough
+  - Demo data module (demo_data.py): 4 students with distinct learning profiles
+  - Seed script (scripts/seed_demo.py): CLI tool to populate DB with demo data
+  - POST /demo/reset endpoint: seeds demo data on demand from the UI
+  - Demo walkthrough page at /demo: 5-step guided tour with clickable actions
+  - Navigation links added across all pages (Chat, Teacher, Demo)
+  - URL hash params for pre-filling chat from demo links
+  - 2 new tests (50 total)
 
 ## Phase 4: Learning Analytics (Backend)
 - [ ] Extract learning patterns from Lite-Mem memory
@@ -73,5 +80,5 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [ ] InnoServe competition materials
 
 ## Current State
-Phase: 3 (Frontend) — Teacher dashboard complete
-Next step: Demo scenario walkthrough — seed demo data and create guided walkthrough
+Phase: 3 (Frontend) — Complete
+Next step: Phase 4 — Learning analytics backend (extract patterns from Lite-Mem memory)

@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduInsight - Demo Walkthrough</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --primary-light: #eef2ff;
+    --text: #1e293b;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+    --green: #16a34a;
+    --green-bg: #f0fdf4;
+    --amber: #d97706;
+    --amber-bg: #fffbeb;
+    --red: #dc2626;
+    --red-bg: #fef2f2;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* Header */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  header h1 span { font-size: 22px; }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .header-right a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .header-right a:hover { text-decoration: underline; }
+
+  /* Container */
+  .container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+
+  /* Hero section */
+  .hero {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+  .hero h2 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .hero p {
+    font-size: 16px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  /* Seed button */
+  .seed-section {
+    background: var(--surface);
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .seed-section.seeded {
+    border-color: var(--green);
+    border-style: solid;
+    background: var(--green-bg);
+  }
+  .seed-btn {
+    padding: 12px 32px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .seed-btn:hover { background: var(--primary-hover); }
+  .seed-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .seed-status {
+    margin-top: 12px;
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+  .seed-status.success { color: var(--green); font-weight: 500; }
+  .seed-status.error { color: var(--red); }
+
+  /* Steps */
+  .steps {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 20px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .step-header:hover { background: var(--primary-light); }
+  .step-num {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--primary-light);
+    color: var(--primary);
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .step-title {
+    font-size: 15px;
+    font-weight: 600;
+    flex: 1;
+  }
+  .step-toggle {
+    color: var(--text-muted);
+    font-size: 18px;
+    transition: transform 0.2s;
+  }
+  .step.open .step-toggle { transform: rotate(90deg); }
+  .step-body {
+    display: none;
+    padding: 0 20px 20px;
+    border-top: 1px solid var(--border);
+  }
+  .step.open .step-body { display: block; }
+  .step-body p {
+    font-size: 14px;
+    line-height: 1.7;
+    margin-top: 16px;
+    color: var(--text);
+  }
+  .step-body .action-link {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 8px 20px;
+    background: var(--primary);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.15s;
+  }
+  .step-body .action-link:hover { background: var(--primary-hover); }
+
+  /* Student profiles */
+  .profiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .profile-card {
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .profile-card .name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .profile-card .desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .profile-card .tag {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    background: var(--primary-light);
+    color: var(--primary);
+  }
+
+  /* Try section */
+  .try-questions {
+    margin-top: 14px;
+    list-style: none;
+  }
+  .try-questions li {
+    padding: 8px 14px;
+    background: var(--bg);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .try-questions li:hover { background: var(--primary-light); }
+  .try-questions li .arrow { color: var(--primary); font-size: 16px; }
+
+  /* Highlight box */
+  .highlight {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .highlight.info { background: var(--primary-light); color: var(--primary); }
+  .highlight.warn { background: var(--amber-bg); color: var(--amber); }
+  .highlight.success { background: var(--green-bg); color: var(--green); }
+
+  @media (max-width: 600px) {
+    .profiles { grid-template-columns: 1fr; }
+    .hero h2 { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>&#x1F3AC;</span> EduInsight Demo</h1>
+  <div class="header-right">
+    <a href="/">Student Chat</a>
+    <a href="/teacher">Teacher Dashboard</a>
+  </div>
+</header>
+
+<div class="container">
+  <div class="hero">
+    <h2>EduInsight Demo Walkthrough</h2>
+    <p>Follow the steps below to experience the AI learning assistant with memory-augmented personalization and learning analytics.</p>
+  </div>
+
+  <!-- Seed section -->
+  <div class="seed-section" id="seed-section">
+    <p style="margin-bottom:14px;font-size:14px;color:var(--text-muted);">
+      First, load demo data — 4 students with realistic learning histories.
+    </p>
+    <button class="seed-btn" id="seed-btn" onclick="seedDemo()">Load Demo Data</button>
+    <div class="seed-status" id="seed-status"></div>
+  </div>
+
+  <!-- Walkthrough steps -->
+  <div class="steps">
+    <!-- Step 1 -->
+    <div class="step open" id="step-1">
+      <div class="step-header" onclick="toggleStep(1)">
+        <div class="step-num">1</div>
+        <div class="step-title">Meet the Demo Students</div>
+        <div class="step-toggle">&#x25B6;</div>
+      </div>
+      <div class="step-body">
+        <p>The demo includes 4 students, each with a different learning profile and history:</p>
+        <div class="profiles">
+          <div class="profile-card">
+            <div class="name">Student 1001</div>
+            <div class="desc">Struggling with data structures. Asks many questions about linked lists, trees, and hash tables. Prefers visual explanations.</div>
+            <div class="tag">Data Structures</div>
+          </div>
+          <div class="profile-card">
+            <div class="name">Student 1002</div>
+            <div class="desc">Advanced student. Focuses on algorithm analysis — DP, graph algorithms, complexity theory. Prefers formal proofs.</div>
+            <div class="tag">Algorithms</div>
+          </div>
+          <div class="profile-card">
+            <div class="name">Student 1003</div>
+            <div class="desc">Beginner programmer. Learning Python basics — loops, scope, error handling. Learns best from simple code examples.</div>
+            <div class="tag">Python Programming</div>
+          </div>
+          <div class="profile-card">
+            <div class="name">Student 1004</div>
+            <div class="desc">Database enthusiast. Studies normalization, SQL queries, ACID. Prefers real-world examples tied to practical design.</div>
+            <div class="tag">Database Systems</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step" id="step-2">
+      <div class="step-header" onclick="toggleStep(2)">
+        <div class="step-num">2</div>
+        <div class="step-title">Teacher Dashboard — View Learning Analytics</div>
+        <div class="step-toggle">&#x25B6;</div>
+      </div>
+      <div class="step-body">
+        <p>Open the Teacher Dashboard to see an overview of all students, their memory counts, and topic categories. Click on any student to view their stored memories.</p>
+        <div class="highlight info">
+          <strong>What to look for:</strong> Each student has different memory categories reflecting their unique learning focus. The dashboard shows total memories, categories, and last activity time.
+        </div>
+        <a class="action-link" href="/teacher" target="_blank">Open Teacher Dashboard &#x2192;</a>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step" id="step-3">
+      <div class="step-header" onclick="toggleStep(3)">
+        <div class="step-num">3</div>
+        <div class="step-title">Student Chat — Memory-Aware Conversations</div>
+        <div class="step-toggle">&#x25B6;</div>
+      </div>
+      <div class="step-body">
+        <p>Open the student chat and set <strong>Student ID = 1001</strong>. Ask a question related to their history. The AI will use their stored memories to personalize the response.</p>
+        <div class="highlight info">
+          <strong>Key feature:</strong> Click "Memory context used" on any response to see which memories the system retrieved to personalize the answer.
+        </div>
+        <p><strong>Try these questions as Student 1001:</strong></p>
+        <ul class="try-questions">
+          <li onclick="openChat(1001, 'How do I implement a binary search tree?', 'Data Structures')">
+            <span class="arrow">&#x2192;</span> How do I implement a binary search tree?
+          </li>
+          <li onclick="openChat(1001, 'What is the time complexity of hash table operations?', 'Data Structures')">
+            <span class="arrow">&#x2192;</span> What is the time complexity of hash table operations?
+          </li>
+        </ul>
+        <p style="margin-top:14px"><strong>Now try as Student 1003 (beginner):</strong></p>
+        <ul class="try-questions">
+          <li onclick="openChat(1003, 'How do I write a function in Python?', 'Python Programming')">
+            <span class="arrow">&#x2192;</span> How do I write a function in Python?
+          </li>
+          <li onclick="openChat(1003, 'What is a dictionary?', 'Python Programming')">
+            <span class="arrow">&#x2192;</span> What is a dictionary?
+          </li>
+        </ul>
+        <div class="highlight warn">
+          <strong>Note:</strong> If no LLM API key (GEMINI_API_KEY) is configured, the chat will show memory context only without AI-generated answers. The memory retrieval still works.
+        </div>
+        <a class="action-link" href="/" target="_blank">Open Student Chat &#x2192;</a>
+      </div>
+    </div>
+
+    <!-- Step 4 -->
+    <div class="step" id="step-4">
+      <div class="step-header" onclick="toggleStep(4)">
+        <div class="step-num">4</div>
+        <div class="step-title">Observe Memory Growth</div>
+        <div class="step-toggle">&#x25B6;</div>
+      </div>
+      <div class="step-body">
+        <p>After chatting with a student, go back to the Teacher Dashboard and refresh. You'll see:</p>
+        <ul style="margin-top:12px;padding-left:20px;font-size:14px;line-height:2;">
+          <li>Memory count increased for the student you chatted as</li>
+          <li>New memories stored from the conversation</li>
+          <li>Updated "Last Active" timestamp</li>
+        </ul>
+        <div class="highlight success">
+          <strong>This demonstrates the core value:</strong> Every student interaction automatically builds a learning profile that teachers can observe and AI can use for personalization — no manual tagging required.
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 5 -->
+    <div class="step" id="step-5">
+      <div class="step-header" onclick="toggleStep(5)">
+        <div class="step-num">5</div>
+        <div class="step-title">Compare Personalization</div>
+        <div class="step-toggle">&#x25B6;</div>
+      </div>
+      <div class="step-body">
+        <p>Ask the <strong>same question</strong> to two different students and observe how the memory context (and AI response if LLM is configured) differs:</p>
+        <ul class="try-questions">
+          <li onclick="openChat(1001, 'Explain Big O notation', 'Data Structures')">
+            <span class="arrow">&#x2192;</span> Student 1001: "Explain Big O notation"
+          </li>
+          <li onclick="openChat(1002, 'Explain Big O notation', 'Algorithms')">
+            <span class="arrow">&#x2192;</span> Student 1002: "Explain Big O notation"
+          </li>
+        </ul>
+        <div class="highlight info">
+          <strong>Notice:</strong> Student 1001 (who struggles with complexity analysis) will get simpler context. Student 1002 (who prefers formal analysis) will get advanced context like amortized analysis references.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleStep(n) {
+  const el = document.getElementById('step-' + n);
+  el.classList.toggle('open');
+}
+
+async function seedDemo() {
+  const btn = document.getElementById('seed-btn');
+  const status = document.getElementById('seed-status');
+  const section = document.getElementById('seed-section');
+
+  btn.disabled = true;
+  btn.textContent = 'Loading...';
+  status.textContent = '';
+  status.className = 'seed-status';
+
+  try {
+    const res = await fetch('/demo/reset', { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`HTTP ${res.status}: ${err}`);
+    }
+    const data = await res.json();
+    status.textContent = `Done! ${data.students_seeded} students, ${data.total_memories} memories loaded.`;
+    status.className = 'seed-status success';
+    section.classList.add('seeded');
+    btn.textContent = 'Reload Demo Data';
+  } catch (e) {
+    status.textContent = `Error: ${e.message}`;
+    status.className = 'seed-status error';
+    btn.textContent = 'Load Demo Data';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function openChat(studentId, question, topic) {
+  // Encode params in URL hash for the chat page to pick up
+  const params = new URLSearchParams({
+    student: studentId,
+    topic: topic || '',
+    q: question,
+  });
+  window.open('/#' + params.toString(), '_blank');
+}
+</script>
+</body>
+</html>
