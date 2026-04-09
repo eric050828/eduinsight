@@ -77,6 +77,64 @@ def resolve_llm_config(
     )
 
 
+class ClaudeCLIClient:
+    """LLM client that shells out to `claude -p` for AI responses.
+
+    Uses the Claude Code CLI with haiku model — no API key needed,
+    uses the user's existing Claude Code subscription.
+
+    Usage::
+
+        async with ClaudeCLIClient() as llm:
+            reply = await llm.chat("Hello, explain polymorphism.")
+    """
+
+    def __init__(self, model: str = "haiku") -> None:
+        self._model = model
+
+    async def __aenter__(self) -> ClaudeCLIClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        pass
+
+    async def chat(
+        self,
+        user_message: str,
+        *,
+        system_prompt: str = "",
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> str:
+        """Call claude -p to generate a response."""
+        import asyncio
+        import shutil
+
+        claude_bin = shutil.which("claude")
+        if not claude_bin:
+            raise RuntimeError("claude CLI not found in PATH")
+
+        prompt = ""
+        if system_prompt:
+            prompt += f"[System]\n{system_prompt}\n\n"
+        prompt += user_message
+
+        proc = await asyncio.create_subprocess_exec(
+            claude_bin, "-p", prompt,
+            "--model", self._model,
+            "--max-turns", "1",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+
+        if proc.returncode != 0:
+            err = stderr.decode(errors="replace")[:300]
+            raise RuntimeError(f"claude CLI error (rc={proc.returncode}): {err}")
+
+        return stdout.decode(errors="replace").strip()
+
+
 class LLMClient:
     """Async LLM client using OpenAI-compatible chat completions API.
 

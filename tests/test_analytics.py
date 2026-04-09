@@ -25,8 +25,8 @@ async def _make_client(mem: Memory) -> AsyncClient:
 def _seed_demo(mem: Memory) -> None:
     """Populate memory with demo student data."""
     for user_id, facts in DEMO_STUDENTS.items():
-        for fact in facts:
-            mem.add(user_id, fact)
+        for fact_text, category in facts:
+            mem.add(user_id, fact_text, category=category)
 
 
 # ------------------------------------------------------------------

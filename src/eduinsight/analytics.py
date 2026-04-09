@@ -30,7 +30,9 @@ def _student_uid(moodle_user_id: int) -> str:
 # ------------------------------------------------------------------
 
 _TOPIC_RE = re.compile(r"^\[([^\]]+)\]")
-_STRUGGLE_RE = re.compile(r"^Struggling with:\s*(.+?)(?:\s*—\s*(.+))?$")
+# Old format: "Struggling with: TOPIC — DETAILS"
+# New format: "Struggling with TOPIC: DETAILS"
+_STRUGGLE_RE = re.compile(r"^Struggling with:?\s+(.+?)(?:\s*[—:]\s*(.*))?$")
 _PREFERENCE_RE = re.compile(r"^Learning preference:\s*(.+)$")
 _QUESTION_RE = re.compile(r"^\[([^\]]+)\]\s*Q:\s*(.+)$")
 

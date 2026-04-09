@@ -30,7 +30,7 @@ from .analytics import (
 )
 from .assistant import LearningAssistant
 from .config import settings
-from .llm import LLMClient, resolve_llm_config
+from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
 from .moodle import MoodleClient
 
 logger = logging.getLogger(__name__)
@@ -66,15 +66,23 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     embedder = settings.memory_embedder or None  # "" means disabled
     _memory = Memory(settings.memory_db_path, embedder=embedder)
 
-    # Try to initialize LLM (optional — gracefully degrades without API key)
+    # Try to initialize LLM: API key > Claude CLI > no LLM
     try:
         llm_config = resolve_llm_config()
         _llm = LLMClient(llm_config)
         await _llm.__aenter__()
         logger.info("LLM initialized: model=%s", llm_config.model)
     except ValueError:
-        logger.warning("No LLM API key found. /chat will return memory context only.")
-        _llm = None
+        # Fallback: try claude CLI (uses Claude Code subscription)
+        import shutil
+
+        if shutil.which("claude"):
+            _llm = ClaudeCLIClient(model="haiku")
+            await _llm.__aenter__()
+            logger.info("LLM initialized: Claude CLI (haiku)")
+        else:
+            logger.warning("No LLM API key or claude CLI found. /chat will return memory context only.")
+            _llm = None
 
     _assistant = LearningAssistant(_memory, llm=_llm)
     yield
@@ -379,28 +387,44 @@ async def demo_reset() -> DemoResetResponse:
     # Import seed data
     from .demo_data import DEMO_STUDENTS
 
-    # Close current memory, recreate with fresh DB
+    # Use Lite-Mem's own delete to clear, then re-seed
     db_path = settings.memory_db_path
-    for suffix in ("", "-wal", "-shm"):
-        p = db_path + suffix
-        if os.path.exists(p):
-            os.remove(p)
-
     embedder = settings.memory_embedder or None
+
+    # Clear all demo students' data via Lite-Mem API
+    if _memory is not None:
+        for uid in DEMO_STUDENTS:
+            try:
+                for fact in _memory.list(uid):
+                    _memory.delete(uid, fact)
+            except Exception:
+                pass
+
     _memory = Memory(db_path, embedder=embedder)
     _assistant = LearningAssistant(_memory, llm=_llm)
 
-    # Seed demo data
-    total = 0
+    # Seed demo data (each fact is a (text, category) tuple)
+    total_seeded = 0
     for user_id, facts in DEMO_STUDENTS.items():
-        for fact in facts:
-            _memory.add(user_id, fact)
-        total += len(facts)
+        for fact_text, category in facts:
+            _memory.add(user_id, fact_text, category=category)
+        total_seeded += len(facts)
+
+    # Verify actual stored count (Lite-Mem dedup may reduce it)
+    actual_total = 0
+    for user_id in DEMO_STUDENTS:
+        actual_total += len(_memory.list(user_id))
+
+    if actual_total < total_seeded:
+        logger.warning(
+            "Demo seed: %d facts seeded but only %d survived (Lite-Mem dedup)",
+            total_seeded, actual_total,
+        )
 
     return DemoResetResponse(
         status="seeded",
         students_seeded=len(DEMO_STUDENTS),
-        total_memories=total,
+        total_memories=actual_total,
     )
 
 

@@ -6,395 +6,577 @@
 <title>EduInsight - AI 學習助教</title>
 <style>
   :root {
-    --bg: #f5f7fa;
-    --surface: #ffffff;
-    --primary: #4f46e5;
-    --primary-hover: #4338ca;
-    --text: #1e293b;
-    --text-muted: #64748b;
-    --border: #e2e8f0;
-    --user-bg: #eef2ff;
-    --assistant-bg: #f0fdf4;
-    --memory-bg: #fffbeb;
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface-2: #334155;
+    --primary: #6366f1;
+    --primary-hover: #818cf8;
+    --primary-glow: rgba(99,102,241,0.15);
+    --accent: #22d3ee;
+    --accent-2: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --border: #334155;
+    --user-bg: rgba(99,102,241,0.12);
+    --assistant-bg: rgba(34,211,238,0.08);
+    --memory-bg: rgba(251,191,36,0.08);
+    --radius: 12px;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     background: var(--bg);
     color: var(--text);
     height: 100vh;
     display: flex;
-    flex-direction: column;
   }
 
-  /* Header */
-  header {
+  /* Sidebar */
+  .sidebar {
+    width: 280px;
     background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 12px 20px;
+    border-right: 1px solid var(--border);
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
     flex-shrink: 0;
   }
-  header h1 {
-    font-size: 18px;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  header h1 span { font-size: 22px; }
-  .header-controls {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 13px;
-    color: var(--text-muted);
-  }
-  .header-controls label { font-weight: 500; }
-  .header-controls input, .header-controls select {
-    padding: 4px 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 13px;
-    background: var(--bg);
-  }
-  .header-controls input:focus, .header-controls select:focus {
-    outline: none;
-    border-color: var(--primary);
-  }
-  #status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #22c55e;
-    display: inline-block;
-  }
-  #status-dot.offline { background: #ef4444; }
-
-  /* Chat area */
-  #chat-area {
-    flex: 1;
-    overflow-y: auto;
+  .sidebar-header {
     padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+    border-bottom: 1px solid var(--border);
   }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 20px; font-weight: 700;
+  }
+  .logo-icon {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .sidebar-nav { flex: 1; padding: 12px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 8px;
+    color: var(--text-muted); cursor: pointer;
+    font-size: 14px; transition: all 0.15s;
+    margin-bottom: 2px;
+  }
+  .nav-item:hover { background: var(--surface-2); color: var(--text); }
+  .nav-item.active { background: var(--primary-glow); color: var(--primary-hover); font-weight: 500; }
+  .nav-icon { font-size: 18px; width: 24px; text-align: center; }
+  .nav-divider { height: 1px; background: var(--border); margin: 12px 0; }
+
+  /* Student selector */
+  .student-selector {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .student-selector label {
+    display: block; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 8px;
+  }
+  .student-cards { display: flex; flex-direction: column; gap: 4px; }
+  .student-card {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; color: var(--text-muted); transition: all 0.15s;
+  }
+  .student-card:hover { background: var(--surface-2); }
+  .student-card.active { background: var(--primary-glow); color: var(--text); }
+  .student-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600;
+  }
+  .student-card:nth-child(1) .student-avatar { background: #6366f133; color: #818cf8; }
+  .student-card:nth-child(2) .student-avatar { background: #22d3ee22; color: #22d3ee; }
+  .student-card:nth-child(3) .student-avatar { background: #34d39922; color: #34d399; }
+  .student-card:nth-child(4) .student-avatar { background: #fbbf2422; color: #fbbf24; }
+
+  /* Main content */
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  /* Topbar */
+  .topbar {
+    height: 56px; padding: 0 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .topbar-title { font-size: 15px; font-weight: 600; }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .status-badge {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 500;
+    background: rgba(34,211,238,0.1); color: var(--accent);
+  }
+  .status-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green); animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+  .status-dot.offline { background: var(--red); animation: none; }
+  .topic-input {
+    padding: 5px 10px; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 12px; width: 140px;
+  }
+  .topic-input:focus { outline: none; border-color: var(--primary); }
+  .topic-input::placeholder { color: var(--text-dim); }
+
+  /* Chat view */
+  #view-chat { flex: 1; display: flex; flex-direction: column; }
+  #chat-area {
+    flex: 1; overflow-y: auto; padding: 24px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  #chat-area::-webkit-scrollbar { width: 6px; }
+  #chat-area::-webkit-scrollbar-track { background: transparent; }
+  #chat-area::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 3px; }
+
   .msg {
-    max-width: 720px;
-    padding: 12px 16px;
-    border-radius: 12px;
-    line-height: 1.6;
-    font-size: 14px;
-    white-space: pre-wrap;
-    word-break: break-word;
+    max-width: 680px; padding: 14px 18px;
+    border-radius: var(--radius); line-height: 1.7;
+    font-size: 14px; white-space: pre-wrap; word-break: break-word;
   }
   .msg.user {
-    background: var(--user-bg);
-    align-self: flex-end;
+    background: var(--user-bg); align-self: flex-end;
+    border: 1px solid rgba(99,102,241,0.15);
     border-bottom-right-radius: 4px;
   }
   .msg.assistant {
-    background: var(--assistant-bg);
-    align-self: flex-start;
+    background: var(--assistant-bg); align-self: flex-start;
+    border: 1px solid rgba(34,211,238,0.1);
     border-bottom-left-radius: 4px;
   }
   .msg .role {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-bottom: 4px;
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 6px;
   }
-  .msg.user .role { color: var(--primary); }
-  .msg.assistant .role { color: #16a34a; }
+  .msg.user .role { color: var(--primary-hover); }
+  .msg.assistant .role { color: var(--accent); }
 
-  /* Memory context toggle */
   .memory-toggle {
-    font-size: 12px;
-    color: var(--text-muted);
-    cursor: pointer;
-    margin-top: 8px;
-    user-select: none;
+    font-size: 12px; color: var(--text-dim); cursor: pointer;
+    margin-top: 8px; user-select: none;
+    display: flex; align-items: center; gap: 4px;
   }
-  .memory-toggle:hover { color: var(--primary); }
+  .memory-toggle:hover { color: var(--amber); }
   .memory-list {
-    display: none;
-    margin-top: 6px;
-    padding: 8px 12px;
-    background: var(--memory-bg);
-    border-radius: 8px;
-    font-size: 12px;
-    color: var(--text-muted);
-    line-height: 1.5;
+    display: none; margin-top: 8px; padding: 10px 14px;
+    background: var(--memory-bg); border-radius: 8px;
+    font-size: 12px; color: var(--text-muted); line-height: 1.6;
+    border: 1px solid rgba(251,191,36,0.1);
   }
   .memory-list.open { display: block; }
-  .memory-list li { margin-bottom: 4px; }
+  .memory-list li { margin-bottom: 4px; list-style: none; }
+  .memory-list li::before { content: "💾 "; }
 
-  /* Typing indicator */
   .typing {
-    align-self: flex-start;
-    padding: 12px 16px;
-    background: var(--assistant-bg);
-    border-radius: 12px;
+    align-self: flex-start; padding: 14px 18px;
+    background: var(--assistant-bg); border-radius: var(--radius);
     border-bottom-left-radius: 4px;
-    font-size: 14px;
-    color: var(--text-muted);
+    border: 1px solid rgba(34,211,238,0.1);
   }
   .typing .dots span {
-    animation: blink 1.4s infinite both;
-    font-size: 18px;
+    animation: blink 1.4s infinite both; font-size: 20px; color: var(--accent);
   }
   .typing .dots span:nth-child(2) { animation-delay: 0.2s; }
   .typing .dots span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes blink {
-    0%, 80%, 100% { opacity: 0.3; }
-    40% { opacity: 1; }
-  }
+  @keyframes blink { 0%,80%,100%{opacity:0.2} 40%{opacity:1} }
 
-  /* Welcome */
+  /* Welcome screen */
   .welcome {
-    text-align: center;
-    margin: auto;
+    margin: auto; text-align: center; max-width: 520px;
     color: var(--text-muted);
-    max-width: 480px;
   }
-  .welcome h2 { font-size: 20px; color: var(--text); margin-bottom: 8px; }
-  .welcome p { font-size: 14px; line-height: 1.6; }
+  .welcome-icon { font-size: 48px; margin-bottom: 16px; }
+  .welcome h2 { font-size: 22px; color: var(--text); margin-bottom: 8px; font-weight: 600; }
+  .welcome p { font-size: 14px; line-height: 1.7; }
   .welcome .hints {
-    margin-top: 16px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: center;
+    margin-top: 20px; display: flex; flex-wrap: wrap;
+    gap: 8px; justify-content: center;
   }
   .welcome .hint {
-    padding: 6px 14px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    font-size: 13px;
-    cursor: pointer;
-    transition: border-color 0.15s;
+    padding: 8px 16px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 20px;
+    font-size: 13px; cursor: pointer; transition: all 0.15s;
+    color: var(--text-muted);
   }
-  .welcome .hint:hover { border-color: var(--primary); color: var(--primary); }
+  .welcome .hint:hover { border-color: var(--primary); color: var(--primary-hover); background: var(--primary-glow); }
 
   /* Input bar */
   #input-bar {
-    flex-shrink: 0;
-    background: var(--surface);
+    flex-shrink: 0; padding: 16px 24px;
+    display: flex; gap: 10px; align-items: flex-end;
     border-top: 1px solid var(--border);
-    padding: 12px 20px;
-    display: flex;
-    gap: 8px;
-    align-items: flex-end;
   }
   #msg-input {
-    flex: 1;
-    padding: 10px 14px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    font-size: 14px;
-    font-family: inherit;
-    resize: none;
-    max-height: 120px;
-    line-height: 1.5;
+    flex: 1; padding: 12px 16px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; font-size: 14px; font-family: inherit;
+    resize: none; max-height: 120px; line-height: 1.5;
+    color: var(--text);
   }
-  #msg-input:focus { outline: none; border-color: var(--primary); }
+  #msg-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+  #msg-input::placeholder { color: var(--text-dim); }
   #send-btn {
-    padding: 10px 20px;
-    background: var(--primary);
-    color: #fff;
-    border: none;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.15s;
-    white-space: nowrap;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, var(--primary), #7c3aed);
+    color: #fff; border: none; border-radius: 10px;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    transition: all 0.15s; white-space: nowrap;
   }
-  #send-btn:hover { background: var(--primary-hover); }
-  #send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  #send-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* Dashboard / Analytics views */
+  #view-dashboard, #view-analytics { display: none; flex: 1; overflow-y: auto; padding: 24px; }
+  .dashboard-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px; margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+  }
+  .stat-label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .stat-value.purple { color: var(--primary-hover); }
+  .stat-value.cyan { color: var(--accent); }
+  .stat-value.green { color: var(--green); }
+  .stat-value.amber { color: var(--amber); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+  }
+  .card h3 { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; color: var(--text-dim); font-weight: 500; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid rgba(51,65,85,0.5); }
+  tr:hover td { background: rgba(99,102,241,0.05); }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 500;
+  }
+  .tag-struggle { background: rgba(248,113,113,0.15); color: var(--red); }
+  .tag-preference { background: rgba(34,211,238,0.15); color: var(--accent); }
+  .tag-topic { background: rgba(99,102,241,0.15); color: var(--primary-hover); }
+
+  .progress-bar {
+    height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden;
+    margin-top: 6px;
+  }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+
+  /* Demo banner */
+  .demo-banner {
+    background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(34,211,238,0.1));
+    border: 1px solid rgba(99,102,241,0.2);
+    border-radius: var(--radius); padding: 16px 20px;
+    margin-bottom: 20px; display: flex; align-items: center; gap: 12px;
+  }
+  .demo-banner-icon { font-size: 24px; }
+  .demo-banner-text { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+  .demo-banner-text strong { color: var(--text); }
+  .demo-btn {
+    padding: 8px 16px; background: var(--primary); color: #fff;
+    border: none; border-radius: 8px; font-size: 13px; font-weight: 500;
+    cursor: pointer; white-space: nowrap; margin-left: auto;
+  }
+  .demo-btn:hover { background: var(--primary-hover); }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+  }
 </style>
 </head>
 <body>
 
-<header>
-  <h1><span>&#x1F393;</span> EduInsight</h1>
-  <div class="header-controls">
-    <label for="user-id">Student ID</label>
-    <input type="number" id="user-id" value="1" min="1" style="width:64px">
-    <label for="topic">Topic</label>
-    <input type="text" id="topic" placeholder="(optional)" style="width:120px">
-    <a href="/demo" style="color:var(--primary);text-decoration:none;font-weight:500;font-size:13px">Demo</a>
-    <span id="status-dot" title="API status"></span>
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo">
+      <div class="logo-icon">🎓</div>
+      <span>EduInsight</span>
+    </div>
   </div>
-</header>
-
-<div id="chat-area">
-  <div class="welcome" id="welcome">
-    <h2>Hi! I'm your AI learning assistant.</h2>
-    <p>Ask me about your coursework, concepts you're struggling with, or anything academic. I'll remember our conversations to help you better over time.</p>
-    <div class="hints">
-      <div class="hint" onclick="fillHint(this)">What is polymorphism?</div>
-      <div class="hint" onclick="fillHint(this)">Explain recursion simply</div>
-      <div class="hint" onclick="fillHint(this)">Help me with linked lists</div>
+  <div class="sidebar-nav">
+    <div class="nav-item active" onclick="switchView('chat')">
+      <span class="nav-icon">💬</span> AI 學習助教
+    </div>
+    <div class="nav-item" onclick="switchView('dashboard')">
+      <span class="nav-icon">📊</span> 教師儀表板
+    </div>
+    <div class="nav-item" onclick="switchView('analytics')">
+      <span class="nav-icon">📈</span> 學習分析
+    </div>
+    <div class="nav-divider"></div>
+    <div class="nav-item" onclick="seedDemo()" id="seed-btn">
+      <span class="nav-icon">🔄</span> 重置 Demo 資料
+    </div>
+  </div>
+  <div class="student-selector">
+    <label>選擇學生</label>
+    <div class="student-cards">
+      <div class="student-card active" onclick="selectStudent(1001, this)">
+        <div class="student-avatar">陳</div>
+        <div><div style="font-weight:500;color:var(--text)">陳同學</div><div style="font-size:11px">資料結構 · 視覺學習者</div></div>
+      </div>
+      <div class="student-card" onclick="selectStudent(1002, this)">
+        <div class="student-avatar">林</div>
+        <div><div style="font-weight:500;color:var(--text)">林同學</div><div style="font-size:11px">演算法 · 進階程度</div></div>
+      </div>
+      <div class="student-card" onclick="selectStudent(1003, this)">
+        <div class="student-avatar">王</div>
+        <div><div style="font-weight:500;color:var(--text)">王同學</div><div style="font-size:11px">Python 入門 · 初學者</div></div>
+      </div>
+      <div class="student-card" onclick="selectStudent(1004, this)">
+        <div class="student-avatar">張</div>
+        <div><div style="font-weight:500;color:var(--text)">張同學</div><div style="font-size:11px">資料庫系統 · 實務導向</div></div>
+      </div>
     </div>
   </div>
 </div>
 
-<div id="input-bar">
-  <textarea id="msg-input" rows="1" placeholder="Type your question..." autofocus></textarea>
-  <button id="send-btn" onclick="sendMessage()">Send</button>
+<!-- Main -->
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title" id="topbar-title">💬 AI 學習助教</div>
+    <div class="topbar-right">
+      <input type="text" id="topic" class="topic-input" placeholder="課程主題（選填）">
+      <div class="status-badge">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Connecting...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat View -->
+  <div id="view-chat" style="flex:1;display:flex;flex-direction:column;">
+    <div id="chat-area">
+      <div class="welcome" id="welcome">
+        <div class="welcome-icon">🤖</div>
+        <h2>嗨！我是你的 AI 學習助教</h2>
+        <p>問我任何課業問題，我會記住我們的對話，隨著時間推移更了解你的學習狀況。</p>
+        <div class="hints">
+          <div class="hint" onclick="fillHint(this)">什麼是多型？</div>
+          <div class="hint" onclick="fillHint(this)">解釋遞迴</div>
+          <div class="hint" onclick="fillHint(this)">linked list 怎麼反轉？</div>
+          <div class="hint" onclick="fillHint(this)">SQL JOIN 的差別</div>
+        </div>
+      </div>
+    </div>
+    <div id="input-bar">
+      <textarea id="msg-input" rows="1" placeholder="輸入你的問題..." autofocus></textarea>
+      <button id="send-btn" onclick="sendMessage()">發送</button>
+    </div>
+  </div>
+
+  <!-- Dashboard View -->
+  <div id="view-dashboard">
+    <div class="demo-banner">
+      <div class="demo-banner-icon">🎓</div>
+      <div class="demo-banner-text">
+        <strong>教師儀表板</strong> — 即時追蹤所有學生的學習記憶與互動狀況
+      </div>
+      <button class="demo-btn" onclick="loadDashboard()">重新整理</button>
+    </div>
+    <div class="dashboard-grid" id="dash-stats"></div>
+    <div class="card">
+      <h3>學生列表</h3>
+      <table><thead><tr><th>學生</th><th>記憶數</th><th>分類</th></tr></thead>
+      <tbody id="dash-table"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Analytics View -->
+  <div id="view-analytics">
+    <div class="demo-banner">
+      <div class="demo-banner-icon">📈</div>
+      <div class="demo-banner-text">
+        <strong>學習分析</strong> — 全班共同困難點、個人弱科追蹤、學習偏好
+      </div>
+      <button class="demo-btn" onclick="loadAnalytics()">重新整理</button>
+    </div>
+    <div id="analytics-content"></div>
+  </div>
 </div>
 
 <script>
+let currentStudent = 1001;
+
+// View switching
+function switchView(view) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  document.getElementById('view-chat').style.display = view === 'chat' ? 'flex' : 'none';
+  document.getElementById('view-dashboard').style.display = view === 'dashboard' ? 'block' : 'none';
+  document.getElementById('view-analytics').style.display = view === 'analytics' ? 'block' : 'none';
+  const titles = { chat: '💬 AI 學習助教', dashboard: '📊 教師儀表板', analytics: '📈 學習分析' };
+  document.getElementById('topbar-title').textContent = titles[view];
+  if (view === 'dashboard') loadDashboard();
+  if (view === 'analytics') loadAnalytics();
+}
+
+function selectStudent(id, el) {
+  currentStudent = id;
+  document.querySelectorAll('.student-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// Chat
 const chatArea = document.getElementById('chat-area');
 const msgInput = document.getElementById('msg-input');
-const sendBtn  = document.getElementById('send-btn');
-const welcome  = document.getElementById('welcome');
-const statusDot = document.getElementById('status-dot');
+const sendBtn = document.getElementById('send-btn');
+const welcome = document.getElementById('welcome');
 
-// Auto-resize textarea
 msgInput.addEventListener('input', () => {
   msgInput.style.height = 'auto';
   msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + 'px';
 });
-
-// Enter to send (Shift+Enter for newline)
-msgInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
+msgInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
-function fillHint(el) {
-  msgInput.value = el.textContent;
-  msgInput.focus();
-}
+function fillHint(el) { msgInput.value = el.textContent; msgInput.focus(); }
 
-function scrollToBottom() {
-  chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-function addMessage(role, text, memoryContext) {
+function addMessage(role, text, memCtx) {
   if (welcome) welcome.remove();
-
   const div = document.createElement('div');
   div.className = `msg ${role}`;
-
   const roleLabel = document.createElement('div');
   roleLabel.className = 'role';
-  roleLabel.textContent = role === 'user' ? 'You' : 'EduInsight';
+  roleLabel.textContent = role === 'user' ? 'You' : 'EduInsight AI';
   div.appendChild(roleLabel);
-
   const body = document.createElement('div');
   body.textContent = text;
   div.appendChild(body);
-
-  // Memory context (assistant messages only)
-  if (role === 'assistant' && memoryContext && memoryContext.length > 0) {
+  if (role === 'assistant' && memCtx && memCtx.length) {
     const toggle = document.createElement('div');
     toggle.className = 'memory-toggle';
-    toggle.textContent = `Memory context used (${memoryContext.length})`;
+    toggle.textContent = `🧠 使用了 ${memCtx.length} 條記憶`;
     const list = document.createElement('ul');
     list.className = 'memory-list';
-    memoryContext.forEach(m => {
-      const li = document.createElement('li');
-      li.textContent = m;
-      list.appendChild(li);
-    });
-    toggle.addEventListener('click', () => list.classList.toggle('open'));
+    memCtx.forEach(m => { const li = document.createElement('li'); li.textContent = m; list.appendChild(li); });
+    toggle.onclick = () => list.classList.toggle('open');
     div.appendChild(toggle);
     div.appendChild(list);
   }
-
   chatArea.appendChild(div);
-  scrollToBottom();
+  chatArea.scrollTop = chatArea.scrollHeight;
 }
 
 function showTyping() {
-  const div = document.createElement('div');
-  div.className = 'typing';
-  div.id = 'typing-indicator';
-  div.innerHTML = '<div class="dots"><span>.</span><span>.</span><span>.</span></div>';
-  chatArea.appendChild(div);
-  scrollToBottom();
+  const d = document.createElement('div'); d.className = 'typing'; d.id = 'typing';
+  d.innerHTML = '<div class="dots"><span>.</span><span>.</span><span>.</span></div>';
+  chatArea.appendChild(d); chatArea.scrollTop = chatArea.scrollHeight;
 }
-
-function hideTyping() {
-  const el = document.getElementById('typing-indicator');
-  if (el) el.remove();
-}
+function hideTyping() { const el = document.getElementById('typing'); if (el) el.remove(); }
 
 async function sendMessage() {
-  const text = msgInput.value.trim();
-  if (!text) return;
-
-  const userId = parseInt(document.getElementById('user-id').value) || 1;
+  const text = msgInput.value.trim(); if (!text) return;
   const topic = document.getElementById('topic').value.trim();
-
-  // Show user message
   addMessage('user', text);
-  msgInput.value = '';
-  msgInput.style.height = 'auto';
-  sendBtn.disabled = true;
-  showTyping();
-
+  msgInput.value = ''; msgInput.style.height = 'auto';
+  sendBtn.disabled = true; showTyping();
   try {
     const res = await fetch('/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        moodle_user_id: userId,
-        message: text,
-        topic: topic,
-      }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moodle_user_id: currentStudent, message: text, topic }),
     });
-
     hideTyping();
-
-    if (!res.ok) {
-      const err = await res.text();
-      addMessage('assistant', `Error: ${res.status} - ${err}`);
-      return;
-    }
-
+    if (!res.ok) { addMessage('assistant', `Error: ${res.status}`); return; }
     const data = await res.json();
     addMessage('assistant', data.reply, data.memory_context);
-  } catch (e) {
-    hideTyping();
-    addMessage('assistant', `Connection error: ${e.message}`);
-    statusDot.classList.add('offline');
-  } finally {
-    sendBtn.disabled = false;
-    msgInput.focus();
-  }
+  } catch (e) { hideTyping(); addMessage('assistant', `連線錯誤: ${e.message}`); }
+  finally { sendBtn.disabled = false; msgInput.focus(); }
 }
 
-// Health check on load
-fetch('/health')
-  .then(r => r.json())
-  .then(() => { statusDot.classList.remove('offline'); })
-  .catch(() => { statusDot.classList.add('offline'); });
-
-// Pick up demo params from URL hash (e.g. #student=1001&topic=DS&q=hello)
-if (window.location.hash) {
+// Dashboard
+async function loadDashboard() {
   try {
-    const params = new URLSearchParams(window.location.hash.slice(1));
-    if (params.get('student')) document.getElementById('user-id').value = params.get('student');
-    if (params.get('topic')) document.getElementById('topic').value = params.get('topic');
-    if (params.get('q')) {
-      msgInput.value = params.get('q');
-      msgInput.focus();
-    }
-    // Clear hash so refreshing doesn't re-trigger
-    history.replaceState(null, '', '/');
-  } catch (e) { /* ignore parse errors */ }
+    const res = await fetch('/teacher/students');
+    const data = await res.json();
+    document.getElementById('dash-stats').innerHTML = `
+      <div class="stat-card"><div class="stat-label">學生數</div><div class="stat-value purple">${data.total_students}</div></div>
+      <div class="stat-card"><div class="stat-label">記憶總數</div><div class="stat-value cyan">${data.total_facts}</div></div>
+      <div class="stat-card"><div class="stat-label">平均記憶/人</div><div class="stat-value green">${data.total_students ? (data.total_facts / data.total_students).toFixed(1) : 0}</div></div>
+      <div class="stat-card"><div class="stat-label">LLM 後端</div><div class="stat-value amber" style="font-size:16px">Claude Haiku</div></div>
+    `;
+    const names = { 1001: '陳同學', 1002: '林同學', 1003: '王同學', 1004: '張同學' };
+    document.getElementById('dash-table').innerHTML = data.students.map(s => {
+      const cats = Object.entries(s.categories || {}).map(([k,v]) => `<span class="tag tag-topic">${k}: ${v}</span>`).join(' ');
+      return `<tr><td style="font-weight:500">${names[s.moodle_user_id] || 'Student ' + s.moodle_user_id}</td><td>${s.fact_count}</td><td>${cats || '—'}</td></tr>`;
+    }).join('');
+  } catch (e) { console.error(e); }
 }
+
+// Analytics
+async function loadAnalytics() {
+  try {
+    const [classRes, ...studentResArr] = await Promise.all([
+      fetch('/analytics/class'),
+      fetch('/analytics/student/1001'),
+      fetch('/analytics/student/1002'),
+      fetch('/analytics/student/1003'),
+      fetch('/analytics/student/1004'),
+    ]);
+    const classData = await classRes.json();
+    const students = await Promise.all(studentResArr.map(r => r.json()));
+    const names = { 1001: '陳同學', 1002: '林同學', 1003: '王同學', 1004: '張同學' };
+
+    let html = `<div class="card"><h3>🔴 全班共同困難點</h3>`;
+    if (classData.common_struggles.length) {
+      html += classData.common_struggles.map(([topic, count]) => {
+        const pct = Math.min(100, count * 25);
+        return `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${topic}</span><span class="tag tag-struggle">${count} 位學生</span></div><div class="progress-bar"><div class="progress-fill" style="width:${pct}%;background:var(--red)"></div></div></div>`;
+      }).join('');
+    } else { html += '<p style="color:var(--text-dim);font-size:13px">尚無資料</p>'; }
+    html += '</div>';
+
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">';
+    students.forEach(s => {
+      const name = names[s.moodle_user_id] || 'Student ' + s.moodle_user_id;
+      html += `<div class="card"><h3>${name}</h3>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">記憶: ${s.total_facts} 條</div>
+        ${s.weak_topics.length ? '<div style="margin-bottom:8px">' + s.weak_topics.map(t => `<span class="tag tag-struggle" style="margin:2px">${t}</span>`).join('') + '</div>' : ''}
+        ${s.preferences.length ? '<div>' + s.preferences.map(p => `<span class="tag tag-preference" style="margin:2px">${p}</span>`).join('') + '</div>' : ''}
+      </div>`;
+    });
+    html += '</div>';
+
+    document.getElementById('analytics-content').innerHTML = html;
+  } catch (e) { console.error(e); }
+}
+
+// Demo seed
+async function seedDemo() {
+  const btn = document.getElementById('seed-btn');
+  btn.querySelector('.nav-icon').textContent = '⏳';
+  try {
+    const res = await fetch('/demo/reset', { method: 'POST' });
+    const data = await res.json();
+    btn.querySelector('.nav-icon').textContent = '✅';
+    setTimeout(() => { btn.querySelector('.nav-icon').textContent = '🔄'; }, 2000);
+  } catch (e) { btn.querySelector('.nav-icon').textContent = '❌'; }
+}
+
+// Health check
+fetch('/health').then(r => r.json()).then(() => {
+  document.getElementById('status-dot').classList.remove('offline');
+  document.getElementById('status-text').textContent = 'Online';
+}).catch(() => {
+  document.getElementById('status-dot').classList.add('offline');
+  document.getElementById('status-text').textContent = 'Offline';
+});
 </script>
 </body>
 </html>
