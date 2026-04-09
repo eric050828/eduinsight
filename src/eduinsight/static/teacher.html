@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduInsight - Teacher Dashboard</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --primary-light: #eef2ff;
+    --text: #1e293b;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+    --green: #16a34a;
+    --green-bg: #f0fdf4;
+    --amber-bg: #fffbeb;
+    --amber: #d97706;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* Header */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  header h1 span { font-size: 22px; }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .header-right a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .header-right a:hover { text-decoration: underline; }
+  #status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    display: inline-block;
+  }
+  #status-dot.offline { background: #ef4444; }
+
+  /* Main layout */
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .stat-card .label {
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .stat-card .value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  /* Student table */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 15px;
+    font-weight: 600;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th {
+    text-align: left;
+    padding: 10px 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  tr:last-child td { border-bottom: none; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: var(--primary-light); }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .badge-green { background: var(--green-bg); color: var(--green); }
+  .badge-amber { background: var(--amber-bg); color: var(--amber); }
+
+  /* Student detail panel */
+  .detail-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 100;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 60px 24px;
+  }
+  .detail-overlay.open { display: flex; }
+  .detail-panel {
+    background: var(--surface);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 640px;
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  }
+  .detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    z-index: 1;
+  }
+  .detail-header h2 { font-size: 16px; font-weight: 600; }
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+  .close-btn:hover { background: var(--bg); color: var(--text); }
+  .memory-list {
+    padding: 16px 20px;
+    list-style: none;
+  }
+  .memory-item {
+    padding: 10px 14px;
+    background: var(--bg);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+    word-break: break-word;
+  }
+  .memory-item:last-child { margin-bottom: 0; }
+  .empty-state {
+    padding: 40px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  /* Loading */
+  .loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>&#x1F4CA;</span> EduInsight Teacher Dashboard</h1>
+  <div class="header-right">
+    <a href="/">Student Chat</a>
+    <span id="status-dot" title="API status"></span>
+  </div>
+</header>
+
+<div class="container">
+  <!-- Stats -->
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="label">Students</div>
+      <div class="value" id="stat-students">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Memories</div>
+      <div class="value" id="stat-facts">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Avg per Student</div>
+      <div class="value" id="stat-avg">-</div>
+    </div>
+  </div>
+
+  <!-- Student table -->
+  <div class="panel">
+    <div class="panel-header">Student Memory Overview</div>
+    <div id="student-table-container">
+      <div class="loading">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Detail overlay -->
+<div class="detail-overlay" id="detail-overlay">
+  <div class="detail-panel">
+    <div class="detail-header">
+      <h2 id="detail-title">Student Memories</h2>
+      <button class="close-btn" onclick="closeDetail()">&times;</button>
+    </div>
+    <div id="detail-body">
+      <div class="loading">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const overlay = document.getElementById('detail-overlay');
+const statusDot = document.getElementById('status-dot');
+
+function formatTime(ts) {
+  if (!ts) return '-';
+  const d = new Date(ts * 1000);
+  return d.toLocaleDateString('zh-TW', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function closeDetail() {
+  overlay.classList.remove('open');
+}
+overlay.addEventListener('click', (e) => {
+  if (e.target === overlay) closeDetail();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeDetail();
+});
+
+async function loadStudents() {
+  try {
+    const res = await fetch('/teacher/students');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    document.getElementById('stat-students').textContent = data.total_students;
+    document.getElementById('stat-facts').textContent = data.total_facts;
+    document.getElementById('stat-avg').textContent =
+      data.total_students > 0
+        ? (data.total_facts / data.total_students).toFixed(1)
+        : '0';
+
+    const container = document.getElementById('student-table-container');
+
+    if (data.students.length === 0) {
+      container.innerHTML = '<div class="empty-state">No student interactions yet. Students will appear here after using the chat assistant.</div>';
+      return;
+    }
+
+    // Sort by newest activity (most recent first)
+    data.students.sort((a, b) => (b.newest_ts || 0) - (a.newest_ts || 0));
+
+    let html = '<table><thead><tr>';
+    html += '<th>Student ID</th><th>Memories</th><th>Categories</th><th>Last Active</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const s of data.students) {
+      const cats = Object.entries(s.categories || {})
+        .map(([k, v]) => `<span class="badge badge-green">${k} (${v})</span>`)
+        .join(' ') || '<span class="badge badge-amber">none</span>';
+
+      html += `<tr class="clickable" onclick="openStudent(${s.moodle_user_id})">`;
+      html += `<td><strong>moodle:${s.moodle_user_id}</strong></td>`;
+      html += `<td>${s.fact_count}</td>`;
+      html += `<td>${cats}</td>`;
+      html += `<td>${formatTime(s.newest_ts)}</td>`;
+      html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch (e) {
+    document.getElementById('student-table-container').innerHTML =
+      `<div class="empty-state">Failed to load: ${e.message}</div>`;
+    statusDot.classList.add('offline');
+  }
+}
+
+async function openStudent(moodleUserId) {
+  overlay.classList.add('open');
+  document.getElementById('detail-title').textContent = `Student moodle:${moodleUserId} — Memories`;
+  const body = document.getElementById('detail-body');
+  body.innerHTML = '<div class="loading">Loading memories...</div>';
+
+  try {
+    const res = await fetch(`/teacher/students/${moodleUserId}/memories`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    if (data.memories.length === 0) {
+      body.innerHTML = '<div class="empty-state">No memories stored for this student.</div>';
+      return;
+    }
+
+    let html = `<div style="padding:12px 20px;font-size:13px;color:var(--text-muted);border-bottom:1px solid var(--border);">${data.count} memories</div>`;
+    html += '<ul class="memory-list">';
+    for (const m of data.memories) {
+      html += `<li class="memory-item">${escapeHtml(m)}</li>`;
+    }
+    html += '</ul>';
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = `<div class="empty-state">Error: ${e.message}</div>`;
+  }
+}
+
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+// Init
+fetch('/health')
+  .then(r => r.json())
+  .then(() => statusDot.classList.remove('offline'))
+  .catch(() => statusDot.classList.add('offline'));
+
+loadStudents();
+</script>
+</body>
+</html>

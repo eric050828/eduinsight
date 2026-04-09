@@ -45,7 +45,13 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Student ID + topic controls in header
   - Welcome screen with example questions
   - Auto-resize textarea, Enter to send, typing indicator
-- [ ] Teacher dashboard UI (learning analytics view)
+- [x] Teacher dashboard UI (learning analytics view)
+  - Dashboard at `/teacher` with stats overview (students, total memories, avg per student)
+  - Student table sorted by recent activity, shows fact count + categories
+  - Click student → modal shows all stored memories
+  - API: `GET /teacher/students` (list with stats), `GET /teacher/students/{id}/memories`
+  - Uses Lite-Mem `detailed_stats()` + `list()` for data — no custom DB queries
+  - 5 new tests (48 total)
 - [ ] Demo scenario walkthrough
 
 ## Phase 4: Learning Analytics (Backend)
@@ -67,5 +73,5 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [ ] InnoServe competition materials
 
 ## Current State
-Phase: 3 (Frontend) — Student chat UI complete
-Next step: Teacher dashboard UI — show per-student memory/analytics summary
+Phase: 3 (Frontend) — Teacher dashboard complete
+Next step: Demo scenario walkthrough — seed demo data and create guided walkthrough

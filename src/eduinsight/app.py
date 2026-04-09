@@ -114,6 +114,20 @@ class RecordStruggleRequest(BaseModel):
     details: str = ""
 
 
+class StudentSummary(BaseModel):
+    moodle_user_id: int
+    fact_count: int
+    oldest_ts: float | None = None
+    newest_ts: float | None = None
+    categories: dict[str, int] = {}
+
+
+class TeacherDashboardResponse(BaseModel):
+    total_students: int
+    total_facts: int
+    students: list[StudentSummary]
+
+
 # ------------------------------------------------------------------
 # Endpoints
 # ------------------------------------------------------------------
@@ -196,6 +210,53 @@ async def get_grades(course_id: int, moodle_user_id: int) -> list[dict[str, Any]
 
 
 # ------------------------------------------------------------------
+# Teacher dashboard endpoints
+# ------------------------------------------------------------------
+
+
+@app.get("/teacher/students", response_model=TeacherDashboardResponse)
+async def teacher_students() -> TeacherDashboardResponse:
+    """List all students with memory stats for the teacher dashboard."""
+    assistant = get_assistant()
+    mem = assistant.memory
+
+    stats = mem.detailed_stats()
+    students: list[StudentSummary] = []
+    for u in stats.users:
+        # Only include moodle-namespaced users
+        if not u.user_id.startswith("moodle:"):
+            continue
+        moodle_id = int(u.user_id.removeprefix("moodle:"))
+        students.append(
+            StudentSummary(
+                moodle_user_id=moodle_id,
+                fact_count=u.fact_count,
+                oldest_ts=u.oldest,
+                newest_ts=u.newest,
+                categories=u.categories,
+            )
+        )
+
+    return TeacherDashboardResponse(
+        total_students=len(students),
+        total_facts=sum(s.fact_count for s in students),
+        students=students,
+    )
+
+
+@app.get("/teacher/students/{moodle_user_id}/memories")
+async def teacher_student_memories(moodle_user_id: int) -> dict[str, Any]:
+    """Get all memories for a specific student (teacher view)."""
+    assistant = get_assistant()
+    memories = assistant.get_all_memories(moodle_user_id)
+    return {
+        "moodle_user_id": moodle_user_id,
+        "count": len(memories),
+        "memories": memories,
+    }
+
+
+# ------------------------------------------------------------------
 # Static files & SPA
 # ------------------------------------------------------------------
 
@@ -204,6 +265,12 @@ async def get_grades(course_id: int, moodle_user_id: int) -> list[dict[str, Any]
 async def index() -> FileResponse:
     """Serve the student chat UI."""
     return FileResponse(_STATIC_DIR / "index.html")
+
+
+@app.get("/teacher")
+async def teacher_dashboard() -> FileResponse:
+    """Serve the teacher dashboard UI."""
+    return FileResponse(_STATIC_DIR / "teacher.html")
 
 
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
