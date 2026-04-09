@@ -62,12 +62,16 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - 2 new tests (50 total)
 
 ## Phase 4: Learning Analytics (Backend)
-- [ ] Extract learning patterns from Lite-Mem memory
-  - Weak topics per student
-  - Common class-wide struggles
-  - Learning trajectory over time
-- [ ] Teacher dashboard API endpoints
-- [ ] Tests
+- [x] Extract learning patterns from Lite-Mem memory (analytics.py)
+  - Weak topics per student (struggles parsed from memory facts)
+  - Common class-wide struggles (aggregated across all students)
+  - Question topic distribution per student and class-wide
+  - Learning preferences extraction
+- [x] Analytics API endpoints
+  - GET /analytics/student/{id} — per-student struggles, weak topics, preferences
+  - GET /analytics/class — class-wide common struggles, topic distribution
+- [x] Tests (12 new tests, 62 total)
+- [ ] Learning trajectory over time (needs timestamp-based analysis)
 
 ## Phase 5: Moodle Plugin / Integration
 - [ ] Moodle block plugin or LTI integration
@@ -80,5 +84,6 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [ ] InnoServe competition materials
 
 ## Current State
-Phase: 3 (Frontend) — Complete
-Next step: Phase 4 — Learning analytics backend (extract patterns from Lite-Mem memory)
+Phase: 4 (Learning Analytics) — In Progress
+Done: analytics module with pattern extraction, API endpoints, 12 tests
+Next step: Learning trajectory over time (timestamp-based trend analysis)

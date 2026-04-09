@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from litemem import Memory
 from pydantic import BaseModel
 
+from .analytics import ClassAnalytics, StudentAnalytics, analyze_class, analyze_student
 from .assistant import LearningAssistant
 from .config import settings
 from .llm import LLMClient, resolve_llm_config
@@ -255,6 +256,60 @@ async def teacher_student_memories(moodle_user_id: int) -> dict[str, Any]:
         "count": len(memories),
         "memories": memories,
     }
+
+
+# ------------------------------------------------------------------
+# Analytics endpoints
+# ------------------------------------------------------------------
+
+
+class StruggleResponse(BaseModel):
+    topic: str
+    details: str = ""
+
+
+class StudentAnalyticsResponse(BaseModel):
+    moodle_user_id: int
+    total_facts: int
+    struggles: list[StruggleResponse]
+    weak_topics: list[str]
+    question_topics: dict[str, int]
+    preferences: list[str]
+
+
+class ClassAnalyticsResponse(BaseModel):
+    total_students: int
+    total_facts: int
+    common_struggles: list[list[Any]]  # [[topic, count], ...]
+    topic_distribution: dict[str, int]
+
+
+@app.get("/analytics/student/{moodle_user_id}", response_model=StudentAnalyticsResponse)
+async def get_student_analytics(moodle_user_id: int) -> StudentAnalyticsResponse:
+    """Get learning analytics for a specific student."""
+    assistant = get_assistant()
+    sa = analyze_student(assistant.memory, moodle_user_id)
+    return StudentAnalyticsResponse(
+        moodle_user_id=sa.moodle_user_id,
+        total_facts=sa.total_facts,
+        struggles=[StruggleResponse(topic=s.topic, details=s.details) for s in sa.struggles],
+        weak_topics=sa.weak_topics,
+        question_topics=sa.question_topics,
+        preferences=sa.preferences,
+    )
+
+
+@app.get("/analytics/class", response_model=ClassAnalyticsResponse)
+async def get_class_analytics() -> ClassAnalyticsResponse:
+    """Get class-wide learning analytics (common struggles, topic distribution)."""
+    assistant = get_assistant()
+    ca = analyze_class(assistant.memory)
+    return ClassAnalyticsResponse(
+        total_students=ca.total_students,
+        total_facts=ca.total_facts,
+        common_struggles=[[t, c] for t, c in ca.common_struggles],
+        topic_distribution=ca.topic_distribution,
+    )
 
 
 # ------------------------------------------------------------------
