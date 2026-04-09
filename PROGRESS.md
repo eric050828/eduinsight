@@ -24,7 +24,13 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Memory-augmented prompt: retrieves relevant memories → builds context → LLM generates answer
   - Records Q&A interaction back to memory for future context
 - [x] Tests for memory integration (15 new tests, 29 total)
-- [ ] add_conversation integration (use Lite-Mem's fact extraction on chat history)
+- [x] add_conversation integration (use Lite-Mem's fact extraction on chat history)
+  - extract_from_conversation() wraps Lite-Mem add_conversation for automatic fact extraction
+  - answer() now uses add_conversation (stub extractor by default) instead of manual Q&A storage
+  - Falls back to record_interaction() when no facts are extracted (e.g. pure academic Q&A)
+  - AssistantResponse.extracted_facts field exposes what was extracted
+  - Configurable extractor: stub (default, offline), auto, gemini, groq, ollama
+  - 8 new tests (37 total)
 - [ ] Semantic search with embeddings (enable Lite-Mem embedder="auto")
 
 ## Phase 3: Learning Analytics
@@ -47,4 +53,4 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 
 ## Current State
 Phase: 2 (Memory Integration)
-Next step: Get GEMINI_API_KEY for live testing, then add Lite-Mem add_conversation integration for richer fact extraction from chat history
+Next step: Enable semantic search with embeddings (Lite-Mem embedder="auto") for richer memory retrieval beyond keyword matching

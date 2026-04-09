@@ -53,6 +53,7 @@ class AssistantResponse:
     answer: str
     memory_context: list[str]  # Relevant memories used to inform the answer
     memories_stored: int  # Number of new memories stored from this interaction
+    extracted_facts: list[str] | None = None  # Facts extracted by add_conversation
 
 
 class LearningAssistant:
@@ -79,9 +80,16 @@ class LearningAssistant:
         response = await assistant.answer(moodle_user_id=42, question="What is OOP?")
     """
 
-    def __init__(self, memory: Memory, *, llm: LLMClient | None = None) -> None:
+    def __init__(
+        self,
+        memory: Memory,
+        *,
+        llm: LLMClient | None = None,
+        extractor: str = "stub",
+    ) -> None:
         self._memory = memory
         self._llm = llm
+        self._extractor = extractor
 
     @property
     def memory(self) -> Memory:
@@ -208,14 +216,63 @@ class LearningAssistant:
         # 3. Call LLM
         reply = await self._llm.chat(user_prompt, system_prompt=SYSTEM_PROMPT)
 
-        # 4. Record the interaction
-        self.record_interaction(moodle_user_id, question, reply, topic=topic)
+        # 4. Extract facts from conversation using Lite-Mem add_conversation
+        facts = self.extract_from_conversation(
+            moodle_user_id, question, reply, topic=topic
+        )
+
+        # Fall back to basic recording if extraction found nothing
+        if not facts:
+            self.record_interaction(moodle_user_id, question, reply, topic=topic)
+            return AssistantResponse(
+                answer=reply,
+                memory_context=context,
+                memories_stored=2,
+                extracted_facts=None,
+            )
 
         return AssistantResponse(
             answer=reply,
             memory_context=context,
-            memories_stored=2,  # Q + A
+            memories_stored=len(facts),
+            extracted_facts=facts,
         )
+
+    def extract_from_conversation(
+        self,
+        moodle_user_id: int,
+        question: str,
+        answer: str,
+        *,
+        topic: str = "",
+    ) -> list[str]:
+        """Extract and store facts from a Q&A interaction using Lite-Mem's add_conversation.
+
+        Uses Lite-Mem's fact extraction (stub/gemini/groq/ollama) to automatically
+        identify and store meaningful facts from the conversation, rather than
+        storing raw Q&A text.
+
+        Args:
+            moodle_user_id: The student's Moodle user ID.
+            question: The student's question.
+            answer: The assistant's answer.
+            topic: Optional topic tag (included as context for the extractor).
+
+        Returns:
+            List of extracted fact strings stored in memory.
+        """
+        uid = _student_uid(moodle_user_id)
+        q_content = f"[{topic}] {question}" if topic else question
+        messages = [
+            {"role": "user", "content": q_content},
+            {"role": "assistant", "content": answer},
+        ]
+        facts = self._memory.add_conversation(uid, messages, extractor=self._extractor)
+        logger.debug(
+            "Extracted %d facts for user %s from conversation (extractor=%s)",
+            len(facts), uid, self._extractor,
+        )
+        return facts
 
     def record_interaction(
         self,
