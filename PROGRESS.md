@@ -87,8 +87,18 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Config info: GET /lti/config (setup instructions for Moodle admins)
   - In-memory session/launch cache (single-process demo)
   - 11 new tests (82 total)
-- [ ] Configure & test with Docker Moodle instance
-- [ ] Embed chat assistant in Moodle course page
+- [x] Configure & test with Docker Moodle instance
+  - Docker Compose: Moodle 4 + MariaDB (docker-compose.moodle.yml)
+  - Registered EduInsight as LTI 1.3 External Tool (client_id: HfGbuDZTj36GZgR)
+  - Configured: Tool URL, Login URL, JWKS URL, Redirect URI
+  - Privacy: shares launcher name + email
+  - Created test course "AI 程式設計導論" (CS101-AI) with External Tool activity
+  - Fixed 2 bugs: missing CookieService._get_key(), incorrect redirect() return handling
+  - End-to-end LTI launch verified: OIDC login → JWT validation → chat UI embedded in iframe
+  - LTI claims correctly extracted: user_id=2, name=Admin User, course=CS101-AI
+- [x] Embed chat assistant in Moodle course page
+  - Chat UI loads inside Moodle iframe via LTI 1.3 resource link launch
+  - Full sidebar navigation, student selector, and chat interface visible
 - [ ] Real-time analytics in Moodle teacher view
 
 ## Phase 6: Demo & Polish
@@ -110,6 +120,6 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] 71 tests passing
 
 ## Current State
-Phase: 5 (Moodle Integration) — LTI 1.3 provider implemented
-Done: LTI 1.3 FastAPI adapter with OIDC login, resource launch, JWKS, config endpoints (82 tests)
-Next step: Set up Docker Moodle → configure EduInsight as External Tool → test end-to-end LTI launch
+Phase: 5 (Moodle Integration) — LTI 1.3 end-to-end verified with Docker Moodle
+Done: LTI 1.3 complete flow working (OIDC login → JWT validation → chat UI in Moodle iframe), 82 tests passing
+Next step: Add real-time analytics view accessible from Moodle teacher context

@@ -92,6 +92,10 @@ class FastAPICookieService(_CookieService):
         self._request = lti_request
         self._cookie_data_to_set: dict[str, dict[str, Any]] = {}
 
+    def _get_key(self, name: str) -> str:
+        """Build the actual cookie key with the LTI prefix."""
+        return f"{self._cookie_prefix}-{name}"
+
     def get_cookie(self, name: str) -> Optional[str]:
         key = self._get_key(name)
         return self._request._request.cookies.get(key)
@@ -210,15 +214,26 @@ def _get_tool_config() -> ToolConfDict:
     In production, these would come from a config file or database.
     For demo, we use a ToolConfDict that can be populated at runtime.
     """
-    from .config import settings
-
-    # LTI config is loaded from lti_config.json if it exists
     import os
     config_path = os.path.join(os.path.dirname(__file__), "lti_config.json")
     if os.path.exists(config_path):
         with open(config_path) as f:
             config_data = json.load(f)
-        return ToolConfDict(config_data)
+        tool_conf = ToolConfDict(config_data)
+
+        # Set the RSA private key for each issuer/client_id pair
+        private_key = get_private_key()
+        for iss, clients in config_data.items():
+            if isinstance(clients, list):
+                for client in clients:
+                    tool_conf.set_private_key(
+                        iss, private_key, client_id=client.get("client_id")
+                    )
+            elif isinstance(clients, dict) and clients.get("client_id"):
+                tool_conf.set_private_key(
+                    iss, private_key, client_id=clients.get("client_id")
+                )
+        return tool_conf
 
     # Default empty config (must be configured before use)
     return ToolConfDict({})
@@ -286,8 +301,8 @@ async def lti_login(request: Request) -> Response:
     try:
         oidc_login = FastAPIOIDCLogin(lti_request, tool_config)
         target_link_uri = form_data.get("target_link_uri", str(request.url_for("lti_launch")))
-        redirect = oidc_login.enable_check_cookies().redirect(target_link_uri)
-        return redirect.do_js_redirect()
+        # redirect() already returns a Response (calls do_redirect internally)
+        return oidc_login.redirect(target_link_uri, js_redirect=True)
     except Exception as e:
         logger.error("LTI login failed: %s", e)
         return HTMLResponse(
