@@ -31,7 +31,11 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - AssistantResponse.extracted_facts field exposes what was extracted
   - Configurable extractor: stub (default, offline), auto, gemini, groq, ollama
   - 8 new tests (37 total)
-- [ ] Semantic search with embeddings (enable Lite-Mem embedder="auto")
+- [x] Semantic search with embeddings (enable Lite-Mem embedder="auto")
+  - config.py: added `memory_embedder` setting (default "auto")
+  - app.py: passes embedder to Memory() constructor for hybrid search (60% cosine + 40% FTS5)
+  - Auto-detects: GeminiEmbedder when GEMINI_API_KEY set, else StubEmbedder (offline)
+  - 7 new tests (test_embeddings.py), 43 total
 
 ## Phase 3: Learning Analytics
 - [ ] Extract learning patterns from Lite-Mem memory
@@ -52,5 +56,5 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [ ] InnoServe competition materials
 
 ## Current State
-Phase: 2 (Memory Integration)
-Next step: Enable semantic search with embeddings (Lite-Mem embedder="auto") for richer memory retrieval beyond keyword matching
+Phase: 2 complete → Phase 3 (Learning Analytics)
+Next step: Extract learning patterns from Lite-Mem memory — start with weak topic detection per student

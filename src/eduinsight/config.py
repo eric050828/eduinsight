@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # Lite-Mem storage
     memory_db_path: str = "eduinsight.db"
     memory_top_k: int = 8
+    memory_embedder: str = "auto"  # "auto", "stub", "gemini", or "" to disable
 
     # Server
     host: str = "127.0.0.1"
