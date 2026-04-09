@@ -429,6 +429,72 @@ async def demo_reset() -> DemoResetResponse:
     )
 
 
+class SemesterDemoResponse(BaseModel):
+    status: str
+    student_id: str
+    weeks_seeded: int
+    total_memories: int
+
+
+@app.post("/demo/semester", response_model=SemesterDemoResponse)
+async def demo_semester() -> SemesterDemoResponse:
+    """Seed a semester-long demo for student 2001 with time-spread data.
+
+    Creates 18 weeks of learning interactions with backdated timestamps
+    to demonstrate learning trajectory and memory accumulation over time.
+    """
+    global _memory, _assistant
+    import time as _time
+
+    from .semester_demo import SEMESTER_STUDENT_ID, SEMESTER_WEEKS
+
+    db_path = settings.memory_db_path
+    embedder = settings.memory_embedder or None
+
+    # Clear existing data for this student
+    if _memory is not None:
+        try:
+            for fact in _memory.list(SEMESTER_STUDENT_ID):
+                _memory.delete(SEMESTER_STUDENT_ID, fact)
+        except Exception:
+            pass
+
+    _memory = Memory(db_path, embedder=embedder)
+    _assistant = LearningAssistant(_memory, llm=_llm)
+
+    # Calculate timestamps: week 1 starts 18 weeks ago from now
+    now = _time.time()
+    week_seconds = 7 * 24 * 3600
+    semester_start = now - (18 * week_seconds)
+
+    total_seeded = 0
+    for week_data in SEMESTER_WEEKS:
+        week_base_ts = semester_start + (week_data.week - 1) * week_seconds
+        for i, (fact_text, category) in enumerate(week_data.facts):
+            _memory.add(SEMESTER_STUDENT_ID, fact_text, category=category)
+            total_seeded += 1
+
+            # Backdate the timestamp via direct DB update
+            # Each fact within a week is spaced ~1 day apart
+            target_ts = week_base_ts + i * 24 * 3600
+            conn = _memory._store._get_conn()
+            conn.execute(
+                "UPDATE facts SET created_at = ?, updated_at = ? "
+                "WHERE user_id = ? AND fact_text = ?",
+                (target_ts, target_ts, SEMESTER_STUDENT_ID, fact_text),
+            )
+            conn.commit()
+
+    actual_total = len(_memory.list(SEMESTER_STUDENT_ID))
+
+    return SemesterDemoResponse(
+        status="seeded",
+        student_id=SEMESTER_STUDENT_ID,
+        weeks_seeded=len(SEMESTER_WEEKS),
+        total_memories=actual_total,
+    )
+
+
 # ------------------------------------------------------------------
 # Static files & SPA
 # ------------------------------------------------------------------
@@ -450,6 +516,12 @@ async def teacher_dashboard() -> FileResponse:
 async def demo_walkthrough() -> FileResponse:
     """Serve the demo walkthrough page."""
     return FileResponse(_STATIC_DIR / "demo.html")
+
+
+@app.get("/semester")
+async def semester_page() -> FileResponse:
+    """Serve the semester demo timeline page."""
+    return FileResponse(_STATIC_DIR / "semester.html")
 
 
 # LTI 1.3 integration

@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduInsight - 學期歷程模擬</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface-2: #334155;
+    --primary: #6366f1;
+    --primary-hover: #818cf8;
+    --primary-glow: rgba(99,102,241,0.15);
+    --accent: #22d3ee;
+    --accent-2: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --border: #334155;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* Header */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 18px; font-weight: 700;
+  }
+  .logo-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .header-nav {
+    display: flex; gap: 16px; font-size: 13px;
+  }
+  .header-nav a {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .header-nav a:hover { color: var(--accent); }
+
+  /* Main layout */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 24px;
+  }
+
+  /* Hero */
+  .hero {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .hero h2 {
+    font-size: 26px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--primary-hover), var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+  .hero p {
+    font-size: 14px;
+    color: var(--text-muted);
+    max-width: 600px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* Seed button */
+  .seed-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 32px;
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .seed-bar.seeded { border-color: var(--green); }
+  .seed-btn {
+    padding: 10px 28px;
+    background: var(--primary);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .seed-btn:hover { background: var(--primary-hover); }
+  .seed-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .seed-status {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .seed-status.ok { color: var(--green); }
+  .seed-status.err { color: var(--red); }
+
+  /* Stats bar */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .stat-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-top: 4px;
+    letter-spacing: 0.5px;
+  }
+
+  /* Timeline */
+  .timeline {
+    position: relative;
+    padding-left: 40px;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+
+  .week-card {
+    position: relative;
+    margin-bottom: 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .week-card:hover { border-color: var(--primary); }
+
+  .week-dot {
+    position: absolute;
+    left: -33px;
+    top: 18px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    border: 2px solid var(--text-dim);
+    z-index: 1;
+  }
+  .week-card.active .week-dot {
+    background: var(--primary);
+    border-color: var(--primary-hover);
+    box-shadow: 0 0 8px var(--primary-glow);
+  }
+
+  .week-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .week-badge {
+    background: var(--primary-glow);
+    color: var(--primary-hover);
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 20px;
+    white-space: nowrap;
+  }
+  .week-title {
+    flex: 1;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .week-meta {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .week-toggle {
+    color: var(--text-dim);
+    font-size: 14px;
+    transition: transform 0.2s;
+  }
+  .week-card.open .week-toggle { transform: rotate(90deg); }
+
+  .week-body {
+    display: none;
+    padding: 0 18px 16px;
+    border-top: 1px solid var(--border);
+  }
+  .week-card.open .week-body { display: block; }
+
+  .fact-list {
+    list-style: none;
+    margin-top: 12px;
+  }
+  .fact-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    line-height: 1.5;
+    background: rgba(255,255,255,0.03);
+  }
+  .fact-icon {
+    flex-shrink: 0;
+    width: 20px;
+    text-align: center;
+    font-size: 14px;
+    margin-top: 1px;
+  }
+  .fact-text { color: var(--text-muted); }
+  .fact-item.struggling { background: rgba(248,113,113,0.08); }
+  .fact-item.struggling .fact-text { color: var(--red); }
+  .fact-item.preference { background: rgba(167,139,250,0.08); }
+  .fact-item.preference .fact-text { color: var(--accent-2); }
+
+  /* Trajectory chart (simple CSS bar chart) */
+  .trajectory-section {
+    margin-top: 32px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+  .trajectory-title {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .chart-container {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 120px;
+    padding: 0 4px;
+  }
+  .chart-bar-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    height: 100%;
+    justify-content: flex-end;
+  }
+  .chart-bar {
+    width: 100%;
+    max-width: 36px;
+    background: var(--primary);
+    border-radius: 4px 4px 0 0;
+    min-height: 2px;
+    transition: height 0.4s ease;
+  }
+  .chart-bar.struggle {
+    background: var(--red);
+    opacity: 0.7;
+  }
+  .chart-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 6px;
+    text-align: center;
+  }
+  .chart-legend {
+    display: flex;
+    gap: 20px;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  /* Action links */
+  .action-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+    justify-content: center;
+  }
+  .action-link {
+    padding: 8px 20px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    text-decoration: none;
+    border-radius: 8px;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+  .action-link:hover { background: var(--primary-glow); color: var(--primary-hover); }
+
+  @media (max-width: 700px) {
+    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+    .timeline { padding-left: 30px; }
+    .week-dot { left: -23px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">&#x1F393;</div>
+    <span>EduInsight</span>
+  </div>
+  <div class="header-nav">
+    <a href="/">Student Chat</a>
+    <a href="/teacher">Teacher Dashboard</a>
+    <a href="/demo">Quick Demo</a>
+  </div>
+</header>
+
+<div class="container">
+  <div class="hero">
+    <h2>&#x1F4C5; 學期歷程模擬</h2>
+    <p>模擬一位學生（林小明）18 週的學習旅程，展示 EduInsight 如何隨時間累積記憶、追蹤學習軌跡、並提供個人化輔助。</p>
+  </div>
+
+  <!-- Seed bar -->
+  <div class="seed-bar" id="seed-bar">
+    <button class="seed-btn" id="seed-btn" onclick="seedSemester()">載入學期資料</button>
+    <span class="seed-status" id="seed-status"></span>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-bar" id="stats-bar" style="display:none;">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-weeks">0</div>
+      <div class="stat-label">學習週數</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-facts">0</div>
+      <div class="stat-label">累積記憶</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-struggles">0</div>
+      <div class="stat-label">困難點</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-topics">0</div>
+      <div class="stat-label">涵蓋主題</div>
+    </div>
+  </div>
+
+  <!-- Timeline -->
+  <div class="timeline" id="timeline"></div>
+
+  <!-- Trajectory chart -->
+  <div class="trajectory-section" id="trajectory-section" style="display:none;">
+    <div class="trajectory-title">&#x1F4C8; 學習軌跡</div>
+    <div class="chart-container" id="chart"></div>
+    <div class="chart-legend">
+      <span><span class="legend-dot" style="background:var(--primary)"></span>新增記憶</span>
+      <span><span class="legend-dot" style="background:var(--red);opacity:0.7"></span>新增困難</span>
+    </div>
+  </div>
+
+  <!-- Action links -->
+  <div class="action-row" id="action-row" style="display:none;">
+    <a class="action-link" href="/#student=2001">&#x1F4AC; 以林小明身份聊天</a>
+    <a class="action-link" href="/teacher" target="_blank">&#x1F4CA; 查看教師儀表板</a>
+    <a class="action-link" href="/analytics/student/2001" target="_blank">&#x1F50D; 查看分析 API</a>
+  </div>
+</div>
+
+<script>
+// Week data (mirrors semester_demo.py for UI rendering)
+const WEEKS = [
+  { week: 1, title: "Python 入門：變數與型別", phase: "basics",
+    facts: [
+      { text: "學習了 int, float, str, bool 基本型別", cat: "general" },
+      { text: "詢問了 Python 變數命名規則", cat: "general" },
+      { text: "偏好中文說明搭配英文程式碼範例", cat: "preference" },
+    ]},
+  { week: 2, title: "條件判斷與邏輯", phase: "basics",
+    facts: [
+      { text: "學習 if-elif-else 結構", cat: "general" },
+      { text: "布林運算子：and, or, not 與短路求值", cat: "general" },
+      { text: "詢問如何避免巢狀 if 過深", cat: "general" },
+    ]},
+  { week: 3, title: "迴圈基礎", phase: "basics",
+    facts: [
+      { text: "學習 for 迴圈與 range()", cat: "general" },
+      { text: "學習 while 迴圈與 break/continue", cat: "general" },
+      { text: "困難：迴圈終止條件判斷", cat: "struggling" },
+    ]},
+  { week: 4, title: "列表與元組", phase: "data-structures",
+    facts: [
+      { text: "列表操作：append, insert, pop, slice", cat: "general" },
+      { text: "列表推導式 (list comprehension)", cat: "general" },
+      { text: "詢問 list vs tuple 的差異", cat: "general" },
+    ]},
+  { week: 5, title: "字典與集合", phase: "data-structures",
+    facts: [
+      { text: "字典方法：get(), keys(), values(), items()", cat: "general" },
+      { text: "集合運算：聯集、交集、差集", cat: "general" },
+      { text: "困難：字典迭代方式混淆", cat: "struggling" },
+    ]},
+  { week: 6, title: "巢狀資料結構", phase: "data-structures",
+    facts: [
+      { text: "巢狀結構：list of dicts, dict of lists", cat: "general" },
+      { text: "JSON 與 Python dict 的轉換", cat: "general" },
+      { text: "困難：巢狀存取常遇 IndexError/KeyError", cat: "struggling" },
+    ]},
+  { week: 7, title: "類別與物件", phase: "oop",
+    facts: [
+      { text: "class 定義、__init__、self 參數", cat: "general" },
+      { text: "詢問為什麼方法需要 self", cat: "general" },
+      { text: "方法類型：instance, class, static", cat: "general" },
+    ]},
+  { week: 8, title: "繼承與多型", phase: "oop",
+    facts: [
+      { text: "繼承語法與 super().__init__()", cat: "general" },
+      { text: "多型與 duck typing", cat: "general" },
+      { text: "困難：MRO 菱形繼承混淆", cat: "struggling" },
+      { text: "困難：忘記呼叫 super().__init__()", cat: "struggling" },
+    ]},
+  { week: 9, title: "特殊方法與封裝", phase: "oop",
+    facts: [
+      { text: "Dunder 方法：__str__, __repr__, __eq__", cat: "general" },
+      { text: "封裝：_private 慣例、@property", cat: "general" },
+      { text: "詢問抽象類別如何強制子類實作方法", cat: "general" },
+    ]},
+  { week: 10, title: "遞迴入門", phase: "algorithms",
+    facts: [
+      { text: "遞迴基礎：base case + recursive case", cat: "general" },
+      { text: "詢問 factorial(5) 逐步追蹤", cat: "general" },
+      { text: "困難：無法將迭代解轉換為遞迴", cat: "struggling" },
+    ]},
+  { week: 11, title: "排序與搜尋", phase: "algorithms",
+    facts: [
+      { text: "排序比較：bubble, merge, Timsort", cat: "general" },
+      { text: "二分搜尋：已排序陣列、O(log n)", cat: "general" },
+      { text: "詢問排序穩定性的意義", cat: "general" },
+    ]},
+  { week: 12, title: "時間複雜度分析", phase: "algorithms",
+    facts: [
+      { text: "Big-O 規則：忽略常數、取主導項", cat: "general" },
+      { text: "常見複雜度：O(1), O(log n), O(n), O(n²)", cat: "general" },
+      { text: "困難：O(n log n) 和攤銷分析", cat: "struggling" },
+    ]},
+  { week: 13, title: "檔案處理與例外", phase: "practical",
+    facts: [
+      { text: "File I/O：context manager、read/write 模式", cat: "general" },
+      { text: "例外處理：try/except/else/finally", cat: "general" },
+      { text: "詢問 UnicodeDecodeError 的原因", cat: "general" },
+    ]},
+  { week: 14, title: "模組與套件管理", phase: "practical",
+    facts: [
+      { text: "模組系統：import、__name__=='__main__'", cat: "general" },
+      { text: "虛擬環境：venv/uv、pyproject.toml", cat: "general" },
+      { text: "進步：現在可以直接閱讀英文文件", cat: "preference" },
+    ]},
+  { week: 15, title: "單元測試", phase: "practical",
+    facts: [
+      { text: "Pytest：test_ 前綴、assert、fixtures", cat: "general" },
+      { text: "測試模式：AAA、parametrize、mock", cat: "general" },
+      { text: "詢問測試覆蓋率多少才夠", cat: "general" },
+    ]},
+  { week: 16, title: "期末專題：設計階段", phase: "project",
+    facts: [
+      { text: "架構規劃：MVC 模式、分層設計", cat: "general" },
+      { text: "詢問 Python 專案多模組的組織方式", cat: "general" },
+      { text: "資料庫選擇：SQLite 簡單優先", cat: "general" },
+    ]},
+  { week: 17, title: "期末專題：實作階段", phase: "project",
+    facts: [
+      { text: "學會使用 pdb 和 VS Code debugger", cat: "general" },
+      { text: "Git 工作流：分支、commit、合併衝突", cat: "general" },
+      { text: "詢問 code review 要注意什麼", cat: "general" },
+    ]},
+  { week: 18, title: "期末回顧與反思", phase: "project",
+    facts: [
+      { text: "學期反思：資料結構和 File I/O 最強", cat: "general" },
+      { text: "成長：克服迴圈問題、進步到能讀英文文件", cat: "general" },
+      { text: "偏好：複雜問題偏好逐步除錯演練", cat: "preference" },
+    ]},
+];
+
+const PHASE_COLORS = {
+  basics: 'var(--accent)',
+  'data-structures': 'var(--green)',
+  oop: 'var(--amber)',
+  algorithms: 'var(--red)',
+  practical: 'var(--accent-2)',
+  project: 'var(--primary-hover)',
+};
+
+const PHASE_LABELS = {
+  basics: 'Python 基礎',
+  'data-structures': '資料結構',
+  oop: '物件導向',
+  algorithms: '演算法',
+  practical: '實務技能',
+  project: '期末專題',
+};
+
+function renderTimeline() {
+  const container = document.getElementById('timeline');
+  container.innerHTML = '';
+
+  WEEKS.forEach(w => {
+    const struggles = w.facts.filter(f => f.cat === 'struggling').length;
+    const phaseColor = PHASE_COLORS[w.phase] || 'var(--text-dim)';
+
+    const card = document.createElement('div');
+    card.className = 'week-card';
+    card.innerHTML = `
+      <div class="week-dot"></div>
+      <div class="week-header" onclick="toggleWeek(this)">
+        <span class="week-badge" style="background:${phaseColor}20;color:${phaseColor}">W${w.week}</span>
+        <span class="week-title">${w.title}</span>
+        <span class="week-meta">${w.facts.length} 筆記憶${struggles ? ' · ' + struggles + ' 困難' : ''}</span>
+        <span class="week-toggle">&#x25B6;</span>
+      </div>
+      <div class="week-body">
+        <ul class="fact-list">
+          ${w.facts.map(f => `
+            <li class="fact-item ${f.cat}">
+              <span class="fact-icon">${f.cat === 'struggling' ? '&#x26A0;' : f.cat === 'preference' ? '&#x2B50;' : '&#x1F4DD;'}</span>
+              <span class="fact-text">${f.text}</span>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+    `;
+    container.appendChild(card);
+  });
+}
+
+function toggleWeek(header) {
+  header.parentElement.classList.toggle('open');
+}
+
+function renderChart() {
+  const chart = document.getElementById('chart');
+  const maxFacts = Math.max(...WEEKS.map(w => w.facts.length));
+
+  chart.innerHTML = WEEKS.map(w => {
+    const total = w.facts.length;
+    const struggles = w.facts.filter(f => f.cat === 'struggling').length;
+    const factH = Math.round((total / maxFacts) * 100);
+    const strugH = Math.round((struggles / maxFacts) * 100);
+    return `
+      <div class="chart-bar-group">
+        <div class="chart-bar" style="height:${factH}%" title="${total} 筆記憶"></div>
+        ${strugH > 0 ? `<div class="chart-bar struggle" style="height:${strugH}%" title="${struggles} 困難"></div>` : ''}
+        <span class="chart-label">W${w.week}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function updateStats() {
+  const totalFacts = WEEKS.reduce((s, w) => s + w.facts.length, 0);
+  const totalStruggles = WEEKS.reduce((s, w) => s + w.facts.filter(f => f.cat === 'struggling').length, 0);
+  const topics = new Set(WEEKS.map(w => w.phase));
+
+  document.getElementById('stat-weeks').textContent = WEEKS.length;
+  document.getElementById('stat-facts').textContent = totalFacts;
+  document.getElementById('stat-struggles').textContent = totalStruggles;
+  document.getElementById('stat-topics').textContent = topics.size;
+}
+
+async function seedSemester() {
+  const btn = document.getElementById('seed-btn');
+  const status = document.getElementById('seed-status');
+  const bar = document.getElementById('seed-bar');
+
+  btn.disabled = true;
+  btn.textContent = '載入中...';
+  status.textContent = '';
+  status.className = 'seed-status';
+
+  try {
+    const res = await fetch('/demo/semester', { method: 'POST' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    status.textContent = `已載入 ${data.weeks_seeded} 週、${data.total_memories} 筆記憶`;
+    status.className = 'seed-status ok';
+    bar.classList.add('seeded');
+    btn.textContent = '重新載入';
+
+    // Show all sections
+    document.getElementById('stats-bar').style.display = 'grid';
+    document.getElementById('trajectory-section').style.display = 'block';
+    document.getElementById('action-row').style.display = 'flex';
+    updateStats();
+    renderChart();
+
+    // Activate all week dots
+    document.querySelectorAll('.week-card').forEach(c => c.classList.add('active'));
+  } catch (e) {
+    status.textContent = `錯誤：${e.message}`;
+    status.className = 'seed-status err';
+    btn.textContent = '載入學期資料';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Render timeline on load (UI only, no data seeded yet)
+renderTimeline();
+</script>
+</body>
+</html>

@@ -110,7 +110,15 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - 8 new role detection tests (90 total)
 
 ## Phase 6: Demo & Polish
-- [ ] Demo scenario: student uses assistant for a semester
+- [x] Demo scenario: student uses assistant for a semester
+  - semester_demo.py: 18-week learning journey for student 2001 (林小明)
+  - Story arc: Python basics → data structures → OOP → algorithms → practical → final project
+  - POST /demo/semester: seeds time-spread data with backdated timestamps
+  - GET /semester: timeline UI showing week-by-week progression
+  - Trajectory chart: visual bar chart of memory accumulation and struggles per week
+  - Stats overview: total weeks, cumulative memories, struggle count, topic coverage
+  - Direct links to chat as student 2001, teacher dashboard, and analytics API
+  - 11 new tests (101 total)
 - [ ] Export/import memory (Lite-Mem portable format)
 - [ ] InnoServe competition materials
 
@@ -128,6 +136,6 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] 71 tests passing
 
 ## Current State
-Phase: 5 (Moodle Integration) — Complete ✅
-Done: LTI 1.3 full flow with role-based routing (instructor→dashboard, student→chat), real-time analytics in teacher view, 90 tests passing
-Next step: Phase 6 — Demo scenario (student uses assistant for a semester)
+Phase: 6 (Demo & Polish) — In Progress
+Done: Semester demo with 18-week timeline, time-spread memory seeding, trajectory visualization, 101 tests passing
+Next step: Export/import memory (Lite-Mem portable format) or InnoServe competition materials
