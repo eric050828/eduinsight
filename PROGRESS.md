@@ -88,7 +88,20 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [ ] Export/import memory (Lite-Mem portable format)
 - [ ] InnoServe competition materials
 
+## Hotfix: Demo Memory Dedup (2026-04-10)
+- [x] Fix demo_data.py — unique fact prefixes to prevent Lite-Mem prefix-based dedup
+  - Old: 45 seeded → 16 survived (35%); New: 45 seeded → 45 survived (100%)
+  - Each fact now has unique text before first colon
+- [x] Add category labels to demo data (struggling/preference/general)
+  - Teacher dashboard now shows category breakdown per student
+- [x] Update /demo/reset to verify actual stored count (not just seeded count)
+- [x] Update analytics regex to handle new "Struggling with TOPIC:" format
+- [x] Add ClaudeCLIClient — LLM via `claude -p` (no API key needed)
+- [x] Redesign index.html as dark theme SPA with sidebar nav
+  - Embeds teacher dashboard + analytics views (no separate page needed)
+- [x] 71 tests passing
+
 ## Current State
-Phase: 4 (Learning Analytics) — Complete
-Done: analytics module with pattern extraction, trajectory tracking, API endpoints, 21 tests
-Next step: Phase 5 — Moodle Plugin / Integration (LTI or block plugin)
+Phase: 4 (Learning Analytics) — Complete, demo memory issues fixed
+Done: demo data fixed (45/45 survival), category labels, dark theme SPA, ClaudeCLI fallback
+Next step: Set up LLM (GEMINI_API_KEY or test Claude CLI) → Phase 5 Moodle integration
