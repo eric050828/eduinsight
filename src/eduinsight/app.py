@@ -31,6 +31,7 @@ from .analytics import (
 from .assistant import LearningAssistant
 from .config import settings
 from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
+from .lti import router as lti_router
 from .moodle import MoodleClient
 
 logger = logging.getLogger(__name__)
@@ -450,5 +451,8 @@ async def demo_walkthrough() -> FileResponse:
     """Serve the demo walkthrough page."""
     return FileResponse(_STATIC_DIR / "demo.html")
 
+
+# LTI 1.3 integration
+app.include_router(lti_router)
 
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")

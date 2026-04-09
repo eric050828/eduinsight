@@ -79,7 +79,15 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - 9 new tests (71 total)
 
 ## Phase 5: Moodle Plugin / Integration
-- [ ] Moodle block plugin or LTI integration
+- [x] LTI 1.3 tool provider (FastAPI adapter for PyLTI1p3)
+  - FastAPI adapter: Request, CookieService, SessionService, Redirect, OIDCLogin, MessageLaunch
+  - OIDC login endpoint: POST /lti/login (handles Moodle OIDC initiation)
+  - Resource link launch: POST /lti/launch (validates JWT, extracts user/course, redirects to chat)
+  - JWKS endpoint: GET /lti/jwks (RSA key pair auto-generated, serves public key)
+  - Config info: GET /lti/config (setup instructions for Moodle admins)
+  - In-memory session/launch cache (single-process demo)
+  - 11 new tests (82 total)
+- [ ] Configure & test with Docker Moodle instance
 - [ ] Embed chat assistant in Moodle course page
 - [ ] Real-time analytics in Moodle teacher view
 
@@ -102,6 +110,6 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] 71 tests passing
 
 ## Current State
-Phase: 4 (Learning Analytics) — Complete, demo memory issues fixed
-Done: demo data fixed (45/45 survival), category labels, dark theme SPA, ClaudeCLI fallback
-Next step: Set up LLM (GEMINI_API_KEY or test Claude CLI) → Phase 5 Moodle integration
+Phase: 5 (Moodle Integration) — LTI 1.3 provider implemented
+Done: LTI 1.3 FastAPI adapter with OIDC login, resource launch, JWKS, config endpoints (82 tests)
+Next step: Set up Docker Moodle → configure EduInsight as External Tool → test end-to-end LTI launch

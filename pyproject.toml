@@ -12,6 +12,8 @@ dependencies = [
     "httpx>=0.28.0",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.7.0",
+    "pylti1p3>=2.0.0",
+    "python-multipart>=0.0.24",
 ]
 
 [project.optional-dependencies]
