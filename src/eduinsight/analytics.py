@@ -13,8 +13,10 @@ No direct database access.
 from __future__ import annotations
 
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from litemem import Memory
 
@@ -147,4 +149,96 @@ def analyze_class(memory: Memory) -> ClassAnalytics:
     result.common_struggles = all_struggles.most_common()
     result.topic_distribution = dict(all_topics.most_common())
 
+    return result
+
+
+# ------------------------------------------------------------------
+# Learning trajectory over time
+# ------------------------------------------------------------------
+
+
+@dataclass
+class TrajectoryPoint:
+    """A single point in a student's learning trajectory (one week)."""
+
+    week_start: str  # ISO date string (YYYY-MM-DD)
+    new_facts: int = 0
+    new_struggles: list[str] = field(default_factory=list)
+    new_topics: list[str] = field(default_factory=list)
+    cumulative_facts: int = 0
+    cumulative_struggles: int = 0
+
+
+@dataclass
+class LearningTrajectory:
+    """A student's learning progression over time."""
+
+    moodle_user_id: int
+    total_weeks: int = 0
+    points: list[TrajectoryPoint] = field(default_factory=list)
+
+
+def _week_key(ts: float) -> str:
+    """Convert a Unix timestamp to the Monday of that week (ISO date)."""
+    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    # Monday = 0, so subtract weekday to get Monday
+    monday = dt.date() - __import__("datetime").timedelta(days=dt.weekday())
+    return monday.isoformat()
+
+
+def learning_trajectory(memory: Memory, moodle_user_id: int) -> LearningTrajectory:
+    """Build a weekly learning trajectory for a student.
+
+    Uses Memory.export() to get all facts with timestamps, then groups
+    them by week to show how learning progresses over time.
+    """
+    uid = _student_uid(moodle_user_id)
+    bundle = memory.export(uid)
+
+    result = LearningTrajectory(moodle_user_id=moodle_user_id)
+
+    if not bundle.records:
+        return result
+
+    # Group records by week
+    weeks: dict[str, list] = {}
+    for record in bundle.records:
+        wk = _week_key(record.created_at)
+        weeks.setdefault(wk, []).append(record)
+
+    # Sort weeks chronologically
+    sorted_weeks = sorted(weeks.keys())
+
+    cumulative_facts = 0
+    cumulative_struggles = 0
+
+    for wk in sorted_weeks:
+        records = weeks[wk]
+        new_struggles: list[str] = []
+        new_topics: list[str] = []
+
+        for rec in records:
+            m = _STRUGGLE_RE.match(rec.text)
+            if m:
+                new_struggles.append(m.group(1).strip())
+                continue
+            m = _TOPIC_RE.match(rec.text)
+            if m:
+                new_topics.append(m.group(1).strip())
+
+        cumulative_facts += len(records)
+        cumulative_struggles += len(new_struggles)
+
+        result.points.append(
+            TrajectoryPoint(
+                week_start=wk,
+                new_facts=len(records),
+                new_struggles=new_struggles,
+                new_topics=new_topics,
+                cumulative_facts=cumulative_facts,
+                cumulative_struggles=cumulative_struggles,
+            )
+        )
+
+    result.total_weeks = len(sorted_weeks)
     return result

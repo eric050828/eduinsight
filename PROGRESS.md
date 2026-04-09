@@ -71,7 +71,12 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - GET /analytics/student/{id} — per-student struggles, weak topics, preferences
   - GET /analytics/class — class-wide common struggles, topic distribution
 - [x] Tests (12 new tests, 62 total)
-- [ ] Learning trajectory over time (needs timestamp-based analysis)
+- [x] Learning trajectory over time (timestamp-based trend analysis)
+  - learning_trajectory() uses Memory.export() for timestamped facts
+  - Groups facts by week, tracks new struggles/topics per week
+  - Cumulative counters show growth over time
+  - GET /analytics/student/{id}/trajectory endpoint
+  - 9 new tests (71 total)
 
 ## Phase 5: Moodle Plugin / Integration
 - [ ] Moodle block plugin or LTI integration
@@ -84,6 +89,6 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [ ] InnoServe competition materials
 
 ## Current State
-Phase: 4 (Learning Analytics) — In Progress
-Done: analytics module with pattern extraction, API endpoints, 12 tests
-Next step: Learning trajectory over time (timestamp-based trend analysis)
+Phase: 4 (Learning Analytics) — Complete
+Done: analytics module with pattern extraction, trajectory tracking, API endpoints, 21 tests
+Next step: Phase 5 — Moodle Plugin / Integration (LTI or block plugin)

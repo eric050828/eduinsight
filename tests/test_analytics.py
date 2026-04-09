@@ -1,10 +1,12 @@
 """Tests for learning analytics module and API endpoints."""
 
+import time
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from litemem import Memory
 
-from eduinsight.analytics import Struggle, analyze_class, analyze_student
+from eduinsight.analytics import Struggle, analyze_class, analyze_student, learning_trajectory
 from eduinsight.app import app
 from eduinsight.assistant import LearningAssistant
 from eduinsight.demo_data import DEMO_STUDENTS
@@ -179,3 +181,132 @@ class TestClassAnalyticsEndpoint:
             assert data["total_facts"] > 0
             assert len(data["common_struggles"]) > 0
             assert "Data Structures" in data["topic_distribution"]
+
+
+# ------------------------------------------------------------------
+# Learning trajectory tests
+# ------------------------------------------------------------------
+
+
+class TestLearningTrajectory:
+    def test_empty_student(self) -> None:
+        mem = Memory()
+        traj = learning_trajectory(mem, 999)
+        assert traj.moodle_user_id == 999
+        assert traj.total_weeks == 0
+        assert traj.points == []
+
+    def test_single_week(self) -> None:
+        """All facts added at the same time should fall in one week."""
+        mem = Memory()
+        mem.add("moodle:1", "[Math] Q: What is calculus?")
+        mem.add("moodle:1", "Struggling with: derivatives — chain rule")
+        mem.add("moodle:1", "Learning preference: visual diagrams")
+
+        traj = learning_trajectory(mem, 1)
+        assert traj.total_weeks == 1
+        assert len(traj.points) == 1
+        p = traj.points[0]
+        assert p.new_facts >= 2  # Lite-Mem may deduplicate
+        assert p.cumulative_facts == p.new_facts
+
+    def test_struggles_tracked_in_trajectory(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "Struggling with: recursion — base case")
+        mem.add("moodle:1", "Struggling with: pointers — null dereference")
+
+        traj = learning_trajectory(mem, 1)
+        assert traj.total_weeks >= 1
+        # At least some struggles should appear
+        all_struggles = []
+        for p in traj.points:
+            all_struggles.extend(p.new_struggles)
+        assert len(all_struggles) >= 1
+
+    def test_topics_tracked_in_trajectory(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "[Algorithms] Q: What is Big-O?")
+        mem.add("moodle:1", "[Database] Q: What is normalization?")
+
+        traj = learning_trajectory(mem, 1)
+        all_topics = []
+        for p in traj.points:
+            all_topics.extend(p.new_topics)
+        assert len(all_topics) >= 1
+
+    def test_multi_week_via_db(self) -> None:
+        """Manually adjust created_at to simulate multi-week data."""
+        mem = Memory()
+        mem.add("moodle:5", "Struggling with: loops — off by one")
+        mem.add("moodle:5", "[Math] Q: What is integration?")
+
+        # Shift one fact back by 2 weeks via direct DB access
+        conn = mem._store._get_conn()
+        two_weeks_ago = time.time() - 14 * 86400
+        conn.execute(
+            "UPDATE facts SET created_at = ? WHERE user_id = ? AND rowid = ("
+            "SELECT MIN(rowid) FROM facts WHERE user_id = ?)",
+            (two_weeks_ago, "moodle:5", "moodle:5"),
+        )
+        conn.commit()
+
+        traj = learning_trajectory(mem, 5)
+        assert traj.total_weeks == 2
+        assert len(traj.points) == 2
+        # Cumulative should grow
+        assert traj.points[1].cumulative_facts > traj.points[0].cumulative_facts
+
+    def test_cumulative_struggles_grow(self) -> None:
+        """Cumulative struggle count should never decrease."""
+        mem = Memory()
+        mem.add("moodle:6", "Struggling with: sorting — merge sort")
+        mem.add("moodle:6", "Struggling with: graphs — BFS vs DFS")
+
+        # Shift first fact back 1 week
+        conn = mem._store._get_conn()
+        one_week_ago = time.time() - 7 * 86400
+        conn.execute(
+            "UPDATE facts SET created_at = ? WHERE user_id = ? AND rowid = ("
+            "SELECT MIN(rowid) FROM facts WHERE user_id = ?)",
+            (one_week_ago, "moodle:6", "moodle:6"),
+        )
+        conn.commit()
+
+        traj = learning_trajectory(mem, 6)
+        if traj.total_weeks == 2:
+            assert traj.points[1].cumulative_struggles >= traj.points[0].cumulative_struggles
+
+    def test_demo_student_trajectory(self) -> None:
+        """Demo students should produce non-empty trajectories."""
+        mem = Memory()
+        _seed_demo(mem)
+        traj = learning_trajectory(mem, 1001)
+        assert traj.total_weeks >= 1
+        assert traj.points[0].new_facts > 0
+
+
+class TestTrajectoryEndpoint:
+    async def test_trajectory_endpoint(self) -> None:
+        mem = Memory()
+        _seed_demo(mem)
+
+        async with await _make_client(mem) as client:
+            resp = await client.get("/analytics/student/1001/trajectory")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["moodle_user_id"] == 1001
+            assert data["total_weeks"] >= 1
+            assert len(data["points"]) >= 1
+            p = data["points"][0]
+            assert "week_start" in p
+            assert "new_facts" in p
+            assert "cumulative_facts" in p
+
+    async def test_empty_trajectory_endpoint(self) -> None:
+        mem = Memory()
+        async with await _make_client(mem) as client:
+            resp = await client.get("/analytics/student/999/trajectory")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total_weeks"] == 0
+            assert data["points"] == []

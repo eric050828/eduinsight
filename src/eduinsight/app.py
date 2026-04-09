@@ -20,7 +20,14 @@ from fastapi.staticfiles import StaticFiles
 from litemem import Memory
 from pydantic import BaseModel
 
-from .analytics import ClassAnalytics, StudentAnalytics, analyze_class, analyze_student
+from .analytics import (
+    ClassAnalytics,
+    LearningTrajectory,
+    StudentAnalytics,
+    analyze_class,
+    analyze_student,
+    learning_trajectory,
+)
 from .assistant import LearningAssistant
 from .config import settings
 from .llm import LLMClient, resolve_llm_config
@@ -296,6 +303,43 @@ async def get_student_analytics(moodle_user_id: int) -> StudentAnalyticsResponse
         weak_topics=sa.weak_topics,
         question_topics=sa.question_topics,
         preferences=sa.preferences,
+    )
+
+
+class TrajectoryPointResponse(BaseModel):
+    week_start: str
+    new_facts: int
+    new_struggles: list[str]
+    new_topics: list[str]
+    cumulative_facts: int
+    cumulative_struggles: int
+
+
+class TrajectoryResponse(BaseModel):
+    moodle_user_id: int
+    total_weeks: int
+    points: list[TrajectoryPointResponse]
+
+
+@app.get("/analytics/student/{moodle_user_id}/trajectory", response_model=TrajectoryResponse)
+async def get_student_trajectory(moodle_user_id: int) -> TrajectoryResponse:
+    """Get learning trajectory over time for a student."""
+    assistant = get_assistant()
+    traj = learning_trajectory(assistant.memory, moodle_user_id)
+    return TrajectoryResponse(
+        moodle_user_id=traj.moodle_user_id,
+        total_weeks=traj.total_weeks,
+        points=[
+            TrajectoryPointResponse(
+                week_start=p.week_start,
+                new_facts=p.new_facts,
+                new_struggles=p.new_struggles,
+                new_topics=p.new_topics,
+                cumulative_facts=p.cumulative_facts,
+                cumulative_struggles=p.cumulative_struggles,
+            )
+            for p in traj.points
+        ],
     )
 
 
