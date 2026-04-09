@@ -18,6 +18,7 @@ from pydantic import BaseModel
 
 from .assistant import LearningAssistant
 from .config import settings
+from .llm import LLMClient, resolve_llm_config
 from .moodle import MoodleClient
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------
 _memory: Memory | None = None
 _assistant: LearningAssistant | None = None
+_llm: LLMClient | None = None
 
 
 def get_assistant() -> LearningAssistant:
@@ -47,12 +49,27 @@ def get_moodle_client() -> MoodleClient:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
-    global _memory, _assistant
+    global _memory, _assistant, _llm
     logger.info("Starting EduInsight with memory DB: %s", settings.memory_db_path)
     _memory = Memory(settings.memory_db_path)
-    _assistant = LearningAssistant(_memory)
+
+    # Try to initialize LLM (optional — gracefully degrades without API key)
+    try:
+        llm_config = resolve_llm_config()
+        _llm = LLMClient(llm_config)
+        await _llm.__aenter__()
+        logger.info("LLM initialized: model=%s", llm_config.model)
+    except ValueError:
+        logger.warning("No LLM API key found. /chat will return memory context only.")
+        _llm = None
+
+    _assistant = LearningAssistant(_memory, llm=_llm)
     yield
+
     logger.info("Shutting down EduInsight")
+    if _llm is not None:
+        await _llm.__aexit__(None, None, None)
+        _llm = None
     _memory = None
     _assistant = None
 
@@ -103,22 +120,25 @@ async def health() -> dict[str, str]:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
-    """Student sends a message; assistant responds with memory context.
+    """Student sends a message; assistant responds with memory-augmented AI answer.
 
-    NOTE: Phase 1 returns memory context only. LLM-based answer
-    generation will be added in Phase 2.
+    If an LLM is configured, generates an AI answer using the student's
+    memory context. Otherwise, falls back to returning context only.
     """
     assistant = get_assistant()
 
-    # Retrieve relevant memories
+    if assistant._llm is not None:
+        # Full AI answer with memory context
+        response = await assistant.answer(
+            req.moodle_user_id, req.message, topic=req.topic
+        )
+        return ChatResponse(reply=response.answer, memory_context=response.memory_context)
+
+    # Fallback: no LLM configured, return context only
     context_texts = assistant.get_student_context(req.moodle_user_id, req.message)
-
-    # Record the question
     assistant.record_question(req.moodle_user_id, req.message, topic=req.topic)
-
-    # Phase 1: return context only, no LLM generation yet
     return ChatResponse(
-        reply="[Phase 1] Memory context retrieved. LLM answer generation coming in Phase 2.",
+        reply="[No LLM configured] Memory context retrieved. Set GEMINI_API_KEY to enable AI answers.",
         memory_context=context_texts,
     )
 

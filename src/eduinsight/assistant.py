@@ -17,7 +17,24 @@ from dataclasses import dataclass
 
 from litemem import Memory
 
+from .llm import LLMClient
+
 logger = logging.getLogger(__name__)
+
+SYSTEM_PROMPT = """\
+You are EduInsight, an AI learning assistant for university students.
+
+Your role:
+- Answer academic questions clearly and accurately
+- Adapt explanations to the student's level based on their history
+- Encourage deeper understanding, not just memorization
+- Be concise but thorough
+
+You have access to the student's memory context (past questions, struggles, preferences).
+Use this context to personalize your response, but do NOT repeat it back verbatim.
+If the context is empty or irrelevant, just answer the question directly.
+
+Always respond in the same language the student uses."""
 
 
 def _student_uid(moodle_user_id: int) -> str:
@@ -42,9 +59,9 @@ class LearningAssistant:
     """AI learning assistant backed by Lite-Mem.
 
     This class handles the memory layer for student interactions.
-    The actual LLM call for generating answers is delegated to a
-    configurable callback -- this keeps the assistant testable
-    and LLM-provider-agnostic.
+    When an LLMClient is provided, it generates AI answers augmented
+    with the student's memory context. Without an LLM, it still
+    records and retrieves memories (useful for testing).
 
     Usage::
 
@@ -56,10 +73,15 @@ class LearningAssistant:
 
         # Retrieve context for answering
         context = assistant.get_student_context(moodle_user_id=42, query="OOP concepts")
+
+        # With LLM: full conversation
+        assistant = LearningAssistant(mem, llm=llm_client)
+        response = await assistant.answer(moodle_user_id=42, question="What is OOP?")
     """
 
-    def __init__(self, memory: Memory) -> None:
+    def __init__(self, memory: Memory, *, llm: LLMClient | None = None) -> None:
         self._memory = memory
+        self._llm = llm
 
     @property
     def memory(self) -> Memory:
@@ -132,6 +154,68 @@ class LearningAssistant:
         if top_k is not None:
             kwargs["top_k"] = top_k
         return self._memory.query(uid, query, **kwargs)
+
+    def _build_prompt(self, question: str, context: list[str], *, topic: str = "") -> str:
+        """Build a memory-augmented user prompt for the LLM.
+
+        Combines the student's question with relevant memory context.
+        """
+        parts: list[str] = []
+        if context:
+            parts.append("Student memory context:")
+            for i, mem in enumerate(context, 1):
+                parts.append(f"  {i}. {mem}")
+            parts.append("")
+        if topic:
+            parts.append(f"Topic: {topic}")
+        parts.append(f"Student question: {question}")
+        return "\n".join(parts)
+
+    async def answer(
+        self,
+        moodle_user_id: int,
+        question: str,
+        *,
+        topic: str = "",
+    ) -> AssistantResponse:
+        """Answer a student's question using memory context and LLM.
+
+        1. Retrieve relevant memories for the student
+        2. Build a memory-augmented prompt
+        3. Call the LLM to generate an answer
+        4. Record the interaction in memory
+
+        Args:
+            moodle_user_id: The student's Moodle user ID.
+            question: The student's question.
+            topic: Optional topic tag.
+
+        Returns:
+            AssistantResponse with the answer, context used, and memories stored.
+
+        Raises:
+            RuntimeError: If no LLM client is configured.
+        """
+        if self._llm is None:
+            raise RuntimeError("No LLM client configured. Pass llm= to LearningAssistant.")
+
+        # 1. Retrieve memory context
+        context = self.get_student_context(moodle_user_id, question)
+
+        # 2. Build prompt
+        user_prompt = self._build_prompt(question, context, topic=topic)
+
+        # 3. Call LLM
+        reply = await self._llm.chat(user_prompt, system_prompt=SYSTEM_PROMPT)
+
+        # 4. Record the interaction
+        self.record_interaction(moodle_user_id, question, reply, topic=topic)
+
+        return AssistantResponse(
+            answer=reply,
+            memory_context=context,
+            memories_stored=2,  # Q + A
+        )
 
     def record_interaction(
         self,

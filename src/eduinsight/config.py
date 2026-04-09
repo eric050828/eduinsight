@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     moodle_url: str = "https://moodle.ntust.edu.tw"
     moodle_token: str = ""
 
+    # LLM (auto-detected from env: GEMINI_API_KEY / OPENAI_API_KEY / GROQ_API_KEY)
+    llm_model: str = ""  # Override model name, empty = auto-detect
+
     # Lite-Mem storage
     memory_db_path: str = "eduinsight.db"
     memory_top_k: int = 8

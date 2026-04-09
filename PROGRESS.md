@@ -16,13 +16,16 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [ ] Integration test with real Moodle instance (needs NTUST token)
 
 ## Phase 2: Memory Integration
-- [ ] Connect Lite-Mem to track student interactions
+- [x] Connect Lite-Mem to track student interactions
   - Each student = a Lite-Mem user_id (moodle:{id} namespace)
   - Store: questions asked, topics struggled with, learning preferences
-- [ ] Conversation API (student asks question → AI answers with memory context)
-  - Add LLM provider integration (Gemini / OpenAI / local)
-  - Memory-augmented prompt construction
-- [ ] Tests for memory integration
+- [x] Conversation API (student asks question → AI answers with memory context)
+  - LLM provider: async client via OpenAI-compatible API (Gemini/OpenAI/Groq)
+  - Memory-augmented prompt: retrieves relevant memories → builds context → LLM generates answer
+  - Records Q&A interaction back to memory for future context
+- [x] Tests for memory integration (15 new tests, 29 total)
+- [ ] add_conversation integration (use Lite-Mem's fact extraction on chat history)
+- [ ] Semantic search with embeddings (enable Lite-Mem embedder="auto")
 
 ## Phase 3: Learning Analytics
 - [ ] Extract learning patterns from Lite-Mem memory
@@ -43,5 +46,5 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [ ] InnoServe competition materials
 
 ## Current State
-Phase: 1
-Next step: Install dependencies, run tests, then get a Moodle API token from NTUST
+Phase: 2 (Memory Integration)
+Next step: Get GEMINI_API_KEY for live testing, then add Lite-Mem add_conversation integration for richer fact extraction from chat history
