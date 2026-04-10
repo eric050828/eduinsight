@@ -263,7 +263,14 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Fixes demo flow disconnect: Landing → Demo Reset → Student chat → Teacher sees SAME students
 - [x] 128 tests still passing
 
+## Bugfix: Supervisor Review Round 8 (2026-04-11)
+- [x] Fix /health memory_db — DetailedStats is dataclass, not dict; use stats.total_users/total_facts
+- [x] Fix demo.html navigation — 2 links pointing to `/` changed to `/student`
+- [x] Filter analytics topic_distribution — exclude `^W\d+` week-noise keys (13 items removed)
+- [x] Unify seed_rich_demo.py categories — achievement→general, question→general, struggle→struggling
+- [x] 128 tests still passing
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: All supervisor-reported bugs fixed (30/30 pass), real-time stats, one-click demo, teacher live data, 128 tests passing
+Done: All supervisor-reported bugs fixed (28/28 pass after round 8 fixes), real-time stats, one-click demo, teacher live data, 128 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
