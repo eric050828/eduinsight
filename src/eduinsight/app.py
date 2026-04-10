@@ -584,13 +584,19 @@ async def import_memory(file: UploadFile) -> ImportResponse:
 
 @app.get("/")
 async def index() -> FileResponse:
-    """Serve the student chat UI."""
-    return FileResponse(_STATIC_DIR / "index.html")
+    """Serve the landing page."""
+    return FileResponse(_STATIC_DIR / "landing.html")
+
+
+@app.get("/student")
+async def student_page() -> FileResponse:
+    """Serve the student learning dashboard."""
+    return FileResponse(_STATIC_DIR / "student.html")
 
 
 @app.get("/teacher")
 async def teacher_dashboard() -> FileResponse:
-    """Serve the teacher dashboard UI."""
+    """Serve the teacher analytics dashboard."""
     return FileResponse(_STATIC_DIR / "teacher.html")
 
 

@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduInsight — AI-Powered Learning Assistant for Moodle LMS</title>
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#0f172a;--surface:#1e293b;--surface2:#283548;
+    --primary:#6366f1;--primary-light:#818cf8;--accent:#22d3ee;--accent2:#06b6d4;
+    --text:#f1f5f9;--text-muted:#94a3b8;--text-dim:#64748b;
+    --radius:16px;--radius-sm:10px;
+    --glow-primary:0 0 40px rgba(99,102,241,.25);
+    --glow-accent:0 0 40px rgba(34,211,238,.2);
+  }
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+    background:var(--bg);color:var(--text);
+    line-height:1.6;overflow-x:hidden;
+  }
+
+  /* ── Animated background blobs ── */
+  .bg-blobs{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+  .blob{position:absolute;border-radius:50%;filter:blur(100px);opacity:.12;animation:drift 20s ease-in-out infinite alternate}
+  .blob-1{width:600px;height:600px;background:var(--primary);top:-10%;left:-5%;animation-delay:0s}
+  .blob-2{width:500px;height:500px;background:var(--accent);top:40%;right:-10%;animation-delay:-7s}
+  .blob-3{width:400px;height:400px;background:#a78bfa;bottom:-5%;left:30%;animation-delay:-14s}
+  @keyframes drift{
+    0%{transform:translate(0,0) scale(1)}
+    33%{transform:translate(40px,-30px) scale(1.05)}
+    66%{transform:translate(-20px,40px) scale(.95)}
+    100%{transform:translate(30px,20px) scale(1.02)}
+  }
+
+  .wrapper{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:0 24px}
+
+  /* ── Hero ── */
+  .hero{text-align:center;padding:80px 0 48px;animation:fadeUp .8s ease-out}
+  .hero-logo{font-size:3.2rem;font-weight:800;letter-spacing:-.02em;margin-bottom:12px}
+  .hero-logo .icon{display:inline-block;animation:float 3s ease-in-out infinite}
+  .hero-logo .brand{
+    background:linear-gradient(135deg,var(--primary-light),var(--accent));
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    background-clip:text;
+  }
+  .hero-tagline{font-size:1.25rem;color:var(--text-muted);max-width:480px;margin:0 auto;font-weight:400}
+
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+  /* ── Portal Cards ── */
+  .portals{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-bottom:48px;animation:fadeUp 1s ease-out .15s both}
+  .portal{
+    position:relative;background:var(--surface);border:1px solid rgba(255,255,255,.06);
+    border-radius:var(--radius);padding:36px 32px 28px;
+    text-decoration:none;color:var(--text);
+    transition:transform .3s,box-shadow .3s,border-color .3s;overflow:hidden;
+    display:flex;flex-direction:column;
+  }
+  .portal::before{
+    content:'';position:absolute;inset:0;border-radius:var(--radius);
+    opacity:0;transition:opacity .4s;pointer-events:none;
+  }
+  .portal--student::before{background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(34,211,238,.06))}
+  .portal--teacher::before{background:linear-gradient(135deg,rgba(34,211,238,.08),rgba(167,139,250,.06))}
+  .portal:hover{transform:translateY(-4px);border-color:rgba(255,255,255,.12)}
+  .portal:hover::before{opacity:1}
+  .portal--student:hover{box-shadow:var(--glow-primary)}
+  .portal--teacher:hover{box-shadow:var(--glow-accent)}
+
+  .portal-icon{font-size:2.4rem;margin-bottom:8px}
+  .portal-title{font-size:1.5rem;font-weight:700;margin-bottom:6px}
+  .portal--student .portal-title{color:var(--primary-light)}
+  .portal--teacher .portal-title{color:var(--accent)}
+  .portal-desc{color:var(--text-muted);font-size:.95rem;margin-bottom:20px}
+
+  /* Mini chart containers */
+  .chart-preview{
+    flex:1;display:flex;align-items:center;justify-content:center;
+    min-height:160px;border-radius:var(--radius-sm);
+    background:rgba(0,0,0,.2);padding:16px;position:relative;
+  }
+  .chart-preview canvas{max-width:100%;max-height:160px}
+
+  .portal-cta{
+    display:inline-flex;align-items:center;gap:6px;margin-top:16px;
+    font-weight:600;font-size:.9rem;
+    transition:gap .3s;
+  }
+  .portal--student .portal-cta{color:var(--primary-light)}
+  .portal--teacher .portal-cta{color:var(--accent)}
+  .portal:hover .portal-cta{gap:12px}
+  .portal-cta .arrow{transition:transform .3s}
+  .portal:hover .portal-cta .arrow{transform:translateX(3px)}
+
+  /* ── Demo Banner ── */
+  .demo-banner{
+    background:linear-gradient(135deg,rgba(99,102,241,.1),rgba(34,211,238,.08));
+    border:1px solid rgba(99,102,241,.2);border-radius:var(--radius-sm);
+    padding:20px 28px;text-align:center;margin-bottom:56px;
+    animation:fadeUp 1s ease-out .3s both;
+  }
+  .demo-banner-title{font-size:1.05rem;font-weight:600;margin-bottom:4px;color:var(--accent)}
+  .demo-banner-sub{color:var(--text-muted);font-size:.88rem}
+  .demo-banner-sub span{
+    display:inline-block;margin:0 6px;padding:2px 10px;
+    background:rgba(255,255,255,.05);border-radius:20px;font-size:.82rem;
+  }
+
+  /* ── Features ── */
+  .features{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-bottom:56px;animation:fadeUp 1s ease-out .45s both}
+  .feature{
+    background:var(--surface);border:1px solid rgba(255,255,255,.05);
+    border-radius:var(--radius-sm);padding:28px 24px;
+    transition:transform .3s,box-shadow .3s,border-color .3s;
+  }
+  .feature:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.1);box-shadow:0 8px 30px rgba(0,0,0,.25)}
+  .feature-icon{font-size:2rem;margin-bottom:10px;display:block}
+  .feature-title{font-size:1.1rem;font-weight:700;margin-bottom:6px}
+  .feature-desc{color:var(--text-muted);font-size:.88rem;line-height:1.55}
+
+  /* ── Tech Stack ── */
+  .tech{
+    text-align:center;padding:32px 0 48px;animation:fadeIn 1s ease-out .6s both;
+    border-top:1px solid rgba(255,255,255,.05);
+  }
+  .tech-label{color:var(--text-dim);font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;margin-bottom:14px}
+  .tech-badges{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
+  .badge{
+    display:inline-block;padding:6px 16px;font-size:.8rem;font-weight:600;
+    border-radius:20px;background:rgba(255,255,255,.04);color:var(--text-muted);
+    border:1px solid rgba(255,255,255,.06);transition:border-color .3s,color .3s;
+    letter-spacing:.02em;
+  }
+  .badge:hover{border-color:var(--primary);color:var(--text)}
+
+  /* ── Responsive ── */
+  @media(max-width:768px){
+    .hero{padding:56px 0 36px}
+    .hero-logo{font-size:2.2rem}
+    .hero-tagline{font-size:1.05rem}
+    .portals{grid-template-columns:1fr;gap:20px}
+    .features{grid-template-columns:1fr;gap:16px}
+    .chart-preview{min-height:140px}
+  }
+  @media(min-width:769px) and (max-width:1024px){
+    .features{grid-template-columns:1fr 1fr;gap:20px}
+    .features .feature:last-child{grid-column:1/-1;max-width:50%;margin:0 auto}
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-blobs">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+</div>
+
+<div class="wrapper">
+
+  <!-- Hero -->
+  <section class="hero">
+    <h1 class="hero-logo"><span class="icon">🎓</span> <span class="brand">EduInsight</span></h1>
+    <p class="hero-tagline">AI-Powered Learning Assistant for Moodle LMS</p>
+  </section>
+
+  <!-- Portal Cards -->
+  <section class="portals">
+    <a href="/student" class="portal portal--student">
+      <div class="portal-icon">👨‍🎓</div>
+      <h2 class="portal-title">學生端</h2>
+      <p class="portal-desc">查看學習狀態、AI 助教、個人化複習建議</p>
+      <div class="chart-preview">
+        <canvas id="radarChart"></canvas>
+      </div>
+      <div class="portal-cta">進入學生儀表板 <span class="arrow">→</span></div>
+    </a>
+    <a href="/teacher" class="portal portal--teacher">
+      <div class="portal-icon">👨‍🏫</div>
+      <h2 class="portal-title">教師端</h2>
+      <p class="portal-desc">班級分析、預警系統、一鍵關懷</p>
+      <div class="chart-preview">
+        <canvas id="scatterChart"></canvas>
+      </div>
+      <div class="portal-cta">進入教師儀表板 <span class="arrow">→</span></div>
+    </a>
+  </section>
+
+  <!-- Demo Banner -->
+  <div class="demo-banner">
+    <div class="demo-banner-title">📌 Demo 情境：114學年第2學期 第10週（期中考後）</div>
+    <div class="demo-banner-sub">
+      <span>已累積 10 週互動資料</span>
+      <span>2 位教授</span>
+      <span>5 位學生</span>
+      <span>4 門課程</span>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <section class="features">
+    <div class="feature">
+      <span class="feature-icon">🧠</span>
+      <h3 class="feature-title">記憶式學習</h3>
+      <p class="feature-desc">AI 記住每位學生的學習歷程，提供量身打造的複習建議與學習路徑規劃。</p>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">🚨</span>
+      <h3 class="feature-title">智慧預警</h3>
+      <p class="feature-desc">自動識別 at-risk 學生，結合出席率、成績趨勢與互動頻率進行即時預警。</p>
+    </div>
+    <div class="feature">
+      <span class="feature-icon">⚡</span>
+      <h3 class="feature-title">數據→行動</h3>
+      <p class="feature-desc">一鍵發送個人化關懷訊息，將數據洞察直接轉化為教學行動。</p>
+    </div>
+  </section>
+
+  <!-- Tech Stack -->
+  <footer class="tech">
+    <div class="tech-label">Tech Stack</div>
+    <div class="tech-badges">
+      <span class="badge">Lite-Mem</span>
+      <span class="badge">Claude Haiku</span>
+      <span class="badge">FastAPI</span>
+      <span class="badge">Moodle API</span>
+      <span class="badge">Chart.js</span>
+    </div>
+  </footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+(function(){
+  const muted = '#94a3b8';
+  const gridColor = 'rgba(148,163,184,.12)';
+
+  // ── Radar Chart (Student) ──
+  new Chart(document.getElementById('radarChart'),{
+    type:'radar',
+    data:{
+      labels:['出席率','作業','測驗','討論','閱讀'],
+      datasets:[{
+        label:'學習表現',
+        data:[88,72,65,90,78],
+        backgroundColor:'rgba(99,102,241,.18)',
+        borderColor:'#818cf8',
+        borderWidth:2,
+        pointBackgroundColor:'#818cf8',
+        pointRadius:3,
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        r:{
+          beginAtZero:true,max:100,
+          ticks:{display:false},
+          grid:{color:gridColor},
+          angleLines:{color:gridColor},
+          pointLabels:{color:muted,font:{size:11}}
+        }
+      }
+    }
+  });
+
+  // ── Scatter Chart (Teacher) ──
+  const students = [
+    {x:82,y:75,r:6,label:'學生A'},
+    {x:45,y:40,r:8,label:'學生B'},
+    {x:91,y:88,r:5,label:'學生C'},
+    {x:60,y:52,r:7,label:'學生D'},
+    {x:33,y:28,r:9,label:'學生E'},
+  ];
+  new Chart(document.getElementById('scatterChart'),{
+    type:'bubble',
+    data:{
+      datasets:[{
+        label:'學生分佈',
+        data:students,
+        backgroundColor: students.map(s=>s.y<50?'rgba(239,68,68,.55)':'rgba(34,211,238,.45)'),
+        borderColor: students.map(s=>s.y<50?'#ef4444':'#22d3ee'),
+        borderWidth:1.5,
+      }]
+    },
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{title:{display:true,text:'參與度',color:muted,font:{size:11}},grid:{color:gridColor},ticks:{color:muted,font:{size:10}},min:20,max:100},
+        y:{title:{display:true,text:'成績',color:muted,font:{size:11}},grid:{color:gridColor},ticks:{color:muted,font:{size:10}},min:20,max:100}
+      }
+    }
+  });
+
+  // ── Scroll reveal ──
+  const observer = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){e.target.style.opacity='1';e.target.style.transform='translateY(0)'}
+    });
+  },{threshold:.15});
+  document.querySelectorAll('.feature').forEach(el=>{
+    el.style.opacity='0';el.style.transform='translateY(20px)';
+    el.style.transition='opacity .6s ease-out, transform .6s ease-out';
+    observer.observe(el);
+  });
+})();
+</script>
+</body>
+</html>
