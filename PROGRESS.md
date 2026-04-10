@@ -193,7 +193,18 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Consistent with index.html (SPA) behavior
   - Fallback text "AI Engine" shown before API response
 
+## Student Risk Assessment (2026-04-10)
+- [x] assess_risk() in analytics.py — calculates risk level + persistence score
+  - Persistence score (0-100) weighted from: recency (35%), volume (25%), trend (25%), struggle ratio (15%)
+  - Risk factors: 零互動, 長期消失, 活動量偏低/嚴重不足, 困難比例偏高/過高, 活動量驟降
+  - Class average comparison for volume scoring
+  - Supports `now` param for testability
+- [x] GET /analytics/student/{id}/risk endpoint
+- [x] 9 new tests (122 total)
+- [x] Enhanced student.html: 5-student switcher, per-student multi-course demo data, chat history
+- [x] Enhanced teacher.html: multi-course switching, AI summaries, student detail modals, care messages
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: Landing page + student dashboard with real API data, 113 tests passing
+Done: Risk assessment API, enhanced demo UI, 122 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
