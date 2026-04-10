@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -181,18 +182,28 @@ async def chat(req: ChatRequest) -> ChatResponse:
     """
     assistant = get_assistant()
 
+    uid = f"moodle:{req.moodle_user_id}"
+    session_id = f"chat_{int(time.time() * 1000)}"
+
     if assistant._llm is not None:
         # Full AI answer with memory context
         response = await assistant.answer(
             req.moodle_user_id, req.message, topic=req.topic
         )
+        # Store conversation messages for history retrieval
+        _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
+        _memory._store.store_message(uid, response.answer, session_id=session_id, role="assistant")
         return ChatResponse(reply=response.answer, memory_context=response.memory_context)
 
     # Fallback: no LLM configured, return context only
     context_texts = assistant.get_student_context(req.moodle_user_id, req.message)
     assistant.record_question(req.moodle_user_id, req.message, topic=req.topic)
+    fallback_reply = "[No LLM configured] Memory context retrieved. Set GEMINI_API_KEY to enable AI answers."
+    # Store even fallback conversations for history
+    _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
+    _memory._store.store_message(uid, fallback_reply, session_id=session_id, role="assistant")
     return ChatResponse(
-        reply="[No LLM configured] Memory context retrieved. Set GEMINI_API_KEY to enable AI answers.",
+        reply=fallback_reply,
         memory_context=context_texts,
     )
 

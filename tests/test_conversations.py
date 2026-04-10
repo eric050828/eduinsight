@@ -83,3 +83,25 @@ class TestStudentConversations:
             data = resp.json()
             assert data["total_conversations"] == 1
             assert data["conversations"][0]["messages"][0]["content"] == "Hello"
+
+    async def test_chat_stores_messages_in_history(self) -> None:
+        """POST /chat should store user+assistant messages so they appear in conversations API."""
+        mem = Memory()
+        async with await _make_client(mem) as client:
+            # Send a chat message (no LLM configured → fallback reply)
+            resp = await client.post("/chat", json={
+                "moodle_user_id": 99,
+                "message": "What is recursion?",
+                "topic": "CS101",
+            })
+            assert resp.status_code == 200
+
+            # Now check conversations endpoint
+            resp2 = await client.get("/student/99/conversations")
+            data = resp2.json()
+            assert data["total_conversations"] == 1
+            msgs = data["conversations"][0]["messages"]
+            assert len(msgs) == 2
+            assert msgs[0]["role"] == "user"
+            assert "recursion" in msgs[0]["content"]
+            assert msgs[1]["role"] == "assistant"

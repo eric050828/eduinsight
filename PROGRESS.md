@@ -270,7 +270,15 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] Unify seed_rich_demo.py categories — achievement→general, question→general, struggle→struggling
 - [x] 128 tests still passing
 
+## Fix: Chat Messages Stored in History (2026-04-11)
+- [x] /chat endpoint now stores user+assistant messages to Lite-Mem messages table
+  - Each chat round gets a unique session_id (chat_{timestamp_ms})
+  - Both LLM and fallback paths store messages
+  - Conversations API (/student/{id}/conversations) now returns real chat history
+  - Previously only demo-seeded conversations appeared in history
+- [x] 1 new test (129 total)
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: All supervisor-reported bugs fixed (28/28 pass after round 8 fixes), real-time stats, one-click demo, teacher live data, 128 tests passing
+Done: All supervisor-reported bugs fixed, chat history persistence, real-time stats, one-click demo, teacher live data, 129 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
