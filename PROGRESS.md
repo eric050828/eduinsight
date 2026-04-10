@@ -125,7 +125,17 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - POST /import — upload MemoryBundle JSON file to import memories (merge mode)
   - Roundtrip tested: export → clear → import → verify identical
   - 9 new tests (110 total)
-- [ ] InnoServe competition materials
+- [x] InnoServe competition materials (initial drafts)
+  - 系統概述文件草稿 (Markdown, 6 sections matching EDUAI criteria)
+  - 3分鐘影片腳本 (6 segments with timing)
+  - 競賽準備 checklist (based on 30th competition guidelines)
+  - Competition materials in `competition/` directory
+
+## Next Steps for Competition
+- [ ] 組隊（找齊隊員+指導老師）
+- [ ] 系統概述文件轉 Word 檔（套大會表頭）
+- [ ] 錄製 Demo 影片
+- [ ] 等第31屆競賽須知公告後調整內容
 
 ## Hotfix: Demo Memory Dedup (2026-04-10)
 - [x] Fix demo_data.py — unique fact prefixes to prevent Lite-Mem prefix-based dedup
@@ -159,5 +169,5 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: All supervisor-reported bugs fixed, 110 tests passing
-Next step: InnoServe competition materials
+Done: All supervisor-reported bugs fixed, 110 tests passing, competition drafts ready
+Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
