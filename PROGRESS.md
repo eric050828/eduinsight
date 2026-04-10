@@ -219,7 +219,16 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - /demo/reset now seeds messages table alongside facts
   - 1 new test (128 total)
 
+## Hotfix: Conversations API + Student UI (2026-04-10)
+- [x] Fix conversations endpoint — use Lite-Mem get_messages() API instead of raw SQLite
+  - Old code opened separate DB connection, broke in-memory tests (3 failures)
+  - Now shares Memory instance connection, all 128 tests pass
+- [x] Student chat UI enhancements
+  - Markdown rendering via marked.js in chat messages
+  - KaTeX math formula support (LaTeX rendering)
+  - Embedded HTML iframe with fullscreen toggle for interactive content
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: Conversation history API + demo data, risk assessment, enhanced demo UI, 128 tests passing
+Done: Conversation history fix, enhanced student chat UI, 128 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
