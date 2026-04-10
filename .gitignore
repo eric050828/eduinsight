@@ -20,6 +20,8 @@ wheels/
 
 # Database files
 *.db
+*.db-shm
+*.db-wal
 
 # OS
 .DS_Store

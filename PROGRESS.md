@@ -287,7 +287,17 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] Updated tests: 4→5 students, 45→60 total memories
 - [x] 129 tests passing
 
+## Cleanup & Demo Script (2026-04-11)
+- [x] Update DEMO_REQUIREMENTS.md — mark chat history persistence (item 3) as done
+- [x] Clean up orphaned DB files (test_demo.db, test_ts.db, eduinsight.db)
+- [x] Add *.db-shm, *.db-wal to .gitignore
+- [x] Rewrite Demo 影片腳本 to match current UI (landing→student→teacher flow)
+  - Updated to reflect: one-click demo, real-time stats, risk assessment, conversation history
+  - Follows Supervisor's recommended 3-minute demo route
+  - Added detailed recording preparation notes and anonymization checklist
+- [x] 129 tests still passing
+
 ## Current State
-Phase: 6 (Demo & Polish) — In Progress
-Done: All supervisor-reported bugs fixed, Bug 5 data flow fixed, chat history persistence, real-time stats, one-click demo, teacher live data, 129 tests passing
-Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
+Phase: 6 (Demo & Polish) — Feature Complete
+Done: All features implemented, all bugs fixed, demo video script ready, 129 tests passing
+Next step: 組隊、等第31屆須知公告、錄製 Demo 影片（腳本已完成）
