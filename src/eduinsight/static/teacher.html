@@ -20,7 +20,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .sidebar-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
 .logo-icon{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--accent));display:flex;align-items:center;justify-content:center;font-size:16px}
 .logo-text{font-size:16px;font-weight:700}
-.sidebar-nav{flex:1;padding:8px}
+.sidebar-nav{flex:1;padding:8px;overflow-y:auto}
 .nav-item{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:8px;color:var(--text-muted);cursor:pointer;font-size:13px;transition:all .15s;margin-bottom:2px;text-decoration:none}
 .nav-item:hover{background:var(--surface-2);color:var(--text)}
 .nav-item.active{background:var(--primary-glow);color:var(--primary-hover);font-weight:500}
@@ -61,7 +61,7 @@ body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
 .alert-info{flex:1;min-width:0}
 .alert-name{font-size:13px;font-weight:500}
 .alert-detail{font-size:11px;color:var(--text-muted);margin-top:1px}
-.btn-care{background:var(--primary);color:#fff;padding:5px 12px;border-radius:6px;border:none;font-size:11px;cursor:pointer;font-family:inherit}
+.btn-care{background:var(--primary);color:#fff;padding:5px 12px;border-radius:6px;border:none;font-size:11px;cursor:pointer;font-family:inherit;white-space:nowrap}
 .btn-care:hover{background:var(--primary-hover)}
 .tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:500;margin:1px}
 .tag-struggle{background:rgba(248,113,113,.12);color:var(--red)}
@@ -81,6 +81,8 @@ table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;padding:8px 10px;color:var(--text-dim);font-weight:500;border-bottom:1px solid var(--border);font-size:11px}
 td{padding:9px 10px;border-bottom:1px solid rgba(51,65,85,.4)}
 tr:hover td{background:rgba(99,102,241,.03)}
+.student-link{color:var(--text);cursor:pointer;text-decoration:none;border-bottom:1px dashed var(--text-dim)}
+.student-link:hover{color:var(--primary-hover);border-bottom-color:var(--primary-hover)}
 
 .chart-wrap{position:relative;height:260px}
 .chart-wrap-sm{position:relative;height:200px}
@@ -91,6 +93,15 @@ tr:hover td{background:rgba(99,102,241,.03)}
 .heatmap-cell:hover{transform:scale(1.1);z-index:1}
 .heatmap-header{font-size:10px;color:var(--text-dim);text-align:center;padding:2px}
 
+/* AI Summary cards */
+.ai-summary-item{background:var(--surface-2);border-radius:8px;padding:12px 14px;margin-bottom:8px;font-size:12px;line-height:1.6;border-left:3px solid var(--primary)}
+.ai-summary-item .summary-name{font-weight:600;color:var(--primary-hover)}
+.ai-summary-item .summary-tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:4px}
+.ai-summary-item.risk-high{border-left-color:var(--red)}
+.ai-summary-item.risk-medium{border-left-color:var(--amber)}
+.ai-summary-item.risk-low{border-left-color:var(--green)}
+
+/* Modals */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100;align-items:center;justify-content:center}
 .modal-overlay.open{display:flex}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto}
@@ -101,6 +112,21 @@ tr:hover td{background:rgba(99,102,241,.03)}
 .modal-btn-primary{background:var(--primary);color:#fff}
 .modal-btn-primary:hover{background:var(--primary-hover)}
 .modal-btn-secondary{background:var(--surface-2);color:var(--text-muted)}
+
+/* Student detail modal */
+.modal-lg{max-width:680px}
+.detail-section{margin-bottom:16px}
+.detail-section h4{font-size:13px;font-weight:600;margin-bottom:8px;color:var(--text-muted)}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.detail-pref-tag{display:inline-block;padding:3px 10px;border-radius:6px;font-size:11px;margin:2px;background:var(--primary-glow);color:var(--primary-hover)}
+.trajectory-item{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(51,65,85,.3);font-size:12px}
+.trajectory-week{font-weight:600;color:var(--accent);min-width:40px}
+.trajectory-desc{color:var(--text-muted)}
+.chart-wrap-modal{position:relative;height:180px}
+
+/* Toast */
+.toast{position:fixed;bottom:20px;right:20px;background:var(--green);color:#000;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:500;z-index:200;animation:fadeInOut 3s forwards}
+@keyframes fadeInOut{0%{opacity:0;transform:translateY(10px)}10%{opacity:1;transform:translateY(0)}80%{opacity:1}100%{opacity:0}}
 </style>
 </head>
 <body>
@@ -112,48 +138,45 @@ tr:hover td{background:rgba(99,102,241,.03)}
   </div>
   <div class="sidebar-nav">
     <a href="/" class="nav-item"><span class="nav-icon">🏠</span>首頁</a>
-    <div class="nav-item active"><span class="nav-icon">📊</span>班級總覽</div>
-    <div class="nav-item" onclick="scrollTo('#alerts')"><span class="nav-icon">🚨</span>預警中心</div>
-    <div class="nav-item" onclick="scrollTo('#difficulty')"><span class="nav-icon">🔥</span>困難點分析</div>
-    <div class="nav-item" onclick="scrollTo('#students')"><span class="nav-icon">👤</span>學生列表</div>
-    <div class="nav-item" onclick="scrollTo('#trends')"><span class="nav-icon">📈</span>週趨勢</div>
+    <div class="nav-item active" data-target="stats-section"><span class="nav-icon">📊</span>班級總覽</div>
+    <div class="nav-item" data-target="alerts"><span class="nav-icon">🚨</span>預警中心</div>
+    <div class="nav-item" data-target="difficulty"><span class="nav-icon">🔥</span>困難點分析</div>
+    <div class="nav-item" data-target="students"><span class="nav-icon">👤</span>學生列表</div>
+    <div class="nav-item" data-target="ai-summary"><span class="nav-icon">💬</span>AI 互動摘要</div>
+    <div class="nav-item" data-target="trends"><span class="nav-icon">📈</span>週趨勢</div>
     <div class="nav-divider"></div>
     <a href="/student" class="nav-item"><span class="nav-icon">👨‍🎓</span>學生端預覽</a>
   </div>
-  <div class="course-selector">
+  <div class="course-selector" id="courseSelectorContainer">
     <label>課程篩選</label>
-    <div class="prof-label">王教授</div>
-    <button class="course-btn active">📗 資料結構（32人）</button>
-    <button class="course-btn">📘 Python 程式設計（28人）</button>
-    <div class="prof-label" style="margin-top:4px">張教授</div>
-    <button class="course-btn">📙 資料庫系統（35人）</button>
+    <!-- populated by JS -->
   </div>
 </div>
 
 <div class="main">
   <div class="topbar">
-    <div class="topbar-title">📊 資料結構 — 班級儀表板</div>
+    <div class="topbar-title" id="topbarTitle">📊 資料結構 — 班級儀表板</div>
     <div class="topbar-right">
-      <span>王教授</span>
+      <span id="topbarProf">王教授</span>
       <span class="badge badge-green">第 10 週</span>
       <span class="badge badge-amber">期中考後</span>
     </div>
   </div>
-  <div class="content">
+  <div class="content" id="mainContent">
 
     <!-- Mockup Notice -->
     <div style="background:linear-gradient(135deg,rgba(251,191,36,0.12),rgba(248,113,113,0.08));border:1px solid rgba(251,191,36,0.25);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted)">
       <span style="font-size:20px">🎨</span>
-      <span><strong style="color:var(--amber)">產品願景展示</strong> — 此頁面部分圖表（散點圖、熱力圖、預警中心）使用模擬資料展示產品願景。統計卡片接入真實 API。</span>
+      <span><strong style="color:var(--amber)">產品願景展示</strong> — 此頁面展示 EduInsight 教師端的完整功能，所有資料皆為 10 週模擬數據。</span>
     </div>
 
     <!-- Stats -->
-    <div class="stats-row">
-      <div class="stat-card"><div class="stat-label">修課人數</div><div class="stat-value" style="color:var(--primary-hover)">32</div><div class="stat-sub">活躍 28 · 沉默 4</div></div>
-      <div class="stat-card"><div class="stat-label">期中考平均</div><div class="stat-value" style="color:var(--accent)">71.3</div><div class="stat-sub">全距 23-96</div></div>
-      <div class="stat-card"><div class="stat-label">⚠️ 風險學生</div><div class="stat-value" style="color:var(--red)">3</div><div class="stat-sub">較上週 +1</div></div>
-      <div class="stat-card"><div class="stat-label">本週 AI 問答</div><div class="stat-value" style="color:var(--green)">127</div><div class="stat-sub">較上週 -42%</div></div>
-      <div class="stat-card"><div class="stat-label">累計記憶</div><div class="stat-value" style="color:var(--amber)">2,847</div><div class="stat-sub">平均 89/人</div></div>
+    <div class="stats-row" id="stats-section">
+      <div class="stat-card"><div class="stat-label">修課人數</div><div class="stat-value" id="stat-students" style="color:var(--primary-hover)">32</div><div class="stat-sub" id="stat-students-sub">活躍 28 · 沉默 4</div></div>
+      <div class="stat-card"><div class="stat-label">期中考平均</div><div class="stat-value" id="stat-avg" style="color:var(--accent)">71.3</div><div class="stat-sub" id="stat-avg-sub">全距 23-96</div></div>
+      <div class="stat-card"><div class="stat-label">⚠️ 風險學生</div><div class="stat-value" id="stat-risk" style="color:var(--red)">3</div><div class="stat-sub" id="stat-risk-sub">較上週 +1</div></div>
+      <div class="stat-card"><div class="stat-label">本週 AI 問答</div><div class="stat-value" id="stat-ai" style="color:var(--green)">127</div><div class="stat-sub" id="stat-ai-sub">較上週 -42%</div></div>
+      <div class="stat-card"><div class="stat-label">累計記憶</div><div class="stat-value" id="stat-mem" style="color:var(--amber)">2,847</div><div class="stat-sub" id="stat-mem-sub">平均 89/人</div></div>
     </div>
 
     <!-- Scatter + Heatmap -->
@@ -171,42 +194,14 @@ tr:hover td{background:rgba(99,102,241,.03)}
     <!-- Alerts -->
     <div class="card" id="alerts">
       <div class="card-header"><div><div class="card-title">🚨 預警中心</div><div class="card-subtitle">基於 AI 互動頻率變化 + 成績趨勢 + 活躍度自動偵測</div></div></div>
-      <div class="alert-item">
-        <div class="alert-avatar" style="background:rgba(248,113,113,.15);color:var(--red)">李</div>
-        <div class="alert-info">
-          <div class="alert-name">D 李同學 <span class="tag tag-struggle">高風險</span></div>
-          <div class="alert-detail">期中考 F（23分）· 第10週零互動 · 疑似考慮二退 · Persistence Score: 12%</div>
-        </div>
-        <button class="btn-care" onclick="openCareModal('D 李同學','李同學你好，我是王老師。注意到你期中考後比較少上線，資料結構的進度如果有跟不上的地方，歡迎來週三 office hour 聊聊，我們一起想辦法。')">💌 發送關懷</button>
-      </div>
-      <div class="alert-item">
-        <div class="alert-avatar" style="background:rgba(248,113,113,.15);color:var(--red)">王</div>
-        <div class="alert-info">
-          <div class="alert-name">C 王同學 <span class="tag tag-retake">重修</span> <span class="tag tag-struggle">高風險</span></div>
-          <div class="alert-detail">重修生 · 期中考 D（45分）· AI 互動驟降 80% · 態度趨消極 · Persistence Score: 28%</div>
-        </div>
-        <button class="btn-care" onclick="openCareModal('C 王同學','王同學你好，我知道重修壓力不小。看到你之前有用 AI 助教複習 pointer 的部分，其實你的方向是對的。期中考的 linked list 題目如果需要，我可以額外找時間幫你複習。')">💌 發送關懷</button>
-      </div>
-      <div class="alert-item">
-        <div class="alert-avatar" style="background:rgba(251,191,36,.15);color:var(--amber)">陳</div>
-        <div class="alert-info">
-          <div class="alert-name">A 陳同學 <span class="tag" style="background:rgba(251,191,36,.12);color:var(--amber)">需關注</span></div>
-          <div class="alert-detail">期中考 B-（68分）· Binary Tree 連問 5 次仍未理解 · 偏好視覺化但課程偏文字 · Persistence Score: 61%</div>
-        </div>
-        <button class="btn-care" onclick="openCareModal('A 陳同學','陳同學你好，看到你在 Binary Tree Traversal 的部分花了不少心力。你的學習風格偏好圖解，我下週上課會多加一些視覺化的範例，另外推薦你用 AI 助教的「畫給我看」功能來理解 inorder/preorder 的差異。')">💌 發送關懷</button>
-      </div>
+      <div id="alertsList"></div>
     </div>
 
     <!-- Difficulty + Trends -->
     <div class="grid-2">
       <div class="card" id="difficulty">
         <div class="card-header"><div><div class="card-title">🔥 困難概念排行榜</div><div class="card-subtitle">最多學生反覆提問的知識點</div></div></div>
-        <div class="diff-item"><div class="diff-rank" style="background:rgba(248,113,113,.2);color:var(--red)">1</div><div class="diff-bar-wrap"><div class="diff-label"><span>Binary Tree Traversal</span><span style="color:var(--red)">18 人反覆問</span></div><div class="diff-bar"><div class="diff-fill" style="width:90%;background:var(--red)"></div></div></div></div>
-        <div class="diff-item"><div class="diff-rank">2</div><div class="diff-bar-wrap"><div class="diff-label"><span>時間複雜度 — 均攤分析</span><span style="color:var(--rose)">14 人</span></div><div class="diff-bar"><div class="diff-fill" style="width:70%;background:var(--rose)"></div></div></div></div>
-        <div class="diff-item"><div class="diff-rank">3</div><div class="diff-bar-wrap"><div class="diff-label"><span>Hash Table 碰撞處理</span><span style="color:var(--amber)">11 人</span></div><div class="diff-bar"><div class="diff-fill" style="width:55%;background:var(--amber)"></div></div></div></div>
-        <div class="diff-item"><div class="diff-rank">4</div><div class="diff-bar-wrap"><div class="diff-label"><span>Linked List 指標操作</span><span style="color:var(--amber)">9 人</span></div><div class="diff-bar"><div class="diff-fill" style="width:45%;background:var(--amber)"></div></div></div></div>
-        <div class="diff-item"><div class="diff-rank">5</div><div class="diff-bar-wrap"><div class="diff-label"><span>Stack/Queue 應用場景</span><span style="color:var(--text-dim)">6 人</span></div><div class="diff-bar"><div class="diff-fill" style="width:30%;background:var(--surface-3)"></div></div></div></div>
-        <div class="diff-item"><div class="diff-rank">6</div><div class="diff-bar-wrap"><div class="diff-label"><span>Graph BFS/DFS</span><span style="color:var(--text-dim)">5 人</span></div><div class="diff-bar"><div class="diff-fill" style="width:25%;background:var(--surface-3)"></div></div></div></div>
+        <div id="difficultyList"></div>
       </div>
       <div class="card" id="trends">
         <div class="card-header"><div><div class="card-title">📈 每週趨勢</div><div class="card-subtitle">AI 問答量 · 風險學生數</div></div></div>
@@ -219,19 +214,14 @@ tr:hover td{background:rgba(99,102,241,.03)}
       <div class="card-header"><div><div class="card-title">👤 學生列表</div><div class="card-subtitle">依風險程度排序</div></div></div>
       <table>
         <thead><tr><th></th><th>學生</th><th>期中考</th><th>本週 AI</th><th>累計記憶</th><th>弱項</th><th>Persistence</th></tr></thead>
-        <tbody>
-          <tr><td><span class="dot dot-red"></span></td><td><b>D 李同學</b></td><td style="color:var(--red)">23 / F</td><td>0</td><td>12</td><td><span class="tag tag-struggle">全部</span></td><td style="color:var(--red)">12%</td></tr>
-          <tr><td><span class="dot dot-red"></span></td><td><b>C 王同學</b> <span class="tag tag-retake">重修</span></td><td style="color:var(--red)">45 / D</td><td>2</td><td>34</td><td><span class="tag tag-struggle">pointer</span> <span class="tag tag-struggle">recursion</span></td><td style="color:var(--red)">28%</td></tr>
-          <tr><td><span class="dot dot-amber"></span></td><td><b>A 陳同學</b></td><td style="color:var(--amber)">68 / B-</td><td>8</td><td>78</td><td><span class="tag tag-struggle">binary tree</span> <span class="tag tag-struggle">amortized</span></td><td style="color:var(--amber)">61%</td></tr>
-          <tr><td><span class="dot dot-green"></span></td><td>E 張同學</td><td>76 / C+</td><td>5</td><td>52</td><td><span class="tag tag-struggle">complexity</span></td><td>74%</td></tr>
-          <tr><td><span class="dot dot-green"></span></td><td><b>B 林同學</b></td><td style="color:var(--green)">92 / A</td><td>3</td><td>45</td><td><span class="tag tag-pref">進階深度</span></td><td style="color:var(--green)">95%</td></tr>
-          <tr><td><span class="dot dot-green"></span></td><td>F 黃同學</td><td>85 / A-</td><td>6</td><td>67</td><td>—</td><td>88%</td></tr>
-          <tr><td><span class="dot dot-green"></span></td><td>G 周同學</td><td>74 / B</td><td>4</td><td>41</td><td><span class="tag tag-struggle">tree</span></td><td>72%</td></tr>
-          <tr><td><span class="dot dot-green"></span></td><td>H 吳同學</td><td>71 / B-</td><td>7</td><td>55</td><td><span class="tag tag-struggle">hash</span></td><td>69%</td></tr>
-          <tr><td><span class="dot dot-green"></span></td><td>I 劉同學</td><td>88 / A</td><td>2</td><td>31</td><td>—</td><td>91%</td></tr>
-          <tr><td><span class="dot dot-green"></span></td><td>J 楊同學</td><td>65 / C+</td><td>9</td><td>82</td><td><span class="tag tag-struggle">graph</span> <span class="tag tag-struggle">tree</span></td><td>58%</td></tr>
-        </tbody>
+        <tbody id="studentTableBody"></tbody>
       </table>
+    </div>
+
+    <!-- AI Interaction Summary -->
+    <div class="card" id="ai-summary">
+      <div class="card-header"><div><div class="card-title">💬 AI 互動摘要</div><div class="card-subtitle">聚合式互動紀錄 · 保護學生隱私，僅顯示統計與趨勢</div></div></div>
+      <div id="aiSummaryList"></div>
     </div>
 
     <!-- Bottom row: 3 charts -->
@@ -258,181 +248,891 @@ tr:hover td{background:rgba(99,102,241,.03)}
   </div>
 </div>
 
+<!-- Student Detail Modal -->
+<div class="modal-overlay" id="studentModal">
+  <div class="modal modal-lg">
+    <h3 id="studentModalTitle">學生詳情</h3>
+    <div id="studentModalContent"></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-secondary" onclick="closeStudentModal()">關閉</button>
+      <button class="modal-btn modal-btn-primary" id="studentCareBtn">💌 發送關懷</button>
+    </div>
+  </div>
+</div>
+
 <script>
-Chart.defaults.color='#94a3b8';Chart.defaults.borderColor='rgba(51,65,85,0.5)';
+// =====================================================================
+// COURSE DATA — All hardcoded demo data for each course
+// =====================================================================
+const COURSE_DATA = {
+  'wang-ds': {
+    key: 'wang-ds',
+    prof: '王教授',
+    course: '資料結構',
+    icon: '📗',
+    studentCount: 32,
+    stats: {
+      students: '32', studentsSub: '活躍 28 · 沉默 4',
+      avg: '71.3', avgSub: '全距 23-96',
+      risk: '3', riskSub: '較上週 +1',
+      ai: '127', aiSub: '較上週 -42%',
+      mem: '2,847', memSub: '平均 89/人'
+    },
+    scatter: {
+      normal: [{x:48,y:92},{x:35,y:85},{x:22,y:88},{x:40,y:74},{x:55,y:71},{x:30,y:78},{x:45,y:80},{x:38,y:76},{x:28,y:82},{x:50,y:84},{x:33,y:79},{x:42,y:73},{x:36,y:77},{x:44,y:81},{x:52,y:86},{x:29,y:75},{x:47,y:83},{x:31,y:70},{x:41,y:72}],
+      watch: [{x:62,y:68},{x:72,y:65},{x:18,y:62},{x:58,y:60},{x:25,y:59}],
+      danger: [{x:0,y:23},{x:8,y:45},{x:5,y:38}]
+    },
+    heatmap: [[2,5,3,4,1,0,0],[8,12,7,10,5,1,0],[15,18,14,16,12,3,1],[10,14,11,13,8,2,1],[6,8,5,7,4,1,0],[12,15,10,14,9,4,2],[18,22,16,20,14,8,5],[8,10,7,9,6,5,3]],
+    alerts: [
+      {surname:'李',name:'D 李同學',tags:['高風險'],detail:'期中考 F（23分）· 第10週零互動 · 疑似考慮二退 · Persistence Score: 12%',avatarBg:'rgba(248,113,113,.15)',avatarColor:'var(--red)',careMsg:'李同學你好，我是王老師。注意到你期中考後比較少上線，資料結構的進度如果有跟不上的地方，歡迎來週三 office hour 聊聊，我們一起想辦法。'},
+      {surname:'王',name:'C 王同學',tags:['重修','高風險'],detail:'重修生 · 期中考 D（45分）· AI 互動驟降 80% · 態度趨消極 · Persistence Score: 28%',avatarBg:'rgba(248,113,113,.15)',avatarColor:'var(--red)',careMsg:'王同學你好，我知道重修壓力不小。看到你之前有用 AI 助教複習 pointer 的部分，其實你的方向是對的。期中考的 linked list 題目如果需要，我可以額外找時間幫你複習。'},
+      {surname:'陳',name:'A 陳同學',tags:['需關注'],detail:'期中考 B-（68分）· Binary Tree 連問 5 次仍未理解 · 偏好視覺化但課程偏文字 · Persistence Score: 61%',avatarBg:'rgba(251,191,36,.15)',avatarColor:'var(--amber)',careMsg:'陳同學你好，看到你在 Binary Tree Traversal 的部分花了不少心力。你的學習風格偏好圖解，我下週上課會多加一些視覺化的範例，另外推薦你用 AI 助教的「畫給我看」功能來理解 inorder/preorder 的差異。'}
+    ],
+    difficulty: [
+      {topic:'Binary Tree Traversal',count:18,pct:90,color:'var(--red)'},
+      {topic:'時間複雜度 — 均攤分析',count:14,pct:70,color:'var(--rose)'},
+      {topic:'Hash Table 碰撞處理',count:11,pct:55,color:'var(--amber)'},
+      {topic:'Linked List 指標操作',count:9,pct:45,color:'var(--amber)'},
+      {topic:'Stack/Queue 應用場景',count:6,pct:30,color:'var(--surface-3)'},
+      {topic:'Graph BFS/DFS',count:5,pct:25,color:'var(--surface-3)'}
+    ],
+    trend: {
+      labels: ['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],
+      ai: [45,68,82,95,110,125,140,155,312,127],
+      risk: [0,0,1,1,1,1,2,2,2,3]
+    },
+    students: [
+      {dot:'red',name:'D 李同學',bold:true,tags:[],midterm:'23 / F',midColor:'var(--red)',weekAI:0,mem:12,weakTags:['全部'],persistence:'12%',persColor:'var(--red)',id:'wang-ds-li'},
+      {dot:'red',name:'C 王同學',bold:true,tags:['重修'],midterm:'45 / D',midColor:'var(--red)',weekAI:2,mem:34,weakTags:['pointer','recursion'],persistence:'28%',persColor:'var(--red)',id:'wang-ds-wang'},
+      {dot:'amber',name:'A 陳同學',bold:true,tags:[],midterm:'68 / B-',midColor:'var(--amber)',weekAI:8,mem:78,weakTags:['binary tree','amortized'],persistence:'61%',persColor:'var(--amber)',id:'wang-ds-chen'},
+      {dot:'green',name:'E 張同學',bold:false,tags:[],midterm:'76 / C+',midColor:'',weekAI:5,mem:52,weakTags:['complexity'],persistence:'74%',persColor:'',id:'wang-ds-zhang'},
+      {dot:'green',name:'B 林同學',bold:true,tags:[],midterm:'92 / A',midColor:'var(--green)',weekAI:3,mem:45,weakTags:[],prefTags:['進階深度'],persistence:'95%',persColor:'var(--green)',id:'wang-ds-lin'},
+      {dot:'green',name:'F 黃同學',bold:false,tags:[],midterm:'85 / A-',midColor:'',weekAI:6,mem:67,weakTags:[],persistence:'88%',persColor:'',id:'wang-ds-huang'},
+      {dot:'green',name:'G 周同學',bold:false,tags:[],midterm:'74 / B',midColor:'',weekAI:4,mem:41,weakTags:['tree'],persistence:'72%',persColor:'',id:'wang-ds-zhou'},
+      {dot:'green',name:'H 吳同學',bold:false,tags:[],midterm:'71 / B-',midColor:'',weekAI:7,mem:55,weakTags:['hash'],persistence:'69%',persColor:'',id:'wang-ds-wu'},
+      {dot:'green',name:'I 劉同學',bold:false,tags:[],midterm:'88 / A',midColor:'',weekAI:2,mem:31,weakTags:[],persistence:'91%',persColor:'',id:'wang-ds-liu'},
+      {dot:'green',name:'J 楊同學',bold:false,tags:[],midterm:'65 / C+',midColor:'',weekAI:9,mem:82,weakTags:['graph','tree'],persistence:'58%',persColor:'',id:'wang-ds-yang'}
+    ],
+    aiSummaries: [
+      {name:'陳同學',risk:'medium',text:'本週問了 8 個問題，集中在 Binary Tree Traversal（5次）和 Hash Table（3次）。連續 3 週卡在 inorder traversal 的遞迴邏輯，但本週開始嘗試用迭代寫法。'},
+      {name:'王同學',risk:'high',text:'（重修）上週完全沒有互動，上上週只問了 2 個基礎問題（Linked List 定義）。與第 5 週相比互動量下降 92%，態度趨消極。'},
+      {name:'李同學',risk:'high',text:'第 9 週後完全消失，最後一次互動是問 linked list reversal。累計只產生 12 筆記憶，是全班最低。'},
+      {name:'林同學',risk:'low',text:'穩定高手型。本週 3 次互動都是進階問題：AVL Tree rotation 證明、Red-Black Tree 與 B-Tree 比較。已超出課綱範圍。'},
+      {name:'楊同學',risk:'medium',text:'本週 9 次互動，量是全班最高。但問題模式顯示反覆在同一概念打轉（Graph DFS），建議教師介入了解理解障礙。'},
+      {name:'吳同學',risk:'low',text:'本週 7 次互動，主要集中在 Hash Table（4次），開始自主做比較表整理。學習策略有改善跡象。'}
+    ],
+    pref: {labels:['視覺圖解','程式範例','理論推導','實作練習','問答對話'],data:[35,25,15,15,10]},
+    grade: {labels:['F (0-49)','D (50-59)','C (60-69)','B (70-79)','A (80-100)'],data:[3,2,7,13,7]},
+    behavior: {
+      labels:['概念提問','程式除錯','考前衝刺','深度追問','複習回顧'],
+      classAvg:[75,60,85,40,55],
+      highlight:{name:'A 陳同學',data:[90,45,95,30,70]}
+    }
+  },
 
-// Scatter
-new Chart(document.getElementById('scatterChart'),{type:'scatter',data:{datasets:[
-{label:'🟢 正常',data:[{x:48,y:92},{x:35,y:85},{x:22,y:88},{x:40,y:74},{x:55,y:71},{x:30,y:78},{x:45,y:80},{x:38,y:76},{x:28,y:82},{x:50,y:84},{x:33,y:79},{x:42,y:73},{x:36,y:77},{x:44,y:81},{x:52,y:86},{x:29,y:75},{x:47,y:83},{x:31,y:70},{x:41,y:72}],backgroundColor:'#34d39955',borderColor:'#34d399',pointRadius:5},
-{label:'🟡 需關注',data:[{x:62,y:68},{x:72,y:65},{x:18,y:62},{x:58,y:60},{x:25,y:59}],backgroundColor:'#fbbf2455',borderColor:'#fbbf24',pointRadius:6},
-{label:'🔴 高風險',data:[{x:0,y:23},{x:8,y:45},{x:5,y:38}],backgroundColor:'#f8717166',borderColor:'#f87171',pointRadius:8}
-]},options:{responsive:true,maintainAspectRatio:false,scales:{x:{title:{display:true,text:'AI 互動次數（10週累計）',font:{size:11}},min:0,max:80},y:{title:{display:true,text:'期中考成績',font:{size:11}},min:0,max:100}},plugins:{legend:{position:'bottom',labels:{font:{size:11},usePointStyle:true,padding:12}}}}});
+  'wang-python': {
+    key: 'wang-python',
+    prof: '王教授',
+    course: 'Python 程式設計',
+    icon: '📘',
+    studentCount: 28,
+    stats: {
+      students: '28', studentsSub: '活躍 25 · 沉默 3',
+      avg: '76.8', avgSub: '全距 31-98',
+      risk: '2', riskSub: '較上週 持平',
+      ai: '198', aiSub: '較上週 +15%',
+      mem: '2,156', memSub: '平均 77/人'
+    },
+    scatter: {
+      normal: [{x:42,y:88},{x:55,y:92},{x:38,y:76},{x:60,y:85},{x:30,y:79},{x:48,y:82},{x:52,y:90},{x:35,y:74},{x:45,y:81},{x:58,y:87},{x:40,y:78},{x:50,y:83},{x:33,y:72},{x:44,y:80},{x:56,y:89},{x:37,y:75},{x:46,y:84},{x:53,y:91},{x:41,y:77}],
+      watch: [{x:15,y:62},{x:22,y:58},{x:68,y:55},{x:10,y:64}],
+      danger: [{x:3,y:31},{x:6,y:42}]
+    },
+    heatmap: [[1,3,2,3,1,0,0],[5,8,6,7,4,2,0],[10,14,11,13,9,4,1],[12,16,13,15,10,3,1],[8,10,7,9,6,2,0],[14,18,12,16,11,5,3],[20,25,18,22,16,10,6],[10,12,8,11,7,6,4]],
+    alerts: [
+      {surname:'許',name:'許同學',tags:['高風險'],detail:'期中考 F（31分）· 第8週後互動銳減 · 連基礎語法都有問題 · Persistence Score: 15%',avatarBg:'rgba(248,113,113,.15)',avatarColor:'var(--red)',careMsg:'許同學你好，我是王老師。Python 程式設計的基礎其實不難，我注意到你在變數作用域的部分有些困難。這週五有額外的 Lab 時間，歡迎來找我或助教，我們一步一步來。'},
+      {surname:'蔡',name:'蔡同學',tags:['需關注'],detail:'期中考 D+（55分）· 除錯能力弱 · 幾乎每次作業都有 syntax error · Persistence Score: 45%',avatarBg:'rgba(251,191,36,.15)',avatarColor:'var(--amber)',careMsg:'蔡同學你好，看到你很認真在寫作業，但 syntax error 的頻率偏高。建議你先試試 AI 助教的「幫我檢查」功能，它會一行一行教你看錯誤訊息。'}
+    ],
+    difficulty: [
+      {topic:'Variable Scope（變數作用域）',count:16,pct:90,color:'var(--red)'},
+      {topic:'Debugging（讀錯誤訊息）',count:13,pct:72,color:'var(--rose)'},
+      {topic:'f-string 格式化輸出',count:10,pct:56,color:'var(--amber)'},
+      {topic:'List Comprehension',count:8,pct:44,color:'var(--amber)'},
+      {topic:'File I/O 檔案操作',count:6,pct:33,color:'var(--surface-3)'},
+      {topic:'Dictionary 巢狀存取',count:5,pct:28,color:'var(--surface-3)'}
+    ],
+    trend: {
+      labels: ['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],
+      ai: [30,52,78,95,120,145,168,190,205,198],
+      risk: [0,0,0,1,1,1,2,2,2,2]
+    },
+    students: [
+      {dot:'red',name:'許同學',bold:true,tags:[],midterm:'31 / F',midColor:'var(--red)',weekAI:1,mem:15,weakTags:['scope','syntax','全部'],persistence:'15%',persColor:'var(--red)',id:'wang-py-xu'},
+      {dot:'amber',name:'蔡同學',bold:true,tags:[],midterm:'55 / D+',midColor:'var(--amber)',weekAI:6,mem:42,weakTags:['debugging','syntax error'],persistence:'45%',persColor:'var(--amber)',id:'wang-py-cai'},
+      {dot:'amber',name:'方同學',bold:false,tags:[],midterm:'62 / C',midColor:'var(--amber)',weekAI:10,mem:68,weakTags:['f-string','file I/O'],persistence:'52%',persColor:'var(--amber)',id:'wang-py-fang'},
+      {dot:'green',name:'鄭同學',bold:false,tags:[],midterm:'78 / B',midColor:'',weekAI:8,mem:71,weakTags:['list comprehension'],persistence:'76%',persColor:'',id:'wang-py-zheng'},
+      {dot:'green',name:'林同學',bold:false,tags:[],midterm:'85 / A-',midColor:'',weekAI:5,mem:55,weakTags:[],prefTags:['自主學習'],persistence:'88%',persColor:'',id:'wang-py-lin'},
+      {dot:'green',name:'趙同學',bold:true,tags:[],midterm:'98 / A+',midColor:'var(--green)',weekAI:12,mem:95,weakTags:[],prefTags:['進階挑戰'],persistence:'97%',persColor:'var(--green)',id:'wang-py-zhao'},
+      {dot:'green',name:'何同學',bold:false,tags:[],midterm:'74 / B-',midColor:'',weekAI:7,mem:48,weakTags:['dict'],persistence:'71%',persColor:'',id:'wang-py-he'},
+      {dot:'green',name:'高同學',bold:false,tags:[],midterm:'81 / A-',midColor:'',weekAI:4,mem:39,weakTags:[],persistence:'82%',persColor:'',id:'wang-py-gao'},
+      {dot:'green',name:'曾同學',bold:false,tags:[],midterm:'72 / B-',midColor:'',weekAI:9,mem:61,weakTags:['scope'],persistence:'67%',persColor:'',id:'wang-py-zeng'},
+      {dot:'green',name:'謝同學',bold:false,tags:[],midterm:'88 / A',midColor:'',weekAI:3,mem:35,weakTags:[],persistence:'90%',persColor:'',id:'wang-py-xie'}
+    ],
+    aiSummaries: [
+      {name:'許同學',risk:'high',text:'第 8 週後幾乎消失，最後互動是問「為什麼 print 不出來」。累計只 15 筆記憶，且全部集中在最基礎的語法問題。'},
+      {name:'蔡同學',risk:'medium',text:'本週 6 次互動，每次都是貼整段程式碼問「哪裡錯了」。AI 引導她讀 error message，但下次還是同樣模式。需要教師介入教除錯策略。'},
+      {name:'趙同學',risk:'low',text:'全班互動量最高（12次/週）。本週問了 decorator 用法、generator 原理、async 基礎 — 已超出課綱，建議給予進階資源。'},
+      {name:'方同學',risk:'medium',text:'本週 10 次互動，集中在 f-string 和 file I/O。重複問類似問題 4 次，疑似沒有消化前次回答。'},
+      {name:'曾同學',risk:'medium',text:'本週 9 次互動，主要是 variable scope 問題。從 global/local 到 closure，概念逐步深入，有進步跡象。'}
+    ],
+    pref: {labels:['程式範例','實作練習','錯誤修正','視覺圖解','問答對話'],data:[30,28,22,12,8]},
+    grade: {labels:['F (0-49)','D (50-59)','C (60-69)','B (70-79)','A (80-100)'],data:[2,1,5,12,8]},
+    behavior: {
+      labels:['概念提問','程式除錯','考前衝刺','深度追問','複習回顧'],
+      classAvg:[55,80,70,35,60],
+      highlight:{name:'蔡同學',data:[30,95,80,10,40]}
+    }
+  },
 
-// Trend
-new Chart(document.getElementById('trendChart'),{type:'line',data:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],datasets:[
-{label:'AI 問答量',data:[45,68,82,95,110,125,140,155,312,127],borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.08)',fill:true,tension:.3,pointRadius:3},
-{label:'風險學生',data:[0,0,1,1,1,1,2,2,2,3],borderColor:'#f87171',backgroundColor:'rgba(248,113,113,.08)',fill:true,tension:.3,pointRadius:3,yAxisID:'y1'}
-]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{title:{display:true,text:'問答量',font:{size:10}},beginAtZero:true},y1:{position:'right',title:{display:true,text:'風險人數',font:{size:10}},beginAtZero:true,max:6,grid:{drawOnChartArea:false}}},plugins:{legend:{position:'bottom',labels:{font:{size:11},usePointStyle:true,padding:12}}}}});
-
-// Preference
-new Chart(document.getElementById('prefChart'),{type:'doughnut',data:{labels:['視覺圖解','程式範例','理論推導','實作練習','問答對話'],datasets:[{data:[35,25,15,15,10],backgroundColor:['#6366f1','#22d3ee','#34d399','#fbbf24','#f87171'],borderWidth:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10},padding:8}}}}});
-
-// Grade Distribution
-new Chart(document.getElementById('gradeChart'),{type:'bar',data:{labels:['F (0-49)','D (50-59)','C (60-69)','B (70-79)','A (80-100)'],datasets:[{data:[3,2,7,13,7],backgroundColor:['#f87171','#fb7185','#fbbf24','#34d399','#22d3ee'],borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'人數',font:{size:10}}}}}});
-
-// AI Behavior Radar
-new Chart(document.getElementById('behaviorChart'),{type:'radar',data:{labels:['概念提問','程式除錯','考前衝刺','深度追問','複習回顧'],datasets:[
-{label:'全班平均',data:[75,60,85,40,55],borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.1)',pointRadius:2},
-{label:'A 陳同學',data:[90,45,95,30,70],borderColor:'#fbbf24',backgroundColor:'rgba(251,191,36,.1)',pointRadius:2}
-]},options:{responsive:true,maintainAspectRatio:false,scales:{r:{beginAtZero:true,max:100,ticks:{font:{size:9}},pointLabels:{font:{size:10}}}},plugins:{legend:{position:'bottom',labels:{font:{size:10},usePointStyle:true,padding:8}}}}});
-
-// Heatmap
-const hd=[[2,5,3,4,1,0,0],[8,12,7,10,5,1,0],[15,18,14,16,12,3,1],[10,14,11,13,8,2,1],[6,8,5,7,4,1,0],[12,15,10,14,9,4,2],[18,22,16,20,14,8,5],[8,10,7,9,6,5,3]];
-const days=['一','二','三','四','五','六','日'],times=['08-10','10-12','12-14','14-16','16-18','18-20','20-22','22-24'],mx=22;
-let h='<div class="heatmap-grid"><div></div>';
-days.forEach(d=>h+=`<div class="heatmap-header">${d}</div>`);
-times.forEach((t,i)=>{h+=`<div class="heatmap-label">${t}</div>`;hd[i].forEach(v=>{const n=v/mx;const bg=n>.7?'rgba(99,102,241,.7)':n>.4?'rgba(99,102,241,.4)':n>.1?'rgba(99,102,241,.15)':'rgba(51,65,85,.3)';h+=`<div class="heatmap-cell" style="background:${bg}" title="${v} 次">${v||''}</div>`;});});
-h+='</div>';document.getElementById('heatmap').innerHTML=h;
-
-// Modal
-function openCareModal(n,m){document.getElementById('careTo').textContent=n;document.getElementById('careMsg').value=m;document.getElementById('careModal').classList.add('open')}
-function closeCareModal(){document.getElementById('careModal').classList.remove('open')}
-function sendCare(){closeCareModal();const t=document.createElement('div');t.style.cssText='position:fixed;bottom:20px;right:20px;background:#34d399;color:#000;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:500;z-index:200';t.textContent='✅ 關懷訊息已發送至 Moodle';document.body.appendChild(t);setTimeout(()=>t.remove(),3000)}
-function scrollTo(s){document.querySelector(s)?.scrollIntoView({behavior:'smooth',block:'start'})}
+  'zhang-db': {
+    key: 'zhang-db',
+    prof: '張教授',
+    course: '資料庫系統',
+    icon: '📙',
+    studentCount: 35,
+    stats: {
+      students: '35', studentsSub: '活躍 30 · 沉默 5',
+      avg: '68.5', avgSub: '全距 18-95',
+      risk: '5', riskSub: '較上週 +2',
+      ai: '156', aiSub: '較上週 -28%',
+      mem: '3,210', memSub: '平均 92/人'
+    },
+    scatter: {
+      normal: [{x:40,y:88},{x:50,y:82},{x:35,y:79},{x:55,y:85},{x:28,y:76},{x:45,y:80},{x:48,y:83},{x:32,y:74},{x:42,y:81},{x:52,y:87},{x:38,y:77},{x:46,y:84},{x:30,y:71},{x:44,y:78},{x:54,y:90},{x:36,y:73},{x:41,y:75},{x:49,y:86}],
+      watch: [{x:20,y:62},{x:12,y:58},{x:65,y:55},{x:8,y:60},{x:15,y:57},{x:70,y:52}],
+      danger: [{x:2,y:18},{x:5,y:35},{x:0,y:28},{x:7,y:40},{x:3,y:32}]
+    },
+    heatmap: [[3,6,4,5,2,1,0],[10,14,9,12,7,2,1],[18,22,16,20,14,5,2],[14,18,13,16,11,4,1],[8,12,7,10,6,2,1],[16,20,14,18,12,6,3],[22,28,20,25,18,10,6],[12,15,10,13,9,7,4]],
+    alerts: [
+      {surname:'吳',name:'吳同學',tags:['高風險'],detail:'期中考 F（18分）· 第7週後零互動 · SQL 完全不會寫 · Persistence Score: 8%',avatarBg:'rgba(248,113,113,.15)',avatarColor:'var(--red)',careMsg:'吳同學你好，我是張老師。資料庫系統的 SQL 語法一開始確實不好上手，但其實有很多工具可以幫助你練習。這週我會開放額外的 Lab 練習時段，歡迎你來試試。'},
+      {surname:'孫',name:'孫同學',tags:['高風險'],detail:'期中考 D-（35分）· Normalization 完全不理解 · 上週只問了 1 個問題 · Persistence Score: 20%',avatarBg:'rgba(248,113,113,.15)',avatarColor:'var(--red)',careMsg:'孫同學你好，正規化的概念確實比較抽象。建議你先從「為什麼需要正規化」的角度理解，AI 助教有一個用實際案例解釋 1NF/2NF/3NF 的功能，可以試試。'},
+      {surname:'馬',name:'馬同學',tags:['高風險'],detail:'期中考 D（40分）· ACID 概念混淆 · 出席率驟降 · Persistence Score: 25%',avatarBg:'rgba(248,113,113,.15)',avatarColor:'var(--red)',careMsg:'馬同學你好，ACID 四個特性是資料庫的核心概念，我理解一次要記住不容易。我在 Moodle 上放了一份圖解版筆記，配合 AI 助教的練習題可能會比較容易理解。'},
+      {surname:'鄧',name:'鄧同學',tags:['需關注'],detail:'期中考 C-（60分）· SQL JOIN 寫法不穩定 · 每次作業都要重寫 2-3 次 · Persistence Score: 48%',avatarBg:'rgba(251,191,36,.15)',avatarColor:'var(--amber)',careMsg:'鄧同學你好，看到你每次作業都很認真修正。SQL JOIN 的語法建議你試著畫 Venn Diagram 來理解，AI 助教可以幫你用圖解方式練習。'},
+      {surname:'余',name:'余同學',tags:['需關注'],detail:'期中考 C（62分）· 近兩週互動驟降 · 之前表現中等 · Persistence Score: 51%',avatarBg:'rgba(251,191,36,.15)',avatarColor:'var(--amber)',careMsg:'余同學你好，注意到你最近比較少上線。如果是其他科目比較忙，可以理解。但期末考快到了，建議你至少保持每週的練習量，有問題隨時找 AI 助教。'}
+    ],
+    difficulty: [
+      {topic:'SQL JOIN（多表連結）',count:22,pct:92,color:'var(--red)'},
+      {topic:'正規化（1NF/2NF/3NF）',count:19,pct:79,color:'var(--red)'},
+      {topic:'ACID 交易特性',count:15,pct:63,color:'var(--rose)'},
+      {topic:'子查詢 vs JOIN 選擇',count:12,pct:50,color:'var(--amber)'},
+      {topic:'Index 設計原則',count:8,pct:33,color:'var(--surface-3)'},
+      {topic:'ER Diagram 繪製',count:6,pct:25,color:'var(--surface-3)'}
+    ],
+    trend: {
+      labels: ['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],
+      ai: [25,48,72,98,130,155,178,200,245,156],
+      risk: [0,0,1,1,2,2,3,3,4,5]
+    },
+    students: [
+      {dot:'red',name:'吳同學',bold:true,tags:[],midterm:'18 / F',midColor:'var(--red)',weekAI:0,mem:8,weakTags:['SQL','全部'],persistence:'8%',persColor:'var(--red)',id:'zhang-db-wu'},
+      {dot:'red',name:'孫同學',bold:true,tags:[],midterm:'35 / D-',midColor:'var(--red)',weekAI:1,mem:22,weakTags:['normalization','ER'],persistence:'20%',persColor:'var(--red)',id:'zhang-db-sun'},
+      {dot:'red',name:'馬同學',bold:true,tags:[],midterm:'40 / D',midColor:'var(--red)',weekAI:2,mem:28,weakTags:['ACID','transaction'],persistence:'25%',persColor:'var(--red)',id:'zhang-db-ma'},
+      {dot:'amber',name:'鄧同學',bold:true,tags:[],midterm:'60 / C-',midColor:'var(--amber)',weekAI:8,mem:65,weakTags:['JOIN','subquery'],persistence:'48%',persColor:'var(--amber)',id:'zhang-db-deng'},
+      {dot:'amber',name:'余同學',bold:false,tags:[],midterm:'62 / C',midColor:'var(--amber)',weekAI:3,mem:48,weakTags:['JOIN'],persistence:'51%',persColor:'var(--amber)',id:'zhang-db-yu'},
+      {dot:'green',name:'沈同學',bold:false,tags:[],midterm:'78 / B',midColor:'',weekAI:6,mem:72,weakTags:['index'],persistence:'75%',persColor:'',id:'zhang-db-shen'},
+      {dot:'green',name:'盧同學',bold:true,tags:[],midterm:'95 / A+',midColor:'var(--green)',weekAI:10,mem:105,weakTags:[],prefTags:['進階最佳化'],persistence:'98%',persColor:'var(--green)',id:'zhang-db-lu'},
+      {dot:'green',name:'田同學',bold:false,tags:[],midterm:'82 / A-',midColor:'',weekAI:5,mem:68,weakTags:[],persistence:'85%',persColor:'',id:'zhang-db-tian'},
+      {dot:'green',name:'羅同學',bold:false,tags:[],midterm:'74 / B-',midColor:'',weekAI:7,mem:58,weakTags:['ACID'],persistence:'70%',persColor:'',id:'zhang-db-luo'},
+      {dot:'green',name:'葉同學',bold:false,tags:[],midterm:'70 / B-',midColor:'',weekAI:4,mem:45,weakTags:['normalization'],persistence:'65%',persColor:'',id:'zhang-db-ye'}
+    ],
+    aiSummaries: [
+      {name:'吳同學',risk:'high',text:'第 7 週後完全消失。最後一次互動是問「SELECT 是什麼」，顯示 SQL 基礎完全沒有建立。累計 8 筆記憶為全班最低。'},
+      {name:'孫同學',risk:'high',text:'上週只問了 1 個問題：「什麼是 2NF」。歷史紀錄顯示他第 4 週就問過同樣問題，表示完全沒有消化。'},
+      {name:'鄧同學',risk:'medium',text:'本週 8 次互動全部是 SQL JOIN。嘗試了 INNER/LEFT/RIGHT JOIN 但經常混淆。第 3 次互動後開始畫圖輔助理解，有進步。'},
+      {name:'盧同學',risk:'low',text:'全班 MVP。本週 10 次互動包含：Query Optimization（4次）、Stored Procedure（3次）、Transaction Isolation Level（3次）。已超出課綱範圍。'},
+      {name:'馬同學',risk:'high',text:'本週只有 2 次互動，都在問 ACID 定義。但問法與第 3 週一模一樣，顯示完全沒有進步。出席率也從 100% 降到 40%。'},
+      {name:'羅同學',risk:'low',text:'本週 7 次互動，集中在 ACID 概念。從「什麼是 ACID」進步到「為什麼 Isolation Level 有不同等級」，理解深度穩定提升。'}
+    ],
+    pref: {labels:['實作練習','SQL 範例','圖解說明','理論推導','問答對話'],data:[32,28,20,12,8]},
+    grade: {labels:['F (0-49)','D (50-59)','C (60-69)','B (70-79)','A (80-100)'],data:[5,3,8,12,7]},
+    behavior: {
+      labels:['概念提問','SQL 除錯','考前衝刺','深度追問','複習回顧'],
+      classAvg:[70,65,80,35,50],
+      highlight:{name:'鄧同學',data:[85,90,60,20,45]}
+    }
+  }
+};
 
 // =====================================================================
-// Live Analytics — fetch real data from API and overlay onto dashboard
+// STUDENT DETAIL DATA — per-student modal content
 // =====================================================================
-(async function loadLiveAnalytics() {
-  // Parse LTI query params
-  const params = new URLSearchParams(location.search);
-  const isLTI = params.get('lti') === '1';
-  const ltiName = params.get('name');
-  const ltiCourse = params.get('course');
-  const ltiCourseName = params.get('course_name');
-
-  // Update topbar with LTI context if available
-  if (ltiCourseName || ltiCourse) {
-    const topTitle = document.querySelector('.topbar-title');
-    if (topTitle) topTitle.textContent = `📊 ${ltiCourseName || ltiCourse} — 班級儀表板`;
+const STUDENT_DETAILS = {
+  'wang-ds-li': {
+    name: 'D 李同學', course: '資料結構',
+    summary: '第 9 週後完全消失，最後一次互動是問 linked list reversal。累計只產生 12 筆記憶，全班最低。整體表現顯示可能已放棄本學期。',
+    radar: {labels:['基礎概念','程式實作','複雜度分析','進階結構','解題應用'],data:[15,10,5,0,8]},
+    prefs: ['需要大量基礎補強','偏好一對一指導'],
+    trajectory: [
+      {week:'W1',desc:'正常互動 3 次，問了 array 基本操作'},
+      {week:'W2',desc:'互動 4 次，linked list 概念建立中'},
+      {week:'W3-W5',desc:'互動逐漸減少，每週 1-2 次'},
+      {week:'W6',desc:'期中考前密集提問 5 次（stack/queue）'},
+      {week:'W7',desc:'期中考 F（23分），互動 2 次'},
+      {week:'W8',desc:'互動 1 次，問了 binary tree 定義'},
+      {week:'W9',desc:'最後一次互動：linked list reversal'},
+      {week:'W10',desc:'零互動，零出席'}
+    ]
+  },
+  'wang-ds-wang': {
+    name: 'C 王同學', course: '資料結構',
+    summary: '重修生，上學期 D+ 差點過。本學期初有改善跡象（W1-W5 積極使用 AI），但期中考後明顯放棄。AI 互動從每週 8 次降到 2 次。',
+    radar: {labels:['基礎概念','程式實作','複雜度分析','進階結構','解題應用'],data:[40,25,15,10,20]},
+    prefs: ['偏好程式碼範例','需要反覆練習','容易放棄'],
+    trajectory: [
+      {week:'W1-W3',desc:'重修生衝勁期，每週互動 6-8 次'},
+      {week:'W4-W5',desc:'pointer 概念卡住，開始反覆提問'},
+      {week:'W6',desc:'期中考前衝刺 12 次互動'},
+      {week:'W7',desc:'期中考 D（45分），情緒低落'},
+      {week:'W8',desc:'互動降到 3 次'},
+      {week:'W9-W10',desc:'只剩 2 次/週，問題變得敷衍'}
+    ]
+  },
+  'wang-ds-chen': {
+    name: 'A 陳同學', course: '資料結構',
+    summary: '用功但卡關型。Binary Tree Traversal 連問 5 次仍未完全理解，偏好視覺化學習但課程偏文字。Persistence 尚可，需要引導學習方法。',
+    radar: {labels:['基礎概念','程式實作','複雜度分析','進階結構','解題應用'],data:[70,55,45,35,60]},
+    prefs: ['強烈偏好視覺化圖解','喜歡 step-by-step 講解','會主動追問'],
+    trajectory: [
+      {week:'W1-W4',desc:'穩定互動 4-6 次/週，基礎紮實'},
+      {week:'W5',desc:'Binary Tree 章節開始卡關'},
+      {week:'W6',desc:'期中考前大量提問（15 次）'},
+      {week:'W7',desc:'期中考 B-（68分），比預期低'},
+      {week:'W8-W9',desc:'集中攻克 tree traversal，每週 8-10 次'},
+      {week:'W10',desc:'8 次互動，開始嘗試迭代寫法'}
+    ]
+  },
+  'wang-ds-zhang': {
+    name: 'E 張同學', course: '資料結構',
+    summary: '中等穩定型學生。時間複雜度分析是主要弱點，但整體學習態度正常。',
+    radar: {labels:['基礎概念','程式實作','複雜度分析','進階結構','解題應用'],data:[65,60,35,50,55]},
+    prefs: ['偏好理論推導','喜歡比較表格'],
+    trajectory: [
+      {week:'W1-W5',desc:'穩定 4-5 次/週互動'},
+      {week:'W6-W7',desc:'期中考前後維持互動'},
+      {week:'W8-W10',desc:'每週 5 次，開始問複雜度相關問題'}
+    ]
+  },
+  'wang-ds-lin': {
+    name: 'B 林同學', course: '資料結構',
+    summary: '全班頂尖，已超出課綱範圍。互動少但品質極高，每次都是進階問題。建議提供挑戰性素材。',
+    radar: {labels:['基礎概念','程式實作','複雜度分析','進階結構','解題應用'],data:[95,90,85,80,88]},
+    prefs: ['偏好進階挑戰','喜歡證明與推導','自主學習能力強'],
+    trajectory: [
+      {week:'W1-W10',desc:'穩定 2-4 次/週，全部是深度問題（AVL, RB-Tree, B-Tree）'}
+    ]
+  },
+  'wang-ds-huang': {
+    name: 'F 黃同學', course: '資料結構',
+    summary: '表現良好的學生，各方面均衡發展，無明顯弱項。',
+    radar: {labels:['基礎概念','程式實作','複雜度分析','進階結構','解題應用'],data:[80,75,65,60,70]},
+    prefs: ['偏好實作練習','喜歡看完整程式碼'],
+    trajectory: [{week:'W1-W10',desc:'穩定互動 5-7 次/週，各主題均衡'}]
+  },
+  'wang-ds-zhou': {
+    name: 'G 周同學', course: '資料結構',
+    summary: 'Tree 相關概念較弱，其他主題正常。需要在 tree 章節多花時間。',
+    radar: {labels:['基礎概念','程式實作','複雜度分析','進階結構','解題應用'],data:[70,60,55,30,50]},
+    prefs: ['偏好視覺化','需要重複練習'],
+    trajectory: [{week:'W1-W10',desc:'W1-W6 穩定，W7 後 tree 相關問題增加'}]
+  },
+  'wang-ds-wu': {
+    name: 'H 吳同學', course: '資料結構',
+    summary: 'Hash Table 是主要障礙，但本週開始自主整理比較表，有進步跡象。',
+    radar: {labels:['基礎概念','程式實作','複雜度分析','進階結構','解題應用'],data:[65,60,50,45,55]},
+    prefs: ['偏好比較表格','喜歡歸納整理'],
+    trajectory: [{week:'W1-W10',desc:'穩定型，W8 後集中在 hash table 問題'}]
+  },
+  'wang-ds-liu': {
+    name: 'I 劉同學', course: '資料結構',
+    summary: '高分低互動型。成績優異但 AI 使用量低，可能有其他學習資源。',
+    radar: {labels:['基礎概念','程式實作','複雜度分析','進階結構','解題應用'],data:[85,80,75,70,80]},
+    prefs: ['自主學習為主','偶爾確認概念'],
+    trajectory: [{week:'W1-W10',desc:'每週 1-3 次互動，但每次品質很高'}]
+  },
+  'wang-ds-yang': {
+    name: 'J 楊同學', course: '資料結構',
+    summary: '高互動但成績偏低。Graph 和 Tree 是雙重弱點。互動量高但可能學習效率不佳，需要教師引導學習方法。',
+    radar: {labels:['基礎概念','程式實作','複雜度分析','進階結構','解題應用'],data:[55,50,40,25,45]},
+    prefs: ['偏好問答對話','反覆提問同一概念'],
+    trajectory: [
+      {week:'W1-W5',desc:'每週 6-8 次互動，但分散無重點'},
+      {week:'W6-W10',desc:'互動量增加到 9-12 次，集中在 graph/tree 但效率低'}
+    ]
+  },
+  // Python students
+  'wang-py-xu': {
+    name: '許同學', course: 'Python 程式設計',
+    summary: '第 8 週後幾乎消失。Python 基礎語法都沒建立，可能需要課後輔導或轉班建議。',
+    radar: {labels:['基礎語法','函式設計','資料結構','除錯能力','專案實作'],data:[10,5,5,5,0]},
+    prefs: ['需要一對一教學','完全初學者'],
+    trajectory: [
+      {week:'W1-W4',desc:'每週 3-4 次互動，問的都是最基礎問題'},
+      {week:'W5-W7',desc:'互動減少，開始不交作業'},
+      {week:'W8-W10',desc:'幾乎零互動'}
+    ]
+  },
+  'wang-py-cai': {
+    name: '蔡同學', course: 'Python 程式設計',
+    summary: '除錯能力極弱。每次都貼整段 code 問「哪裡錯」，沒有學會讀 error message。需要教師介入教除錯策略。',
+    radar: {labels:['基礎語法','函式設計','資料結構','除錯能力','專案實作'],data:[50,35,30,10,25]},
+    prefs: ['依賴 AI 給答案','需要學習自主除錯'],
+    trajectory: [{week:'W1-W10',desc:'穩定互動但模式不變，每次都是「幫我看哪裡錯」'}]
+  },
+  'wang-py-fang': {
+    name: '方同學', course: 'Python 程式設計',
+    summary: 'f-string 和 file I/O 卡關，但有持續努力。重複問類似問題可能是理解不夠深。',
+    radar: {labels:['基礎語法','函式設計','資料結構','除錯能力','專案實作'],data:[55,40,35,45,30]},
+    prefs: ['偏好看範例','需要更多練習機會'],
+    trajectory: [{week:'W1-W10',desc:'W6 後集中在 f-string 和 file I/O，本週互動 10 次'}]
+  },
+  'wang-py-zheng': {
+    name: '鄭同學', course: 'Python 程式設計',
+    summary: '中等偏上，List Comprehension 是唯一弱點。整體穩定。',
+    radar: {labels:['基礎語法','函式設計','資料結構','除錯能力','專案實作'],data:[70,60,55,65,50]},
+    prefs: ['偏好實作練習'],
+    trajectory: [{week:'W1-W10',desc:'穩定互動 7-9 次/週'}]
+  },
+  'wang-py-lin': {
+    name: '林同學', course: 'Python 程式設計',
+    summary: '自主學習能力強，使用 AI 主要是確認概念。',
+    radar: {labels:['基礎語法','函式設計','資料結構','除錯能力','專案實作'],data:[80,75,70,72,65]},
+    prefs: ['自主學習','偏好簡潔回答'],
+    trajectory: [{week:'W1-W10',desc:'每週 4-6 次，問題品質高'}]
+  },
+  'wang-py-zhao': {
+    name: '趙同學', course: 'Python 程式設計',
+    summary: '全班 MVP，已超出課綱。互動量最高但全是進階問題（decorator, generator, async）。建議提供額外挑戰。',
+    radar: {labels:['基礎語法','函式設計','資料結構','除錯能力','專案實作'],data:[95,90,85,88,80]},
+    prefs: ['渴望挑戰','喜歡深入原理'],
+    trajectory: [{week:'W1-W10',desc:'每週 10-14 次互動，全部是超綱問題'}]
+  },
+  'wang-py-he': {
+    name: '何同學', course: 'Python 程式設計',
+    summary: 'Dictionary 操作稍弱，其他正常。',
+    radar: {labels:['基礎語法','函式設計','資料結構','除錯能力','專案實作'],data:[65,55,40,60,50]},
+    prefs: ['偏好程式碼範例'],
+    trajectory: [{week:'W1-W10',desc:'穩定互動 6-8 次/週'}]
+  },
+  'wang-py-gao': {
+    name: '高同學', course: 'Python 程式設計',
+    summary: '表現良好，各方面均衡。',
+    radar: {labels:['基礎語法','函式設計','資料結構','除錯能力','專案實作'],data:[75,70,65,68,60]},
+    prefs: ['偏好實作練習'],
+    trajectory: [{week:'W1-W10',desc:'穩定型學生'}]
+  },
+  'wang-py-zeng': {
+    name: '曾同學', course: 'Python 程式設計',
+    summary: 'Variable scope 是主要障礙，但本週有進步跡象（從 global/local 問到 closure）。',
+    radar: {labels:['基礎語法','函式設計','資料結構','除錯能力','專案實作'],data:[55,45,50,55,40]},
+    prefs: ['偏好理論解釋','需要圖解'],
+    trajectory: [{week:'W1-W10',desc:'W6 後集中在 scope 問題，逐步深入'}]
+  },
+  'wang-py-xie': {
+    name: '謝同學', course: 'Python 程式設計',
+    summary: '高分穩定型，AI 使用量低但成績好。',
+    radar: {labels:['基礎語法','函式設計','資料結構','除錯能力','專案實作'],data:[85,80,75,78,72]},
+    prefs: ['自主學習為主'],
+    trajectory: [{week:'W1-W10',desc:'每週 2-4 次互動'}]
+  },
+  // DB students
+  'zhang-db-wu': {
+    name: '吳同學', course: '資料庫系統',
+    summary: '第 7 週後完全消失。最後一次互動是問「SELECT 是什麼」，SQL 基礎完全未建立。全班最低 8 筆記憶。',
+    radar: {labels:['SQL 查詢','正規化','交易管理','資料模型','效能調校'],data:[5,5,0,10,0]},
+    prefs: ['需要從零開始教學'],
+    trajectory: [
+      {week:'W1-W3',desc:'少量互動，問基礎 SQL 語法'},
+      {week:'W4-W6',desc:'互動減少，開始不交作業'},
+      {week:'W7-W10',desc:'完全消失'}
+    ]
+  },
+  'zhang-db-sun': {
+    name: '孫同學', course: '資料庫系統',
+    summary: 'Normalization 完全不理解，第 4 週問過的問題第 10 週又問一遍。沒有吸收能力。',
+    radar: {labels:['SQL 查詢','正規化','交易管理','資料模型','效能調校'],data:[25,5,15,20,5]},
+    prefs: ['需要反覆講解','理解力較弱'],
+    trajectory: [{week:'W1-W10',desc:'互動越來越少，問題重複率極高'}]
+  },
+  'zhang-db-ma': {
+    name: '馬同學', course: '資料庫系統',
+    summary: 'ACID 概念完全混淆，出席率從 100% 降到 40%。可能已經放棄。',
+    radar: {labels:['SQL 查詢','正規化','交易管理','資料模型','效能調校'],data:[30,20,5,25,5]},
+    prefs: ['偏好圖解','注意力不集中'],
+    trajectory: [
+      {week:'W1-W5',desc:'出席正常，互動 3-4 次/週'},
+      {week:'W6-W10',desc:'出席率暴跌，互動降到 1-2 次/週'}
+    ]
+  },
+  'zhang-db-deng': {
+    name: '鄧同學', course: '資料庫系統',
+    summary: 'SQL JOIN 主要障礙，但每次作業都認真修正。第 3 次互動後開始畫圖輔助，有進步。',
+    radar: {labels:['SQL 查詢','正規化','交易管理','資料模型','效能調校'],data:[40,45,35,50,20]},
+    prefs: ['偏好圖解（Venn Diagram）','認真但理解慢'],
+    trajectory: [{week:'W1-W10',desc:'每週 6-9 次互動，W8 後開始畫圖輔助'}]
+  },
+  'zhang-db-yu': {
+    name: '余同學', course: '資料庫系統',
+    summary: '近兩週互動驟降，之前表現中等。可能是其他科目壓力。',
+    radar: {labels:['SQL 查詢','正規化','交易管理','資料模型','效能調校'],data:[50,40,35,45,15]},
+    prefs: ['偏好實作練習'],
+    trajectory: [
+      {week:'W1-W8',desc:'穩定 5-7 次/週'},
+      {week:'W9-W10',desc:'驟降到 2-3 次/週'}
+    ]
+  },
+  'zhang-db-shen': {
+    name: '沈同學', course: '資料庫系統',
+    summary: 'Index 設計是唯一弱項，其他穩定。',
+    radar: {labels:['SQL 查詢','正規化','交易管理','資料模型','效能調校'],data:[65,60,55,65,30]},
+    prefs: ['偏好 SQL 範例'],
+    trajectory: [{week:'W1-W10',desc:'穩定互動 5-7 次/週'}]
+  },
+  'zhang-db-lu': {
+    name: '盧同學', course: '資料庫系統',
+    summary: '全班 MVP，已超出課綱。本週問了 Query Optimization、Stored Procedure、Transaction Isolation Level。建議給進階素材。',
+    radar: {labels:['SQL 查詢','正規化','交易管理','資料模型','效能調校'],data:[95,90,85,90,75]},
+    prefs: ['渴望挑戰','喜歡優化問題'],
+    trajectory: [{week:'W1-W10',desc:'每週 8-12 次互動，全部超綱'}]
+  },
+  'zhang-db-tian': {
+    name: '田同學', course: '資料庫系統',
+    summary: '表現良好，各方面均衡。',
+    radar: {labels:['SQL 查詢','正規化','交易管理','資料模型','效能調校'],data:[75,70,65,72,50]},
+    prefs: ['偏好完整範例'],
+    trajectory: [{week:'W1-W10',desc:'穩定互動 4-6 次/週'}]
+  },
+  'zhang-db-luo': {
+    name: '羅同學', course: '資料庫系統',
+    summary: 'ACID 概念從不理解到開始問 Isolation Level，有明顯進步。',
+    radar: {labels:['SQL 查詢','正規化','交易管理','資料模型','效能調校'],data:[60,55,40,58,25]},
+    prefs: ['偏好問答對話','會主動追問'],
+    trajectory: [{week:'W1-W10',desc:'W7 後集中在 ACID，概念逐步深入'}]
+  },
+  'zhang-db-ye': {
+    name: '葉同學', course: '資料庫系統',
+    summary: 'Normalization 稍弱，其他正常。',
+    radar: {labels:['SQL 查詢','正規化','交易管理','資料模型','效能調校'],data:[60,35,50,55,20]},
+    prefs: ['偏好圖解說明'],
+    trajectory: [{week:'W1-W10',desc:'穩定互動 3-5 次/週'}]
   }
-  if (ltiName) {
-    const profSpan = document.querySelector('.topbar-right span:first-child');
-    if (profSpan) profSpan.textContent = ltiName;
+};
+
+// =====================================================================
+// STATE
+// =====================================================================
+let currentCourse = 'wang-ds';
+let charts = {};
+
+// =====================================================================
+// INITIALIZATION
+// =====================================================================
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = 'rgba(51,65,85,0.5)';
+
+function init() {
+  buildCourseSelector();
+  renderAll();
+  bindNavigation();
+}
+
+// =====================================================================
+// COURSE SELECTOR
+// =====================================================================
+function buildCourseSelector() {
+  const container = document.getElementById('courseSelectorContainer');
+  const profs = {};
+  Object.values(COURSE_DATA).forEach(c => {
+    if (!profs[c.prof]) profs[c.prof] = [];
+    profs[c.prof].push(c);
+  });
+  let html = '<label>課程篩選</label>';
+  Object.entries(profs).forEach(([prof, courses]) => {
+    html += `<div class="prof-label">${prof}</div>`;
+    courses.forEach(c => {
+      html += `<button class="course-btn${c.key === currentCourse ? ' active' : ''}" data-course="${c.key}">${c.icon} ${c.course}（${c.studentCount}人）</button>`;
+    });
+  });
+  container.innerHTML = html;
+  container.querySelectorAll('.course-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentCourse = btn.dataset.course;
+      container.querySelectorAll('.course-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderAll();
+      document.getElementById('mainContent').scrollTo({top: 0, behavior: 'smooth'});
+    });
+  });
+}
+
+// =====================================================================
+// NAVIGATION
+// =====================================================================
+function bindNavigation() {
+  document.querySelectorAll('.nav-item[data-target]').forEach(item => {
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.nav-item[data-target]').forEach(n => n.classList.remove('active'));
+      item.classList.add('active');
+      const target = document.getElementById(item.dataset.target);
+      if (target) target.scrollIntoView({behavior: 'smooth', block: 'start'});
+    });
+  });
+}
+
+// =====================================================================
+// RENDER ALL
+// =====================================================================
+function renderAll() {
+  const d = COURSE_DATA[currentCourse];
+  renderTopbar(d);
+  renderStats(d);
+  renderScatter(d);
+  renderHeatmap(d);
+  renderAlerts(d);
+  renderDifficulty(d);
+  renderTrend(d);
+  renderStudentTable(d);
+  renderAISummaries(d);
+  renderPrefChart(d);
+  renderGradeChart(d);
+  renderBehaviorChart(d);
+}
+
+function renderTopbar(d) {
+  document.getElementById('topbarTitle').textContent = `📊 ${d.course} — 班級儀表板`;
+  document.getElementById('topbarProf').textContent = d.prof;
+}
+
+function renderStats(d) {
+  document.getElementById('stat-students').textContent = d.stats.students;
+  document.getElementById('stat-students-sub').textContent = d.stats.studentsSub;
+  document.getElementById('stat-avg').textContent = d.stats.avg;
+  document.getElementById('stat-avg-sub').textContent = d.stats.avgSub;
+  document.getElementById('stat-risk').textContent = d.stats.risk;
+  document.getElementById('stat-risk-sub').textContent = d.stats.riskSub;
+  document.getElementById('stat-ai').textContent = d.stats.ai;
+  document.getElementById('stat-ai-sub').textContent = d.stats.aiSub;
+  document.getElementById('stat-mem').textContent = d.stats.mem;
+  document.getElementById('stat-mem-sub').textContent = d.stats.memSub;
+}
+
+// =====================================================================
+// CHARTS
+// =====================================================================
+function destroyChart(name) {
+  if (charts[name]) { charts[name].destroy(); charts[name] = null; }
+}
+
+function renderScatter(d) {
+  destroyChart('scatter');
+  charts.scatter = new Chart(document.getElementById('scatterChart'), {
+    type: 'scatter',
+    data: {
+      datasets: [
+        {label:'🟢 正常',data:d.scatter.normal,backgroundColor:'#34d39955',borderColor:'#34d399',pointRadius:5},
+        {label:'🟡 需關注',data:d.scatter.watch,backgroundColor:'#fbbf2455',borderColor:'#fbbf24',pointRadius:6},
+        {label:'🔴 高風險',data:d.scatter.danger,backgroundColor:'#f8717166',borderColor:'#f87171',pointRadius:8}
+      ]
+    },
+    options: {
+      responsive:true,maintainAspectRatio:false,
+      scales:{
+        x:{title:{display:true,text:'AI 互動次數（10週累計）',font:{size:11}},min:0,max:80},
+        y:{title:{display:true,text:'期中考成績',font:{size:11}},min:0,max:100}
+      },
+      plugins:{legend:{position:'bottom',labels:{font:{size:11},usePointStyle:true,padding:12}}}
+    }
+  });
+}
+
+function renderHeatmap(d) {
+  const hd = d.heatmap;
+  const days=['一','二','三','四','五','六','日'], times=['08-10','10-12','12-14','14-16','16-18','18-20','20-22','22-24'];
+  let mx = 0;
+  hd.forEach(row => row.forEach(v => { if(v>mx) mx=v; }));
+  if(mx===0) mx=1;
+  let h = '<div class="heatmap-grid"><div></div>';
+  days.forEach(day => h += `<div class="heatmap-header">${day}</div>`);
+  times.forEach((t,i) => {
+    h += `<div class="heatmap-label">${t}</div>`;
+    hd[i].forEach(v => {
+      const n = v/mx;
+      const bg = n>.7?'rgba(99,102,241,.7)':n>.4?'rgba(99,102,241,.4)':n>.1?'rgba(99,102,241,.15)':'rgba(51,65,85,.3)';
+      h += `<div class="heatmap-cell" style="background:${bg}" title="${v} 次">${v||''}</div>`;
+    });
+  });
+  h += '</div>';
+  document.getElementById('heatmap').innerHTML = h;
+}
+
+function renderAlerts(d) {
+  const container = document.getElementById('alertsList');
+  container.innerHTML = d.alerts.map(a => {
+    const tagClass = a.tags.includes('高風險') ? 'tag-struggle' : (a.tags.includes('需關注') ? '' : 'tag-retake');
+    const tagsHtml = a.tags.map(t => {
+      if(t==='高風險') return '<span class="tag tag-struggle">高風險</span>';
+      if(t==='重修') return '<span class="tag tag-retake">重修</span>';
+      if(t==='需關注') return '<span class="tag" style="background:rgba(251,191,36,.12);color:var(--amber)">需關注</span>';
+      return `<span class="tag">${t}</span>`;
+    }).join(' ');
+    return `<div class="alert-item">
+      <div class="alert-avatar" style="background:${a.avatarBg};color:${a.avatarColor}">${a.surname}</div>
+      <div class="alert-info">
+        <div class="alert-name">${a.name} ${tagsHtml}</div>
+        <div class="alert-detail">${a.detail}</div>
+      </div>
+      <button class="btn-care" onclick="openCareModal('${a.name}','${a.careMsg.replace(/'/g,"\\'")}')">💌 發送關懷</button>
+    </div>`;
+  }).join('');
+}
+
+function renderDifficulty(d) {
+  const container = document.getElementById('difficultyList');
+  container.innerHTML = d.difficulty.map((item, i) => {
+    const rankStyle = i===0 ? 'background:rgba(248,113,113,.2);color:var(--red)' : '';
+    return `<div class="diff-item">
+      <div class="diff-rank" style="${rankStyle}">${i+1}</div>
+      <div class="diff-bar-wrap">
+        <div class="diff-label"><span>${item.topic}</span><span style="color:${item.color}">${item.count} 人反覆問</span></div>
+        <div class="diff-bar"><div class="diff-fill" style="width:${item.pct}%;background:${item.color}"></div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderTrend(d) {
+  destroyChart('trend');
+  charts.trend = new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+      labels: d.trend.labels,
+      datasets: [
+        {label:'AI 問答量',data:d.trend.ai,borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.08)',fill:true,tension:.3,pointRadius:3},
+        {label:'風險學生',data:d.trend.risk,borderColor:'#f87171',backgroundColor:'rgba(248,113,113,.08)',fill:true,tension:.3,pointRadius:3,yAxisID:'y1'}
+      ]
+    },
+    options: {
+      responsive:true,maintainAspectRatio:false,
+      scales:{
+        y:{title:{display:true,text:'問答量',font:{size:10}},beginAtZero:true},
+        y1:{position:'right',title:{display:true,text:'風險人數',font:{size:10}},beginAtZero:true,max:8,grid:{drawOnChartArea:false}}
+      },
+      plugins:{legend:{position:'bottom',labels:{font:{size:11},usePointStyle:true,padding:12}}}
+    }
+  });
+}
+
+function renderStudentTable(d) {
+  const tbody = document.getElementById('studentTableBody');
+  tbody.innerHTML = d.students.map(s => {
+    const nameHtml = s.bold
+      ? `<b><a class="student-link" onclick="openStudentModal('${s.id}')">${s.name}</a></b>`
+      : `<a class="student-link" onclick="openStudentModal('${s.id}')">${s.name}</a>`;
+    const extraTags = (s.tags||[]).map(t => {
+      if(t==='重修') return ' <span class="tag tag-retake">重修</span>';
+      return ` <span class="tag">${t}</span>`;
+    }).join('');
+    const weakHtml = (s.weakTags||[]).map(t => `<span class="tag tag-struggle">${t}</span>`).join(' ')
+      + ((s.prefTags||[]).map(t => `<span class="tag tag-pref">${t}</span>`).join(' '));
+    return `<tr>
+      <td><span class="dot dot-${s.dot}"></span></td>
+      <td>${nameHtml}${extraTags}</td>
+      <td${s.midColor ? ` style="color:${s.midColor}"` : ''}>${s.midterm}</td>
+      <td>${s.weekAI}</td>
+      <td>${s.mem}</td>
+      <td>${weakHtml || '—'}</td>
+      <td${s.persColor ? ` style="color:${s.persColor}"` : ''}>${s.persistence}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderAISummaries(d) {
+  const container = document.getElementById('aiSummaryList');
+  container.innerHTML = d.aiSummaries.map(s => {
+    return `<div class="ai-summary-item risk-${s.risk}">
+      <span class="summary-name">${s.name}</span>
+      <span class="summary-tag" style="background:${s.risk==='high'?'rgba(248,113,113,.12);color:var(--red)':s.risk==='medium'?'rgba(251,191,36,.12);color:var(--amber)':'rgba(52,211,153,.12);color:var(--green)'}">${s.risk==='high'?'高風險':s.risk==='medium'?'需關注':'正常'}</span>
+      — ${s.text}
+    </div>`;
+  }).join('');
+}
+
+function renderPrefChart(d) {
+  destroyChart('pref');
+  charts.pref = new Chart(document.getElementById('prefChart'), {
+    type: 'doughnut',
+    data: {labels:d.pref.labels,datasets:[{data:d.pref.data,backgroundColor:['#6366f1','#22d3ee','#34d399','#fbbf24','#f87171'],borderWidth:0}]},
+    options: {responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10},padding:8}}}}
+  });
+}
+
+function renderGradeChart(d) {
+  destroyChart('grade');
+  charts.grade = new Chart(document.getElementById('gradeChart'), {
+    type: 'bar',
+    data: {labels:d.grade.labels,datasets:[{data:d.grade.data,backgroundColor:['#f87171','#fb7185','#fbbf24','#34d399','#22d3ee'],borderRadius:4}]},
+    options: {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,title:{display:true,text:'人數',font:{size:10}}}}}
+  });
+}
+
+function renderBehaviorChart(d) {
+  destroyChart('behavior');
+  charts.behavior = new Chart(document.getElementById('behaviorChart'), {
+    type: 'radar',
+    data: {
+      labels: d.behavior.labels,
+      datasets: [
+        {label:'全班平均',data:d.behavior.classAvg,borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.1)',pointRadius:2},
+        {label:d.behavior.highlight.name,data:d.behavior.highlight.data,borderColor:'#fbbf24',backgroundColor:'rgba(251,191,36,.1)',pointRadius:2}
+      ]
+    },
+    options: {
+      responsive:true,maintainAspectRatio:false,
+      scales:{r:{beginAtZero:true,max:100,ticks:{font:{size:9}},pointLabels:{font:{size:10}}}},
+      plugins:{legend:{position:'bottom',labels:{font:{size:10},usePointStyle:true,padding:8}}}
+    }
+  });
+}
+
+// =====================================================================
+// CARE MODAL
+// =====================================================================
+function openCareModal(name, msg) {
+  document.getElementById('careTo').textContent = name;
+  document.getElementById('careMsg').value = msg;
+  document.getElementById('careModal').classList.add('open');
+}
+function closeCareModal() {
+  document.getElementById('careModal').classList.remove('open');
+}
+function sendCare() {
+  closeCareModal();
+  showToast('✅ 關懷訊息已發送至 Moodle');
+}
+
+// =====================================================================
+// STUDENT DETAIL MODAL
+// =====================================================================
+let studentRadarChart = null;
+
+function openStudentModal(studentId) {
+  const detail = STUDENT_DETAILS[studentId];
+  if (!detail) return;
+
+  document.getElementById('studentModalTitle').textContent = `📋 ${detail.name} — ${detail.course}`;
+
+  let html = '';
+
+  // AI interaction summary
+  html += `<div class="detail-section">
+    <h4>💬 AI 互動摘要</h4>
+    <div style="font-size:12px;line-height:1.7;color:var(--text-muted);background:var(--surface-2);padding:12px;border-radius:8px">${detail.summary}</div>
+  </div>`;
+
+  // Two-column: radar + prefs
+  html += '<div class="detail-grid">';
+
+  // Radar chart
+  html += `<div class="detail-section">
+    <h4>🎯 弱點雷達圖</h4>
+    <div class="chart-wrap-modal"><canvas id="studentRadarCanvas"></canvas></div>
+  </div>`;
+
+  // Learning preferences
+  html += `<div class="detail-section">
+    <h4>📚 學習偏好</h4>
+    <div>${detail.prefs.map(p => `<span class="detail-pref-tag">${p}</span>`).join('')}</div>
+  </div>`;
+
+  html += '</div>';
+
+  // Trajectory
+  html += `<div class="detail-section">
+    <h4>📈 學習軌跡（10 週）</h4>
+    <div>${detail.trajectory.map(t => `<div class="trajectory-item"><span class="trajectory-week">${t.week}</span><span class="trajectory-desc">${t.desc}</span></div>`).join('')}</div>
+  </div>`;
+
+  document.getElementById('studentModalContent').innerHTML = html;
+
+  // Set up the care button
+  const careBtn = document.getElementById('studentCareBtn');
+  const courseData = COURSE_DATA[currentCourse];
+  const alertData = courseData.alerts.find(a => a.name === detail.name);
+  if (alertData) {
+    careBtn.style.display = '';
+    careBtn.onclick = () => { closeStudentModal(); openCareModal(alertData.name, alertData.careMsg); };
+  } else {
+    careBtn.style.display = 'none';
   }
-  if (isLTI) {
-    const badge = document.querySelector('.topbar-right');
-    if (badge) {
-      const liveBadge = document.createElement('span');
-      liveBadge.className = 'badge badge-green';
-      liveBadge.textContent = 'LTI 連線中';
-      badge.prepend(liveBadge);
+
+  document.getElementById('studentModal').classList.add('open');
+
+  // Render radar chart after DOM update
+  requestAnimationFrame(() => {
+    if (studentRadarChart) { studentRadarChart.destroy(); studentRadarChart = null; }
+    const canvas = document.getElementById('studentRadarCanvas');
+    if (canvas) {
+      studentRadarChart = new Chart(canvas, {
+        type: 'radar',
+        data: {
+          labels: detail.radar.labels,
+          datasets: [{
+            label: detail.name,
+            data: detail.radar.data,
+            borderColor: '#6366f1',
+            backgroundColor: 'rgba(99,102,241,.15)',
+            pointRadius: 3,
+            pointBackgroundColor: '#6366f1'
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: { r: { beginAtZero: true, max: 100, ticks: { font: { size: 8 }, stepSize: 25 }, pointLabels: { font: { size: 9 } } } },
+          plugins: { legend: { display: false } }
+        }
+      });
     }
-  }
+  });
+}
 
-  // Fetch real data from APIs
-  try {
-    const [studentsRes, classRes] = await Promise.all([
-      fetch('/teacher/students'),
-      fetch('/analytics/class'),
-    ]);
-    if (!studentsRes.ok || !classRes.ok) return;
-    const studentsData = await studentsRes.json();
-    const classData = await classRes.json();
+function closeStudentModal() {
+  document.getElementById('studentModal').classList.remove('open');
+  if (studentRadarChart) { studentRadarChart.destroy(); studentRadarChart = null; }
+}
 
-    // --- Update stats row with real data ---
-    const statCards = document.querySelectorAll('.stat-card');
-    if (statCards.length >= 5 && studentsData.total_students > 0) {
-      // Students count
-      statCards[0].querySelector('.stat-value').textContent = studentsData.total_students;
-      statCards[0].querySelector('.stat-sub').textContent = `共 ${studentsData.total_facts} 筆記憶`;
-      // Total memories
-      statCards[4].querySelector('.stat-value').textContent = studentsData.total_facts.toLocaleString();
-      const avg = studentsData.total_students > 0
-        ? Math.round(studentsData.total_facts / studentsData.total_students)
-        : 0;
-      statCards[4].querySelector('.stat-sub').textContent = `平均 ${avg}/人`;
-    }
+// Close modals on overlay click
+document.getElementById('careModal').addEventListener('click', function(e) {
+  if (e.target === this) closeCareModal();
+});
+document.getElementById('studentModal').addEventListener('click', function(e) {
+  if (e.target === this) closeStudentModal();
+});
 
-    // --- Update difficulty ranking with real common_struggles ---
-    if (classData.common_struggles && classData.common_struggles.length > 0) {
-      const diffContainer = document.querySelector('#difficulty .card-header')?.parentElement;
-      if (diffContainer) {
-        // Remove old hardcoded items
-        diffContainer.querySelectorAll('.diff-item').forEach(el => el.remove());
-        const maxCount = classData.common_struggles[0][1];
-        classData.common_struggles.slice(0, 6).forEach(([topic, count], i) => {
-          const pct = maxCount > 0 ? Math.round((count / maxCount) * 100) : 0;
-          const color = i === 0 ? 'var(--red)' : i < 3 ? 'var(--amber)' : 'var(--text-dim)';
-          const rankBg = i === 0 ? 'rgba(248,113,113,.2)' : '';
-          const rankColor = i === 0 ? 'var(--red)' : '';
-          const item = document.createElement('div');
-          item.className = 'diff-item';
-          item.innerHTML = `
-            <div class="diff-rank" style="${rankBg ? 'background:'+rankBg+';' : ''}${rankColor ? 'color:'+rankColor : ''}">${i+1}</div>
-            <div class="diff-bar-wrap">
-              <div class="diff-label"><span>${topic}</span><span style="color:${color}">${count} 人反覆問</span></div>
-              <div class="diff-bar"><div class="diff-fill" style="width:${pct}%;background:${color}"></div></div>
-            </div>`;
-          diffContainer.appendChild(item);
-        });
-      }
-    }
+// =====================================================================
+// UTILITIES
+// =====================================================================
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
 
-    // --- Fetch per-student analytics and update student table ---
-    if (studentsData.students && studentsData.students.length > 0) {
-      const studentAnalytics = await Promise.all(
-        studentsData.students.map(s =>
-          fetch(`/analytics/student/${s.moodle_user_id}`)
-            .then(r => r.ok ? r.json() : null)
-            .catch(() => null)
-        )
-      );
-
-      const tbody = document.querySelector('#students table tbody');
-      if (tbody) {
-        // Build live rows below the existing demo rows
-        const liveHeader = document.createElement('tr');
-        liveHeader.innerHTML = `<td colspan="7" style="background:var(--primary-glow);color:var(--primary-hover);font-weight:600;font-size:12px;padding:10px;text-align:center">
-          📡 即時 AI 記憶資料（來自 Lite-Mem）</td>`;
-        tbody.appendChild(liveHeader);
-
-        studentsData.students.forEach((stu, idx) => {
-          const sa = studentAnalytics[idx];
-          const weakTopics = sa ? sa.weak_topics.slice(0, 3) : [];
-          const prefs = sa ? sa.preferences.slice(0, 2) : [];
-          const tags = weakTopics.map(t => `<span class="tag tag-struggle">${t}</span>`).join(' ')
-            + prefs.map(p => `<span class="tag tag-pref">${p}</span>`).join(' ');
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td><span class="dot dot-green"></span></td>
-            <td><b>學生 ${stu.moodle_user_id}</b></td>
-            <td>—</td>
-            <td>${sa ? sa.total_facts : stu.fact_count}</td>
-            <td>${stu.fact_count}</td>
-            <td>${tags || '—'}</td>
-            <td>—</td>`;
-          tbody.appendChild(tr);
-        });
-      }
-    }
-
-    // --- Update topic distribution chart data if available ---
-    if (classData.topic_distribution && Object.keys(classData.topic_distribution).length > 0) {
-      const topics = Object.entries(classData.topic_distribution).sort((a,b) => b[1] - a[1]).slice(0, 5);
-      const prefCanvas = document.getElementById('prefChart');
-      if (prefCanvas && prefCanvas._chartInstance) {
-        // Chart.js stores instance; update if accessible
-      }
-      // Update subtitle to indicate live data
-      const diffSubtitle = document.querySelector('#difficulty .card-subtitle');
-      if (diffSubtitle) diffSubtitle.textContent = '📡 即時資料 — 最多學生反覆提問的知識點';
-    }
-
-  } catch (err) {
-    console.log('Live analytics fetch skipped:', err.message);
-  }
-})();
+// =====================================================================
+// BOOT
+// =====================================================================
+init();
 </script>
 </body>
 </html>

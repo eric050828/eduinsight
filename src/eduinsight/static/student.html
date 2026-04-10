@@ -118,7 +118,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .classroom-btn{padding:6px 14px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;margin-left:auto;white-space:nowrap;font-family:inherit}
 .classroom-btn:hover{background:#818cf8}
 
-/* Responsive */
+.stu-btn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text-muted);font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s}
+.stu-btn:hover{border-color:var(--primary);color:var(--primary)}
+.stu-btn.active{background:var(--moodle-light);border-color:var(--primary);color:var(--primary);font-weight:500}
+.chat-history-item{padding:10px 12px;border-radius:8px;margin-bottom:6px;background:rgba(29,111,165,.03);border:1px solid rgba(29,111,165,.08);font-size:12px;line-height:1.6}
+.chat-history-item .ch-date{font-size:10px;color:var(--text-dim)}
+.chat-history-item .ch-q{color:var(--primary);font-weight:500}
+.chat-history-item .ch-a{color:var(--text-muted);margin-top:2px}
 @media(max-width:900px){.layout{flex-direction:column}.side-col{width:100%}.chat-panel{height:400px;position:static}}
 </style>
 </head>
@@ -147,30 +153,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 <div class="layout">
   <div class="main-col">
 
-    <!-- Course cards -->
-    <div class="course-cards">
-      <div class="course-card active">
-        <div class="course-icon" style="background:#dbeafe">📗</div>
-        <div class="course-info">
-          <h3>資料結構</h3>
-          <p>王教授 · 週一三 10:20 · 掌握度 72%</p>
-        </div>
-      </div>
-      <div class="course-card">
-        <div class="course-icon" style="background:#fef3c7">📘</div>
-        <div class="course-info">
-          <h3>Python 程式設計</h3>
-          <p>王教授 · 週二 13:20 · 掌握度 85%</p>
-        </div>
-      </div>
-      <div class="course-card">
-        <div class="course-icon" style="background:#d1fae5">📙</div>
-        <div class="course-info">
-          <h3>資料庫系統</h3>
-          <p>張教授 · 週三 15:30 · 掌握度 68%</p>
-        </div>
-      </div>
+    <!-- Student switcher -->
+    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+      <button class="stu-btn active" onclick="switchStudent('A')">A 陳同學</button>
+      <button class="stu-btn" onclick="switchStudent('B')">B 林同學</button>
+      <button class="stu-btn" onclick="switchStudent('C')">C 王同學 <small style="color:var(--amber)">(重修)</small></button>
+      <button class="stu-btn" onclick="switchStudent('D')">D 李同學</button>
+      <button class="stu-btn" onclick="switchStudent('E')">E 張同學</button>
     </div>
+
+    <!-- Course cards -->
+    <div class="course-cards" id="courseCards"></div>
 
     <!-- Classroom mode -->
     <div class="classroom-banner">
@@ -220,9 +213,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <!-- Preferences -->
     <div class="card">
       <div class="card-title"><span class="icon">🧠</span> AI 觀察到的學習偏好</div>
-      <div id="preferencesBox">
-        <div class="timeline-item"><div class="timeline-week">⏳</div><div class="timeline-content">載入中...</div></div>
-      </div>
+      <div id="preferencesBox"></div>
+    </div>
+
+    <!-- Chat history (past conversations) -->
+    <div class="card">
+      <div class="card-title"><span class="icon">💬</span> 過去的對話紀錄</div>
+      <div id="chatHistoryBox"></div>
     </div>
 
   </div>
@@ -251,102 +248,209 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
 <script>
 Chart.defaults.color='#64748b';Chart.defaults.borderColor='rgba(209,217,224,0.5)';
-fetch('/health').then(r=>r.json()).then(d=>{if(d.llm_provider)document.getElementById('llmLabel').textContent=d.llm_provider}).catch(()=>{});
 
-// ── URL params ──
-const params=new URLSearchParams(location.search);
-const SID=parseInt(params.get('sid'))||1001;
-document.querySelector('.user-badge').textContent=`學生 ${SID}`;
+// ══════════════════════════════════════════
+// DEMO DATA — 5 students × multiple courses
+// ══════════════════════════════════════════
+const STUDENTS = {
+  A: { name:'A 陳同學', id:'B11209001', moodle:1001,
+    courses: {
+      ds: {name:'資料結構',prof:'王教授',time:'週一三 10:20',icon:'📗',bg:'#dbeafe',mastery:72,
+        stats:{facts:78,struggles:3,topics:5},
+        radar:{labels:['陣列/鏈結串列','堆疊/佇列','樹結構','雜湊表','圖論'],data:[82,78,48,65,55],avg:[75,72,60,68,58]},
+        trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[5,12,20,28,35,42,50,58,72,78],struggles:[0,0,1,1,1,2,2,2,3,3]},
+        suggestions:[{icon:'🔴',t:'Binary Tree Traversal',d:'inorder 和 preorder 區別反覆卡關（問了 5 次）。建議用「畫給我看」功能視覺化。'},{icon:'🟡',t:'均攤分析',d:'期中考扣最多分。從 Dynamic Array Doubling 重新理解。'},{icon:'🟢',t:'Hash Table 碰撞',d:'已理解 chaining，試挑戰 open addressing。'}],
+        prefs:['偏好視覺圖解和 step-by-step 流程','考前會密集使用 AI 助教','喜歡用中文提問'],
+        history:[
+          {w:'W10',q:'binary tree 的 inorder traversal 到底怎麼走？',a:'AI 用 ASCII 圖解逐步走過，並記錄這是第 5 次問相同概念。'},
+          {w:'W9',q:'期中考前：linked list 怎麼反轉？時間複雜度怎麼算？',a:'AI 根據偏好用圖解 + 表格回答，提醒均攤分析的觀念。'},
+          {w:'W8',q:'什麼是 binary tree？跟 binary search tree 差在哪？',a:'AI 首次記錄 tree 相關困難。'},
+          {w:'W5',q:'linked list 插入節點的 pointer 怎麼接？',a:'AI 記錄學習偏好：喜歡 step-by-step 圖解。'},
+          {w:'W1',q:'linked list 和 array 有什麼差別？',a:'第一次使用 EduInsight。AI 開始建立學習記憶。'}
+        ]},
+      py: {name:'Python 程式設計',prof:'王教授',time:'週二 13:20',icon:'📘',bg:'#fef3c7',mastery:85,
+        stats:{facts:42,struggles:1,topics:4},
+        radar:{labels:['變數/型別','迴圈/條件','函式','字串處理','檔案 I/O'],data:[90,88,75,82,70],avg:[80,78,72,70,65]},
+        trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[3,8,14,20,25,29,33,36,40,42],struggles:[0,0,0,0,1,1,1,1,1,1]},
+        suggestions:[{icon:'🟡',t:'函式作用域',d:'closure 和 global/local 變數容易搞混'},{icon:'🟢',t:'檔案 I/O',d:'with open 用法已掌握，可以練習 CSV 處理'}],
+        prefs:['喜歡看程式碼範例','會自己嘗試修改範例後再問問題'],
+        history:[
+          {w:'W9',q:'f-string 裡面可以放 if-else 嗎？',a:'AI 教了三元運算式在 f-string 中的用法。'},
+          {w:'W5',q:'為什麼函式裡面改了變數，外面沒有變？',a:'AI 記錄困難點：variable scope。'}
+        ]},
+      db: {name:'資料庫系統',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:68,
+        stats:{facts:35,struggles:2,topics:4},
+        radar:{labels:['正規化','SQL 查詢','JOIN','索引','交易/ACID'],data:[72,65,50,60,58],avg:[70,68,62,55,60]},
+        trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[2,6,12,16,20,24,27,30,33,35],struggles:[0,0,0,1,1,1,1,2,2,2]},
+        suggestions:[{icon:'🔴',t:'LEFT JOIN vs INNER JOIN',d:'經常搞混什麼時候該用哪個'},{icon:'🟡',t:'EXPLAIN 執行計畫',d:'會跑但不會解讀結果'}],
+        prefs:['偏好用實際資料庫範例而非理論','喜歡看 SQL 執行結果的表格'],
+        history:[
+          {w:'W9',q:'LEFT JOIN 和 INNER JOIN 到底差在哪？',a:'AI 用 Venn diagram 和實際 SQL 範例解釋。'},
+          {w:'W6',q:'什麼是第三正規化？',a:'AI 用實際 table 範例逐步拆解。'}
+        ]}
+    }},
+  B: { name:'B 林同學', id:'B11209002', moodle:1002,
+    courses: {
+      ds: {name:'資料結構',prof:'王教授',time:'週一三 10:20',icon:'📗',bg:'#dbeafe',mastery:94,
+        stats:{facts:45,struggles:0,topics:6},
+        radar:{labels:['陣列/鏈結串列','堆疊/佇列','樹結構','雜湊表','圖論'],data:[95,92,90,88,85],avg:[75,72,60,68,58]},
+        trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[4,9,14,19,24,29,34,38,42,45],struggles:[0,0,0,0,0,0,0,0,0,0]},
+        suggestions:[{icon:'🟢',t:'進階：紅黑樹',d:'基礎都掌握了，可以挑戰自平衡樹'},{icon:'🟢',t:'Graph 演算法',d:'BFS/DFS 熟練，試試 Dijkstra'}],
+        prefs:['偏好理論推導和複雜度分析','會問超出課程範圍的深度問題'],
+        history:[
+          {w:'W9',q:'amortized analysis 用 potential method 怎麼證明？',a:'AI 提供完整數學推導。'},
+          {w:'W7',q:'AVL tree 和 Red-Black tree 效能差異？',a:'AI 用 Big-O 比較表回答。'}
+        ]},
+      db: {name:'資料庫系統',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:88,
+        stats:{facts:38,struggles:1,topics:5},
+        radar:{labels:['正規化','SQL 查詢','JOIN','索引','交易/ACID'],data:[90,85,82,78,88],avg:[70,68,62,55,60]},
+        trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[3,7,12,17,22,26,30,33,36,38],struggles:[0,0,0,0,0,0,0,1,1,1]},
+        suggestions:[{icon:'🟢',t:'查詢優化',d:'EXPLAIN 基礎已掌握，可以學 query plan 的進階解讀'}],
+        prefs:['喜歡效能比較和 benchmark 數據'],
+        history:[{w:'W8',q:'B+ Tree index 和 Hash index 什麼時候該用哪個？',a:'AI 用表格比較兩者的適用場景。'}]}
+    }},
+  C: { name:'C 王同學（重修）', id:'B11108015', moodle:1003,
+    courses: {
+      py: {name:'Python 程式設計',prof:'王教授',time:'週二 13:20',icon:'📘',bg:'#fef3c7',mastery:42,
+        stats:{facts:34,struggles:4,topics:3},
+        radar:{labels:['變數/型別','迴圈/條件','函式','字串處理','檔案 I/O'],data:[55,45,30,40,20],avg:[80,78,72,70,65]},
+        trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[3,7,12,16,20,24,28,31,33,34],struggles:[1,1,2,2,3,3,3,4,4,4]},
+        suggestions:[{icon:'🔴',t:'函式基礎',d:'return vs print 搞不清楚，參數傳遞也不熟'},{icon:'🔴',t:'迴圈邏輯',d:'巢狀迴圈和 break/continue 混用出錯'},{icon:'🟡',t:'debugging',d:'不會讀 traceback，建議學習基本除錯流程'}],
+        prefs:['需要非常基礎的解釋','去年被當過，學習動機低落','偶爾會用，但不持續'],
+        history:[
+          {w:'W8',q:'for 迴圈跑出來的結果跟我想的不一樣',a:'AI 逐行解釋迴圈執行順序，用表格追蹤變數。'},
+          {w:'W4',q:'def 後面的括號要放什麼？',a:'AI 記錄困難：函式參數基礎概念。'},
+          {w:'W2',q:'（去年記憶）什麼是 list？跟 tuple 差在哪？',a:'重修記憶：去年也問過類似問題。'}
+        ]},
+      db: {name:'資料庫系統',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:45,
+        stats:{facts:20,struggles:3,topics:3},
+        radar:{labels:['正規化','SQL 查詢','JOIN','索引','交易/ACID'],data:[40,50,25,20,35],avg:[70,68,62,55,60]},
+        trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[1,3,6,8,10,13,15,17,19,20],struggles:[0,1,1,2,2,2,3,3,3,3]},
+        suggestions:[{icon:'🔴',t:'SQL 基礎語法',d:'SELECT/WHERE/ORDER BY 還在搞混'},{icon:'🔴',t:'JOIN',d:'完全不懂 JOIN 的概念'}],
+        prefs:['需要極簡化的解釋','容易放棄'],
+        history:[{w:'W6',q:'SELECT 後面放什麼？',a:'AI 用最基礎的方式解釋 SQL 語法。'}]}
+    }},
+  D: { name:'D 李同學', id:'B11209018', moodle:1004,
+    courses: {
+      ds: {name:'資料結構',prof:'王教授',time:'週一三 10:20',icon:'📗',bg:'#dbeafe',mastery:15,
+        stats:{facts:12,struggles:5,topics:2},
+        radar:{labels:['陣列/鏈結串列','堆疊/佇列','樹結構','雜湊表','圖論'],data:[25,20,5,10,5],avg:[75,72,60,68,58]},
+        trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[2,4,6,8,9,10,11,12,12,12],struggles:[1,2,2,3,3,4,4,5,5,5]},
+        suggestions:[{icon:'🔴',t:'所有主題',d:'基礎嚴重不足。建議從 array 和 linked list 的基本操作重新開始。'},{icon:'🔴',t:'⚠️ 完全消失',d:'第 10 週零互動。請考慮尋求老師或同學協助。'}],
+        prefs:['第 9 週後完全消失','之前有在用但理解很淺'],
+        history:[
+          {w:'W8',q:'linked list 為什麼要用 pointer？直接用 array 不行嗎？',a:'AI 用最基礎方式解釋，但學生似乎仍困惑。'},
+          {w:'W3',q:'什麼是 stack？',a:'AI 解釋 stack 的 LIFO 概念。'},
+          {w:'⚠️','q':'第 9-10 週完全沒有任何互動','a':'系統偵測到學生消失，已通知教師端預警系統。'}
+        ]}
+    }},
+  E: { name:'E 張同學', id:'B11209025', moodle:1005,
+    courses: {
+      db: {name:'資料庫系統',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:71,
+        stats:{facts:52,struggles:2,topics:5},
+        radar:{labels:['正規化','SQL 查詢','JOIN','索引','交易/ACID'],data:[68,75,62,58,70],avg:[70,68,62,55,60]},
+        trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[4,9,15,21,27,32,38,43,48,52],struggles:[0,0,0,1,1,1,1,2,2,2]},
+        suggestions:[{icon:'🟡',t:'索引設計',d:'知道什麼是 index 但不確定什麼時候該建'},{icon:'🟡',t:'EXPLAIN',d:'會跑但看不懂結果'}],
+        prefs:['偏好實作練習而非理論','喜歡看真實資料庫案例'],
+        history:[
+          {w:'W9',q:'什麼時候該加 index？加太多會怎樣？',a:'AI 用電商案例解釋 index 的取捨。'},
+          {w:'W5',q:'ACID 的 I 是什麼意思？',a:'AI 用銀行轉帳案例解釋 Isolation。'}
+        ]}
+    }}
+};
 
-let radarChart, trajChart;
+let currentStudent = 'A';
+let currentCourse = null;
+let radarChart = null, trajChart = null;
 
-// ── Load real data from API ──
-async function loadDashboard(){
-  try{
-    const [analyticsRes, trajRes]=await Promise.all([
-      fetch(`/analytics/student/${SID}`),
-      fetch(`/analytics/student/${SID}/trajectory`)
-    ]);
-    if(analyticsRes.ok){
-      const a=await analyticsRes.json();
-      // Stats
-      document.getElementById('statFacts').textContent=a.total_facts;
-      document.getElementById('statStruggles').textContent=a.struggles.length;
-      document.getElementById('statTopics').textContent=Object.keys(a.question_topics).length;
-      // Radar: topic distribution
-      const topics=Object.entries(a.question_topics).slice(0,6);
-      if(topics.length){
-        const labels=topics.map(([t])=>t.length>8?t.slice(0,8)+'…':t);
-        const values=topics.map(([,v])=>v);
-        const max=Math.max(...values,1);
-        const norm=values.map(v=>Math.round(v/max*100));
-        if(radarChart)radarChart.destroy();
-        radarChart=new Chart(document.getElementById('radarChart'),{type:'radar',data:{
-          labels,datasets:[{label:'問題分佈',data:norm,borderColor:'#1d6fa5',backgroundColor:'rgba(29,111,165,.1)',pointBackgroundColor:'#1d6fa5',pointRadius:4}]
-        },options:{responsive:true,maintainAspectRatio:false,scales:{r:{beginAtZero:true,max:100,ticks:{font:{size:9},stepSize:25},pointLabels:{font:{size:11}}}},plugins:{legend:{display:false}}}});
-      }
-      // Suggestions from struggles
-      const sugBox=document.getElementById('suggestionsBox');
-      sugBox.innerHTML='';
-      if(a.struggles.length===0){
-        sugBox.innerHTML='<div class="suggestion"><div class="suggestion-icon">✅</div><div class="suggestion-text">目前沒有已知弱項，繼續保持！</div></div>';
-      }else{
-        a.struggles.slice(0,4).forEach((s,i)=>{
-          const icon=i===0?'🔴':i===1?'🟡':'🟢';
-          sugBox.innerHTML+=`<div class="suggestion"><div class="suggestion-icon">${icon}</div><div class="suggestion-text"><strong>${s.topic}</strong><br>${s.details||'AI 建議針對此主題加強練習'}</div></div>`;
-        });
-      }
-      // Preferences in timeline
-      if(a.preferences.length){
-        const prefBox=document.getElementById('preferencesBox');
-        prefBox.innerHTML='';
-        a.preferences.forEach(p=>{
-          prefBox.innerHTML+=`<div class="timeline-item"><div class="timeline-week">💡</div><div class="timeline-content"><span class="timeline-highlight">${p}</span></div></div>`;
-        });
-      }
-    }
-    if(trajRes.ok){
-      const t=await trajRes.json();
-      if(t.points.length){
-        const labels=t.points.map(p=>'W'+(t.points.indexOf(p)+1));
-        const facts=t.points.map(p=>p.cumulative_facts);
-        const struggles=t.points.map(p=>p.cumulative_struggles);
-        if(trajChart)trajChart.destroy();
-        trajChart=new Chart(document.getElementById('trajectoryChart'),{type:'line',data:{
-          labels,datasets:[{
-            label:'累計記憶',data:facts,borderColor:'#1d6fa5',backgroundColor:'rgba(29,111,165,.05)',fill:true,tension:.3,pointRadius:3
-          },{
-            label:'累計弱項',data:struggles,borderColor:'#dc2626',backgroundColor:'rgba(220,38,38,.05)',fill:true,tension:.3,pointRadius:3
-          }]
-        },options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,title:{display:true,text:'數量',font:{size:10}}}},plugins:{legend:{position:'bottom',labels:{font:{size:10},usePointStyle:true,padding:10}}}}});
-      }
-    }
-  }catch(e){console.error('Dashboard load error:',e)}
+function switchStudent(sid) {
+  currentStudent = sid;
+  document.querySelectorAll('.stu-btn').forEach(b => b.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  const s = STUDENTS[sid];
+  document.querySelector('.user-badge').textContent = `${s.name} (${s.id})`;
+  // Pick first course
+  const courseKeys = Object.keys(s.courses);
+  currentCourse = courseKeys[0];
+  renderCourseCards();
+  renderDashboard();
 }
 
-// Fallback static charts (shown before API data loads)
-radarChart=new Chart(document.getElementById('radarChart'),{type:'radar',data:{
-  labels:['載入中...'],datasets:[{data:[0],borderColor:'#d1d9e0',backgroundColor:'rgba(209,217,224,.05)'}]
-},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+function switchCourse(key) {
+  currentCourse = key;
+  document.querySelectorAll('.course-card').forEach(c => c.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+  renderDashboard();
+}
 
-trajChart=new Chart(document.getElementById('trajectoryChart'),{type:'line',data:{
-  labels:['載入中'],datasets:[{data:[0],borderColor:'#d1d9e0'}]
-},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+function renderCourseCards() {
+  const s = STUDENTS[currentStudent];
+  const box = document.getElementById('courseCards');
+  box.innerHTML = '';
+  Object.entries(s.courses).forEach(([key, c]) => {
+    const active = key === currentCourse ? 'active' : '';
+    box.innerHTML += `<div class="course-card ${active}" onclick="currentCourse='${key}';document.querySelectorAll('.course-card').forEach(c=>c.classList.remove('active'));this.classList.add('active');renderDashboard()">
+      <div class="course-icon" style="background:${c.bg}">${c.icon}</div>
+      <div class="course-info"><h3>${c.name}</h3><p>${c.prof} · ${c.time} · 掌握度 ${c.mastery}%</p></div></div>`;
+  });
+}
 
-loadDashboard();
+function renderDashboard() {
+  const s = STUDENTS[currentStudent];
+  const c = s.courses[currentCourse];
+  // Breadcrumb
+  document.querySelector('.breadcrumb').innerHTML = `<a href="/">首頁</a> &gt; <a href="/student">我的課程</a> &gt; ${c.name}`;
+  // Stats
+  document.getElementById('statFacts').textContent = c.stats.facts;
+  document.getElementById('statStruggles').textContent = c.stats.struggles;
+  document.getElementById('statTopics').textContent = c.stats.topics;
+  // Radar
+  if(radarChart) radarChart.destroy();
+  radarChart = new Chart(document.getElementById('radarChart'),{type:'radar',data:{
+    labels:c.radar.labels,
+    datasets:[
+      {label:'我的掌握度',data:c.radar.data,borderColor:'#1d6fa5',backgroundColor:'rgba(29,111,165,.1)',pointBackgroundColor:'#1d6fa5',pointRadius:4},
+      {label:'班級平均',data:c.radar.avg,borderColor:'#d1d9e0',backgroundColor:'rgba(209,217,224,.05)',pointRadius:2,borderDash:[4,4]}
+    ]
+  },options:{responsive:true,maintainAspectRatio:false,scales:{r:{beginAtZero:true,max:100,ticks:{font:{size:9},stepSize:25},pointLabels:{font:{size:11}}}},plugins:{legend:{position:'bottom',labels:{font:{size:10},usePointStyle:true,padding:8}}}}});
+  // Trajectory
+  if(trajChart) trajChart.destroy();
+  trajChart = new Chart(document.getElementById('trajectoryChart'),{type:'line',data:{
+    labels:c.trajectory.labels,
+    datasets:[
+      {label:'累計記憶',data:c.trajectory.facts,borderColor:'#1d6fa5',backgroundColor:'rgba(29,111,165,.05)',fill:true,tension:.3,pointRadius:3},
+      {label:'累計弱項',data:c.trajectory.struggles,borderColor:'#dc2626',backgroundColor:'rgba(220,38,38,.05)',fill:true,tension:.3,pointRadius:3}
+    ]
+  },options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,title:{display:true,text:'數量',font:{size:10}}}},plugins:{legend:{position:'bottom',labels:{font:{size:10},usePointStyle:true,padding:10}}}}});
+  // Suggestions
+  const sugBox = document.getElementById('suggestionsBox');
+  sugBox.innerHTML = c.suggestions.map(s => `<div class="suggestion"><div class="suggestion-icon">${s.icon}</div><div class="suggestion-text"><strong>${s.t}</strong><br>${s.d}</div></div>`).join('');
+  // Preferences
+  const prefBox = document.getElementById('preferencesBox');
+  prefBox.innerHTML = c.prefs.map(p => `<div class="timeline-item"><div class="timeline-week">💡</div><div class="timeline-content"><span class="timeline-highlight">${p}</span></div></div>`).join('');
+  // Chat history
+  const histBox = document.getElementById('chatHistoryBox');
+  histBox.innerHTML = c.history.map(h => `<div class="chat-history-item"><div class="ch-date">${h.w}</div><div class="ch-q">🙋 ${h.q}</div><div class="ch-a">🤖 ${h.a}</div></div>`).join('');
+  // Reset chat panel
+  const chatMsgs = document.getElementById('chatMessages');
+  chatMsgs.innerHTML = `<div class="msg assistant"><div class="role">EduInsight AI</div><div>嗨${s.name.replace(/\(.+\)/,'')}！你現在在看「${c.name}」。${c.suggestions[0]?'根據記錄，你在 '+c.suggestions[0].t+' 上需要加強。要我幫你複習嗎？':'有什麼問題都可以問我！'} 😊</div></div>`;
+}
 
-// ── Chat ──
+// Init
+renderCourseCards();
+renderDashboard();
+
+// ── Live Chat ──
 const chatMessages=document.getElementById('chatMessages');
 const msgInput=document.getElementById('msgInput');
 const sendBtn=document.getElementById('sendBtn');
-
 msgInput.addEventListener('input',()=>{msgInput.style.height='auto';msgInput.style.height=Math.min(msgInput.scrollHeight,80)+'px'});
 msgInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
 
 function addMsg(role,text,mem){
   const d=document.createElement('div');d.className=`msg ${role}`;
   const r=document.createElement('div');r.className='role';r.textContent=role==='user'?'你':'EduInsight AI';d.appendChild(r);
-  const b=document.createElement('div');b.innerHTML=text;d.appendChild(b);
+  const b=document.createElement('div');b.textContent=text;d.appendChild(b);
   if(role==='assistant'&&mem&&mem.length){
     const t=document.createElement('div');t.className='memory-toggle';t.textContent=`🧠 使用了 ${mem.length} 條記憶`;
     const l=document.createElement('ul');l.className='memory-list';
@@ -358,6 +462,7 @@ function addMsg(role,text,mem){
 
 async function sendMessage(){
   const text=msgInput.value.trim();if(!text)return;
+  const s=STUDENTS[currentStudent];
   addMsg('user',text);
   msgInput.value='';msgInput.style.height='auto';sendBtn.disabled=true;
   const typing=document.createElement('div');typing.className='typing';typing.id='typing';
@@ -365,13 +470,11 @@ async function sendMessage(){
   chatMessages.appendChild(typing);chatMessages.scrollTop=chatMessages.scrollHeight;
   try{
     const res=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({moodle_user_id:SID,message:text,topic:'General'})});
+      body:JSON.stringify({moodle_user_id:s.moodle,message:text,topic:s.courses[currentCourse].name})});
     document.getElementById('typing')?.remove();
     if(!res.ok){addMsg('assistant','連線錯誤，請稍後再試');return}
     const data=await res.json();
     addMsg('assistant',data.reply,data.memory_context);
-    // Refresh dashboard after chat to show new memories
-    setTimeout(loadDashboard,500);
   }catch(e){document.getElementById('typing')?.remove();addMsg('assistant','連線錯誤: '+e.message)}
   finally{sendBtn.disabled=false;msgInput.focus()}
 }
