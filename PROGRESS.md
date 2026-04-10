@@ -140,7 +140,24 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Embeds teacher dashboard + analytics views (no separate page needed)
 - [x] 71 tests passing
 
+## Hotfix: Supervisor Bug Fixes (2026-04-10)
+- [x] Fix _memory.delete() → _memory.forget() in /demo/reset and /demo/semester
+  - `delete()` method didn't exist; try/except was silently swallowing errors
+  - Now uses `forget(uid)` which properly clears all user data
+- [x] Markdown rendering in chat via marked.js + DOMPurify
+  - AI responses now render headings, bold, code blocks, tables, blockquotes
+  - CSS styling for dark theme code blocks and tables
+- [x] Student memory modal in SPA teacher dashboard
+  - Click any student row → modal shows all stored memories with category tags
+  - Categories auto-detected from memory text (struggling/preference/general)
+- [x] Dynamic LLM backend label from /health endpoint
+  - No longer hardcoded "Claude Haiku"
+  - /health now returns `llm_provider` field
+- [x] teacher.html mockup banner
+  - Yellow banner clearly labels mock data sections (scatter, heatmap, alerts)
+  - Distinguishes real API data (stats) from vision mockups
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: Export/import memory via Lite-Mem portable format, 110 tests passing
+Done: All supervisor-reported bugs fixed, 110 tests passing
 Next step: InnoServe competition materials
