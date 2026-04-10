@@ -156,11 +156,20 @@ class TeacherDashboardResponse(BaseModel):
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
+async def health() -> dict[str, Any]:
     llm_name = "None"
     if _llm is not None:
         llm_name = getattr(_llm, "model", None) or type(_llm).__name__
-    return {"status": "ok", "version": "0.1.0", "llm_provider": llm_name}
+    result: dict[str, Any] = {"status": "ok", "version": "0.1.0", "llm_provider": llm_name}
+    if _memory is not None:
+        try:
+            stats = _memory.detailed_stats()
+            result["memory_db"] = settings.memory_db_path
+            result["total_users"] = stats.get("total_users", 0)
+            result["total_facts"] = stats.get("total_facts", 0)
+        except Exception:
+            result["memory_db"] = "error"
+    return result
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -285,12 +294,15 @@ async def teacher_student_memories(moodle_user_id: int) -> dict[str, Any]:
 async def student_conversations(moodle_user_id: int, limit: int = 50) -> dict[str, Any]:
     """Get past conversation history for a student from the messages table."""
     uid = f"moodle:{moodle_user_id}"
-    conn = _memory._store._get_conn()
-    rows = conn.execute(
-        "SELECT session_id, role, content, created_at FROM messages "
-        "WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-        (uid, limit),
-    ).fetchall()
+    try:
+        conn = _memory._store._get_conn()
+        rows = conn.execute(
+            "SELECT session_id, role, content, created_at FROM messages "
+            "WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (uid, limit),
+        ).fetchall()
+    except Exception:
+        return {"moodle_user_id": moodle_user_id, "total_conversations": 0, "conversations": []}
 
     # Group by session
     sessions: dict[str, list[dict[str, Any]]] = {}
