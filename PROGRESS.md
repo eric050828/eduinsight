@@ -187,6 +187,12 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] Route refactor: `/` → landing.html, `/student` → student.html
 - [x] 3 new page route tests (113 total)
 
+## Hotfix: Dynamic LLM Label (2026-04-10)
+- [x] Fix hardcoded "Claude Haiku" in landing.html and student.html
+  - Both pages now fetch /health API and display actual llm_provider dynamically
+  - Consistent with index.html (SPA) behavior
+  - Fallback text "AI Engine" shown before API response
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
 Done: Landing page + student dashboard with real API data, 113 tests passing
