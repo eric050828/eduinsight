@@ -6,7 +6,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from litemem import Memory
 
-from eduinsight.analytics import Struggle, analyze_class, analyze_student, learning_trajectory
+from eduinsight.analytics import Struggle, analyze_class, analyze_student, assess_risk, learning_trajectory
 from eduinsight.app import app
 from eduinsight.assistant import LearningAssistant
 from eduinsight.demo_data import DEMO_STUDENTS
@@ -310,3 +310,146 @@ class TestTrajectoryEndpoint:
             data = resp.json()
             assert data["total_weeks"] == 0
             assert data["points"] == []
+
+
+# ------------------------------------------------------------------
+# Risk assessment tests
+# ------------------------------------------------------------------
+
+
+class TestAssessRisk:
+    def test_no_data_is_high_risk(self) -> None:
+        """A student with zero facts should be high risk."""
+        mem = Memory()
+        risk = assess_risk(mem, 999)
+        assert risk.risk_level == "high"
+        assert risk.persistence_score == 0
+        assert risk.days_since_last_activity is None
+        assert any(f.label == "零互動" for f in risk.factors)
+
+    def test_active_student_is_low_risk(self) -> None:
+        """A student with recent, ample activity should be low risk."""
+        mem = Memory()
+        # Add plenty of facts (as sole student, they are the class average)
+        for i in range(10):
+            mem.add("moodle:1", f"[Topic{i}] Fact about topic {i}: detailed info {i}")
+        mem.add("moodle:1", "Struggling with: one thing — minor issue")
+
+        now = time.time()
+        risk = assess_risk(mem, 1, now=now)
+        assert risk.risk_level == "low"
+        assert risk.persistence_score >= 70
+        assert risk.days_since_last_activity is not None
+        assert risk.days_since_last_activity <= 1
+
+    def test_inactive_student_is_high_risk(self) -> None:
+        """A student who hasn't been active for 3+ weeks should be high risk."""
+        mem = Memory()
+        mem.add("moodle:10", "[DS] Linked list basics: nodes and pointers")
+        mem.add("moodle:10", "Struggling with: everything — very confused")
+
+        # Backdate all facts to 30 days ago
+        conn = mem._store._get_conn()
+        old_ts = time.time() - 30 * 86400
+        conn.execute(
+            "UPDATE facts SET created_at = ?, updated_at = ? WHERE user_id = ?",
+            (old_ts, old_ts, "moodle:10"),
+        )
+        conn.commit()
+
+        risk = assess_risk(mem, 10)
+        # Long inactivity + few facts + high struggle ratio → at least medium
+        assert risk.risk_level in ("high", "medium")
+        assert risk.persistence_score < 50
+        assert risk.days_since_last_activity >= 29
+        assert any(f.severity == "high" for f in risk.factors)
+
+    def test_declining_activity_is_medium_risk(self) -> None:
+        """A student with declining recent activity should be flagged."""
+        mem = Memory()
+        # Add older facts (4 weeks ago)
+        for i in range(8):
+            mem.add("moodle:20", f"[Algo] Algorithm topic {i}: explanation {i}")
+
+        # Backdate all to 4 weeks ago
+        conn = mem._store._get_conn()
+        old_ts = time.time() - 28 * 86400
+        conn.execute(
+            "UPDATE facts SET created_at = ?, updated_at = ? WHERE user_id = ?",
+            (old_ts, old_ts, "moodle:20"),
+        )
+        conn.commit()
+
+        # Add one recent fact (within last week)
+        mem.add("moodle:20", "[Algo] Recent question about sorting: quicksort")
+
+        risk = assess_risk(mem, 20)
+        # Should detect declining trend (activity drop factor present)
+        trend_factors = [f for f in risk.factors if "驟降" in f.label or "停止" in f.label]
+        assert len(trend_factors) >= 1
+
+    def test_high_struggle_ratio_flagged(self) -> None:
+        """A student with many struggles relative to total facts should be flagged."""
+        mem = Memory()
+        mem.add("moodle:30", "[DS] One general fact: arrays store elements")
+        mem.add("moodle:30", "Struggling with: recursion — can't trace calls")
+        mem.add("moodle:30", "Struggling with: pointers — null dereference")
+        mem.add("moodle:30", "Struggling with: trees — traversal order")
+
+        risk = assess_risk(mem, 30)
+        # 3 struggles / 4 facts = 75% struggle ratio
+        struggle_factors = [f for f in risk.factors if "困難" in f.label]
+        assert len(struggle_factors) >= 1
+
+    def test_class_avg_comparison(self) -> None:
+        """Students below class average should score lower on volume."""
+        mem = Memory()
+        # Student 1: many facts
+        for i in range(20):
+            mem.add("moodle:41", f"[Topic{i}] Student 1 fact {i}: detailed info")
+        # Student 2: few facts
+        for i in range(3):
+            mem.add("moodle:42", f"[Topic{i}] Student 2 fact {i}: minimal info")
+
+        risk_low = assess_risk(mem, 41)
+        risk_high = assess_risk(mem, 42)
+
+        assert risk_low.persistence_score > risk_high.persistence_score
+
+    def test_demo_students_risk(self) -> None:
+        """Demo students should produce valid risk assessments."""
+        mem = Memory()
+        _seed_demo(mem)
+
+        for sid in [1001, 1002, 1003, 1004]:
+            risk = assess_risk(mem, sid)
+            assert risk.moodle_user_id == sid
+            assert risk.risk_level in ("high", "medium", "low")
+            assert 0 <= risk.persistence_score <= 100
+            assert risk.days_since_last_activity is not None
+
+
+class TestRiskEndpoint:
+    async def test_risk_endpoint(self) -> None:
+        mem = Memory()
+        _seed_demo(mem)
+
+        async with await _make_client(mem) as client:
+            resp = await client.get("/analytics/student/1001/risk")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["moodle_user_id"] == 1001
+            assert data["risk_level"] in ("high", "medium", "low")
+            assert 0 <= data["persistence_score"] <= 100
+            assert isinstance(data["factors"], list)
+            assert data["days_since_last_activity"] is not None
+
+    async def test_risk_endpoint_empty_student(self) -> None:
+        mem = Memory()
+        async with await _make_client(mem) as client:
+            resp = await client.get("/analytics/student/999/risk")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["risk_level"] == "high"
+            assert data["persistence_score"] == 0
+            assert data["days_since_last_activity"] is None

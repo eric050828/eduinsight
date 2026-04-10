@@ -26,8 +26,10 @@ from .analytics import (
     ClassAnalytics,
     LearningTrajectory,
     StudentAnalytics,
+    StudentRisk,
     analyze_class,
     analyze_student,
+    assess_risk,
     learning_trajectory,
 )
 from .assistant import LearningAssistant
@@ -354,6 +356,37 @@ async def get_student_trajectory(moodle_user_id: int) -> TrajectoryResponse:
             )
             for p in traj.points
         ],
+    )
+
+
+class RiskFactorResponse(BaseModel):
+    label: str
+    severity: str
+    detail: str = ""
+
+
+class StudentRiskResponse(BaseModel):
+    moodle_user_id: int
+    risk_level: str
+    persistence_score: int
+    factors: list[RiskFactorResponse]
+    days_since_last_activity: int | None = None
+
+
+@app.get("/analytics/student/{moodle_user_id}/risk", response_model=StudentRiskResponse)
+async def get_student_risk(moodle_user_id: int) -> StudentRiskResponse:
+    """Assess a student's risk level based on their learning activity patterns."""
+    assistant = get_assistant()
+    risk = assess_risk(assistant.memory, moodle_user_id)
+    return StudentRiskResponse(
+        moodle_user_id=risk.moodle_user_id,
+        risk_level=risk.risk_level,
+        persistence_score=risk.persistence_score,
+        factors=[
+            RiskFactorResponse(label=f.label, severity=f.severity, detail=f.detail)
+            for f in risk.factors
+        ],
+        days_since_last_activity=risk.days_since_last_activity,
     )
 
 
