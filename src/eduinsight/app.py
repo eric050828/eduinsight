@@ -486,7 +486,7 @@ async def demo_reset() -> DemoResetResponse:
     """Reset the database and seed demo data.
 
     This deletes all existing data and populates the database with
-    4 demo students for walkthrough purposes.
+    5 demo students for walkthrough purposes.
     """
     global _memory, _assistant
 

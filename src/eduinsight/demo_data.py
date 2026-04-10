@@ -82,4 +82,22 @@ DEMO_STUDENTS: dict[str, list[DemoFact]] = {
         ("Struggling with query optimization: understands EXPLAIN output but can't interpret execution plans effectively", "struggling"),
         ("Learning preference: prefers real-world examples connecting theory to practical database design", "preference"),
     ],
+    # Student 1005 - mid-level, practical DB learner
+    "moodle:1005": [
+        ("[Database Systems] CREATE TABLE syntax: building student tables with column types, constraints, and primary keys", "general"),
+        ("[Database Systems] INSERT INTO patterns: single-row and batch insert syntax for populating tables", "general"),
+        ("[Database Systems] SELECT WHERE conditions: using AND/OR operators with correct precedence in queries", "general"),
+        ("[Database Systems] Index creation guidelines: when to create indexes and side effects of over-indexing on write performance", "general"),
+        ("[Database Systems] ACID Isolation explained: bank transfer example illustrating concurrent transaction safety", "general"),
+        ("[Database Systems] Multi-table JOIN writing: three-table join syntax and whether join order affects results", "general"),
+        ("[Database Systems] GROUP BY vs HAVING vs WHERE: filtering timing differences in aggregate queries", "general"),
+        ("[Database Systems] Subquery vs JOIN performance: when to use correlated subqueries versus join rewrites", "general"),
+        ("[Database Systems] EXPLAIN output interpretation: understanding Seq Scan, Index Scan, and cost estimates", "general"),
+        ("[Database Systems] Normalization levels 1NF-3NF: differences and criteria for deciding when to split tables", "general"),
+        ("[Database Systems] Asked about denormalization: when is it practical to break 3NF in real-world projects?", "general"),
+        ("Struggling with index usage decisions: knows index definition but unsure which scenarios warrant indexing", "struggling"),
+        ("Struggling with multi-table JOIN aliases: confused by alias naming and join order in three-table queries", "struggling"),
+        ("Struggling with execution plan reading: can run EXPLAIN but cannot interpret complex query plans", "struggling"),
+        ("Learning preference: prefers hands-on practice with real database examples over pure theory", "preference"),
+    ],
 }

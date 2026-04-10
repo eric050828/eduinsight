@@ -118,9 +118,9 @@ class TestAnalyzeClass:
         _seed_demo(mem)
 
         result = analyze_class(mem)
-        assert result.total_students == 4
+        assert result.total_students == 5
         assert result.total_facts > 0
-        assert len(result.students) == 4
+        assert len(result.students) == 5
 
         # Should find common struggles across students
         assert len(result.common_struggles) > 0
@@ -177,7 +177,7 @@ class TestClassAnalyticsEndpoint:
             resp = await client.get("/analytics/class")
             assert resp.status_code == 200
             data = resp.json()
-            assert data["total_students"] == 4
+            assert data["total_students"] == 5
             assert data["total_facts"] > 0
             assert len(data["common_struggles"]) > 0
             assert "Data Structures" in data["topic_distribution"]

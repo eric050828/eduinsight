@@ -71,4 +71,36 @@ DEMO_CONVERSATIONS: dict[str, list[DemoConversation]] = {
              "記住：LEFT JOIN = 「左表一定全部出現」"),
         ]),
     ],
+    "moodle:1005": [
+        ("demo-1005-s1", [
+            ("user", "三張表 JOIN 要怎麼寫？join 的順序會影響結果嗎？"),
+            ("assistant", "三表 JOIN 的寫法其實就是把 JOIN 串接起來：\n\n"
+             "```sql\nSELECT s.name, c.course_name, g.score\n"
+             "FROM students s\n"
+             "JOIN enrollments e ON s.id = e.student_id\n"
+             "JOIN courses c ON e.course_id = c.id;\n```\n\n"
+             "**JOIN 順序會影響結果嗎？**\n"
+             "- **INNER JOIN**：順序不影響結果（交換律），但可能影響效能\n"
+             "- **LEFT/RIGHT JOIN**：順序**會**影響結果，因為哪張是「左表」很重要\n\n"
+             "建議：先寫出正確的邏輯，再用 EXPLAIN 看效能。alias（別名）記得用有意義的縮寫，比如 `s` = students。"),
+            ("user", "所以 alias 只是為了方便閱讀嗎？"),
+            ("assistant", "alias 有兩個作用：\n1. **可讀性**：`s.name` 比 `students.name` 簡潔\n"
+             "2. **必要性**：自我 JOIN（self-join）時**必須**用 alias 區分同一張表的兩個實例\n\n"
+             "```sql\n-- Self-join: 找同部門的同事\n"
+             "SELECT a.name, b.name\nFROM employees a\n"
+             "JOIN employees b ON a.dept_id = b.dept_id\nWHERE a.id < b.id;\n```\n\n"
+             "養成習慣：所有 JOIN 查詢都用 alias，code review 會感謝你的 😄"),
+        ]),
+        ("demo-1005-s2", [
+            ("user", "EXPLAIN 跑出來一堆東西看不懂，Seq Scan 是什麼意思？"),
+            ("assistant", "EXPLAIN 輸出的關鍵概念：\n\n"
+             "- **Seq Scan**（Sequential Scan）：全表掃描，一筆一筆讀，資料量大時很慢\n"
+             "- **Index Scan**：透過索引查找，通常快很多\n"
+             "- **cost**：預估成本，格式是 `cost=啟動成本..總成本`\n"
+             "- **rows**：預估回傳的行數\n\n"
+             "```\nSeq Scan on students  (cost=0.00..35.50 rows=1000)\n  Filter: (grade > 80)\n```\n\n"
+             "看到 Seq Scan + Filter 組合 → 考慮在 `grade` 加 index。\n"
+             "不過小表（<1000 rows）Seq Scan 其實不一定比 Index Scan 慢，資料庫優化器會自己判斷。"),
+        ]),
+    ],
 }

@@ -278,7 +278,16 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Previously only demo-seeded conversations appeared in history
 - [x] 1 new test (129 total)
 
+## Fix: Bug 5 — 1005 Data Flow Integration (2026-04-11)
+- [x] Add 1005 (E 張同學) to demo_data.py DEMO_STUDENTS (15 facts: DB-focused, general/struggling/preference)
+- [x] Add 1005 conversations to demo_conversations.py (2 sessions: multi-table JOIN, EXPLAIN interpretation)
+- [x] /demo/reset now seeds all 5 students with consistent categories
+  - Previously: 1005 had stale data from old seed script with wrong categories (achievement/question/struggle)
+  - Now: 1005 uses same category scheme as 1001-1004 (general/struggling/preference)
+- [x] Updated tests: 4→5 students, 45→60 total memories
+- [x] 129 tests passing
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: All supervisor-reported bugs fixed, chat history persistence, real-time stats, one-click demo, teacher live data, 129 tests passing
+Done: All supervisor-reported bugs fixed, Bug 5 data flow fixed, chat history persistence, real-time stats, one-click demo, teacher live data, 129 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片

@@ -36,14 +36,14 @@ class TestDemoReset:
                 assert resp.status_code == 200
                 data = resp.json()
                 assert data["status"] == "seeded"
-                assert data["students_seeded"] == 4
-                assert data["total_memories"] == 45
+                assert data["students_seeded"] == 5
+                assert data["total_memories"] == 60
 
                 # Verify teacher dashboard shows the seeded students
                 resp2 = await client.get("/teacher/students")
                 assert resp2.status_code == 200
                 dashboard = resp2.json()
-                assert dashboard["total_students"] == 4
+                assert dashboard["total_students"] == 5
         finally:
             app_module.settings.memory_db_path = original_path
 
