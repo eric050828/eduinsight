@@ -431,9 +431,55 @@ function renderDashboard() {
   // Chat history
   const histBox = document.getElementById('chatHistoryBox');
   histBox.innerHTML = c.history.map(h => `<div class="chat-history-item"><div class="ch-date">${h.w}</div><div class="ch-q">🙋 ${h.q}</div><div class="ch-a">🤖 ${h.a}</div></div>`).join('');
-  // Reset chat panel
+  // Reset chat panel and load real conversation history
   const chatMsgs = document.getElementById('chatMessages');
-  chatMsgs.innerHTML = `<div class="msg assistant"><div class="role">EduInsight AI</div><div>嗨${s.name.replace(/\(.+\)/,'')}！你現在在看「${c.name}」。${c.suggestions[0]?'根據記錄，你在 '+c.suggestions[0].t+' 上需要加強。要我幫你複習嗎？':'有什麼問題都可以問我！'} 😊</div></div>`;
+  chatMsgs.innerHTML = '<div class="msg assistant" style="opacity:.5;font-style:italic"><div class="role">系統</div><div>載入對話紀錄中...</div></div>';
+  loadConversations(s.moodle, c.name);
+}
+
+async function loadConversations(moodleId, courseName) {
+  const chatMsgs = document.getElementById('chatMessages');
+  try {
+    const res = await fetch(`/student/${moodleId}/conversations?limit=30`);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    chatMsgs.innerHTML = '';
+
+    if (data.conversations.length === 0) {
+      chatMsgs.innerHTML = '<div class="msg assistant"><div class="role">EduInsight AI</div><div>你還沒有對話紀錄。有任何課業問題都可以問我！😊</div></div>';
+      return;
+    }
+
+    // Show past conversations (oldest first)
+    const convos = data.conversations.slice().reverse();
+    const s = STUDENTS[currentStudent];
+
+    // Divider for past conversations
+    chatMsgs.innerHTML += '<div style="text-align:center;font-size:11px;color:var(--text-dim);padding:8px;border-bottom:1px dashed var(--border);margin-bottom:8px">📜 過去的對話紀錄（' + data.total_conversations + ' 段）</div>';
+
+    convos.forEach(c => {
+      const date = new Date(c.timestamp * 1000);
+      const dateStr = `${date.getMonth()+1}/${date.getDate()}`;
+      chatMsgs.innerHTML += `<div style="font-size:10px;color:var(--text-dim);text-align:center;padding:4px">— ${dateStr} —</div>`;
+      c.messages.forEach(m => {
+        const cls = m.role === 'user' ? 'user' : 'assistant';
+        const label = m.role === 'user' ? '你' : 'EduInsight AI';
+        chatMsgs.innerHTML += `<div class="msg ${cls}"><div class="role">${label}</div><div>${escapeHtml(m.content)}</div></div>`;
+      });
+    });
+
+    // Divider for new conversation
+    chatMsgs.innerHTML += '<div style="text-align:center;font-size:11px;color:var(--primary);padding:12px;border-top:1px dashed var(--border);margin-top:8px">✨ 新對話從這裡開始</div>';
+    chatMsgs.innerHTML += `<div class="msg assistant"><div class="role">EduInsight AI</div><div>嗨${s.name.replace(/\(.+\)/,'')}！根據之前的對話，你在 ${courseName} 有什麼新問題嗎？</div></div>`;
+
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+  } catch (e) {
+    chatMsgs.innerHTML = `<div class="msg assistant"><div class="role">EduInsight AI</div><div>嗨！有什麼課業問題都可以問我 😊</div></div>`;
+  }
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
 
 // Init

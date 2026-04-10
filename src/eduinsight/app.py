@@ -281,6 +281,42 @@ async def teacher_student_memories(moodle_user_id: int) -> dict[str, Any]:
     }
 
 
+@app.get("/student/{moodle_user_id}/conversations")
+async def student_conversations(moodle_user_id: int, limit: int = 50) -> dict[str, Any]:
+    """Get past conversation history for a student from the messages table."""
+    uid = f"moodle:{moodle_user_id}"
+    conn = _memory._store._get_conn()
+    rows = conn.execute(
+        "SELECT session_id, role, content, created_at FROM messages "
+        "WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        (uid, limit),
+    ).fetchall()
+
+    # Group by session
+    sessions: dict[str, list[dict[str, Any]]] = {}
+    for sid, role, content, ts in rows:
+        if sid not in sessions:
+            sessions[sid] = []
+        sessions[sid].append({"role": role, "content": content, "created_at": ts})
+
+    # Sort sessions by earliest message, most recent first
+    sorted_sessions = []
+    for sid, msgs in sessions.items():
+        msgs.sort(key=lambda m: m["created_at"])
+        sorted_sessions.append({
+            "session_id": sid,
+            "timestamp": msgs[0]["created_at"],
+            "messages": msgs,
+        })
+    sorted_sessions.sort(key=lambda s: s["timestamp"], reverse=True)
+
+    return {
+        "moodle_user_id": moodle_user_id,
+        "total_conversations": len(sorted_sessions),
+        "conversations": sorted_sessions,
+    }
+
+
 # ------------------------------------------------------------------
 # Analytics endpoints
 # ------------------------------------------------------------------
