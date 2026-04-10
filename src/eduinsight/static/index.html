@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EduInsight - AI 學習助教</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <style>
   :root {
     --bg: #0f172a;
@@ -142,9 +144,10 @@
   .msg {
     max-width: 680px; padding: 14px 18px;
     border-radius: var(--radius); line-height: 1.7;
-    font-size: 14px; white-space: pre-wrap; word-break: break-word;
+    font-size: 14px; word-break: break-word;
   }
   .msg.user {
+    white-space: pre-wrap;
     background: var(--user-bg); align-self: flex-end;
     border: 1px solid rgba(99,102,241,0.15);
     border-bottom-right-radius: 4px;
@@ -292,6 +295,67 @@
   }
   .demo-btn:hover { background: var(--primary-hover); }
 
+  /* Markdown content styling */
+  .msg .md-content h1, .msg .md-content h2, .msg .md-content h3 {
+    margin: 12px 0 6px; font-weight: 600;
+  }
+  .msg .md-content h1 { font-size: 18px; }
+  .msg .md-content h2 { font-size: 16px; }
+  .msg .md-content h3 { font-size: 14px; }
+  .msg .md-content p { margin: 6px 0; }
+  .msg .md-content ul, .msg .md-content ol { margin: 6px 0 6px 20px; }
+  .msg .md-content li { margin: 3px 0; }
+  .msg .md-content strong { color: var(--text); }
+  .msg .md-content code {
+    background: rgba(99,102,241,0.15); padding: 2px 6px; border-radius: 4px;
+    font-family: 'Fira Code', 'Consolas', monospace; font-size: 13px;
+  }
+  .msg .md-content pre {
+    background: #0d1117; border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; margin: 8px 0; overflow-x: auto;
+  }
+  .msg .md-content pre code {
+    background: none; padding: 0; font-size: 13px; color: #e6edf3;
+  }
+  .msg .md-content table {
+    width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px;
+  }
+  .msg .md-content table th, .msg .md-content table td {
+    border: 1px solid var(--border); padding: 6px 10px; text-align: left;
+  }
+  .msg .md-content table th { background: var(--surface-2); font-weight: 500; }
+  .msg .md-content blockquote {
+    border-left: 3px solid var(--primary); padding-left: 12px;
+    margin: 8px 0; color: var(--text-muted);
+  }
+
+  /* Student memory modal */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    align-items: center; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 24px; max-width: 520px; width: 90%;
+    max-height: 80vh; overflow-y: auto;
+  }
+  .modal h3 { font-size: 18px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .modal-close {
+    margin-left: auto; cursor: pointer; font-size: 20px; color: var(--text-dim);
+    background: none; border: none;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal-fact {
+    padding: 10px 14px; border-radius: 8px; margin-bottom: 8px;
+    font-size: 13px; line-height: 1.6;
+    background: var(--surface-2); color: var(--text-muted);
+  }
+  .modal-fact .cat { font-size: 11px; font-weight: 500; margin-bottom: 4px; }
+  .dash-row { cursor: pointer; }
+  .dash-row:hover td { background: rgba(99,102,241,0.1) !important; }
+
   /* Responsive */
   @media (max-width: 768px) {
     .sidebar { display: none; }
@@ -397,6 +461,14 @@
     </div>
   </div>
 
+  <!-- Student Memory Modal -->
+  <div class="modal-overlay" id="memory-modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+      <h3><span id="modal-student-name">學生</span>的記憶<button class="modal-close" onclick="closeModal()">&times;</button></h3>
+      <div id="modal-content">載入中...</div>
+    </div>
+  </div>
+
   <!-- Analytics View -->
   <div id="view-analytics">
     <div class="demo-banner">
@@ -457,7 +529,12 @@ function addMessage(role, text, memCtx) {
   roleLabel.textContent = role === 'user' ? 'You' : 'EduInsight AI';
   div.appendChild(roleLabel);
   const body = document.createElement('div');
-  body.textContent = text;
+  if (role === 'assistant' && typeof marked !== 'undefined') {
+    body.className = 'md-content';
+    body.innerHTML = DOMPurify.sanitize(marked.parse(text));
+  } else {
+    body.textContent = text;
+  }
   div.appendChild(body);
   if (role === 'assistant' && memCtx && memCtx.length) {
     const toggle = document.createElement('div');
@@ -501,6 +578,13 @@ async function sendMessage() {
 }
 
 // Dashboard
+let llmBackend = '...';
+fetch('/health').then(r => r.json()).then(d => {
+  llmBackend = d.llm_provider || d.llm || 'Unknown';
+}).catch(() => {});
+
+const STUDENT_NAMES = { 1001: '陳同學', 1002: '林同學', 1003: '王同學', 1004: '張同學' };
+
 async function loadDashboard() {
   try {
     const res = await fetch('/teacher/students');
@@ -509,15 +593,42 @@ async function loadDashboard() {
       <div class="stat-card"><div class="stat-label">學生數</div><div class="stat-value purple">${data.total_students}</div></div>
       <div class="stat-card"><div class="stat-label">記憶總數</div><div class="stat-value cyan">${data.total_facts}</div></div>
       <div class="stat-card"><div class="stat-label">平均記憶/人</div><div class="stat-value green">${data.total_students ? (data.total_facts / data.total_students).toFixed(1) : 0}</div></div>
-      <div class="stat-card"><div class="stat-label">LLM 後端</div><div class="stat-value amber" style="font-size:16px">Claude Haiku</div></div>
+      <div class="stat-card"><div class="stat-label">LLM 後端</div><div class="stat-value amber" style="font-size:16px">${llmBackend}</div></div>
     `;
-    const names = { 1001: '陳同學', 1002: '林同學', 1003: '王同學', 1004: '張同學' };
     document.getElementById('dash-table').innerHTML = data.students.map(s => {
+      const name = STUDENT_NAMES[s.moodle_user_id] || 'Student ' + s.moodle_user_id;
       const cats = Object.entries(s.categories || {}).map(([k,v]) => `<span class="tag tag-topic">${k}: ${v}</span>`).join(' ');
-      return `<tr><td style="font-weight:500">${names[s.moodle_user_id] || 'Student ' + s.moodle_user_id}</td><td>${s.fact_count}</td><td>${cats || '—'}</td></tr>`;
+      return `<tr class="dash-row" onclick="openStudentModal('${s.moodle_user_id}','${name}')"><td style="font-weight:500">${name}</td><td>${s.fact_count}</td><td>${cats || '—'}</td></tr>`;
     }).join('');
   } catch (e) { console.error(e); }
 }
+
+// Student memory modal
+async function openStudentModal(uid, name) {
+  document.getElementById('modal-student-name').textContent = name;
+  document.getElementById('modal-content').innerHTML = '<p style="color:var(--text-dim)">載入中...</p>';
+  document.getElementById('memory-modal').classList.add('open');
+  try {
+    const res = await fetch(`/teacher/students/${uid}/memories`);
+    const data = await res.json();
+    if (!data.memories || data.memories.length === 0) {
+      document.getElementById('modal-content').innerHTML = '<p style="color:var(--text-dim)">尚無記憶</p>';
+      return;
+    }
+    document.getElementById('modal-content').innerHTML = data.memories.map(m => {
+      const text = typeof m === 'string' ? m : (m.text || JSON.stringify(m));
+      const lower = text.toLowerCase();
+      const catClass = lower.includes('struggling') || lower.includes('struggle') ? 'tag-struggle'
+        : lower.includes('prefer') ? 'tag-preference' : 'tag-topic';
+      const catLabel = lower.includes('struggling') || lower.includes('struggle') ? 'struggling'
+        : lower.includes('prefer') ? 'preference' : 'general';
+      return `<div class="modal-fact"><div class="cat"><span class="tag ${catClass}">${catLabel}</span></div>${text}</div>`;
+    }).join('');
+  } catch (e) {
+    document.getElementById('modal-content').innerHTML = '<p style="color:var(--red)">載入失敗</p>';
+  }
+}
+function closeModal() { document.getElementById('memory-modal').classList.remove('open'); }
 
 // Analytics
 async function loadAnalytics() {
@@ -531,7 +642,6 @@ async function loadAnalytics() {
     ]);
     const classData = await classRes.json();
     const students = await Promise.all(studentResArr.map(r => r.json()));
-    const names = { 1001: '陳同學', 1002: '林同學', 1003: '王同學', 1004: '張同學' };
 
     let html = `<div class="card"><h3>🔴 全班共同困難點</h3>`;
     if (classData.common_struggles.length) {
@@ -544,7 +654,7 @@ async function loadAnalytics() {
 
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">';
     students.forEach(s => {
-      const name = names[s.moodle_user_id] || 'Student ' + s.moodle_user_id;
+      const name = STUDENT_NAMES[s.moodle_user_id] || 'Student ' + s.moodle_user_id;
       html += `<div class="card"><h3>${name}</h3>
         <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">記憶: ${s.total_facts} 條</div>
         ${s.weak_topics.length ? '<div style="margin-bottom:8px">' + s.weak_topics.map(t => `<span class="tag tag-struggle" style="margin:2px">${t}</span>`).join('') + '</div>' : ''}
@@ -570,9 +680,10 @@ async function seedDemo() {
 }
 
 // Health check
-fetch('/health').then(r => r.json()).then(() => {
+fetch('/health').then(r => r.json()).then(d => {
   document.getElementById('status-dot').classList.remove('offline');
   document.getElementById('status-text').textContent = 'Online';
+  if (d.llm_provider) llmBackend = d.llm_provider;
 }).catch(() => {
   document.getElementById('status-dot').classList.add('offline');
   document.getElementById('status-text').textContent = 'Offline';

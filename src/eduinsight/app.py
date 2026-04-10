@@ -155,7 +155,10 @@ class TeacherDashboardResponse(BaseModel):
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "version": "0.1.0"}
+    llm_name = "None"
+    if _llm is not None:
+        llm_name = getattr(_llm, "model", None) or type(_llm).__name__
+    return {"status": "ok", "version": "0.1.0", "llm_provider": llm_name}
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -397,11 +400,7 @@ async def demo_reset() -> DemoResetResponse:
     # Clear all demo students' data via Lite-Mem API
     if _memory is not None:
         for uid in DEMO_STUDENTS:
-            try:
-                for fact in _memory.list(uid):
-                    _memory.delete(uid, fact)
-            except Exception:
-                pass
+            _memory.forget(uid)
 
     _memory = Memory(db_path, embedder=embedder)
     _assistant = LearningAssistant(_memory, llm=_llm)
@@ -455,11 +454,7 @@ async def demo_semester() -> SemesterDemoResponse:
 
     # Clear existing data for this student
     if _memory is not None:
-        try:
-            for fact in _memory.list(SEMESTER_STUDENT_ID):
-                _memory.delete(SEMESTER_STUDENT_ID, fact)
-        except Exception:
-            pass
+        _memory.forget(SEMESTER_STUDENT_ID)
 
     _memory = Memory(db_path, embedder=embedder)
     _assistant = LearningAssistant(_memory, llm=_llm)
