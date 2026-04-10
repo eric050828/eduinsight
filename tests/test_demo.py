@@ -54,3 +54,29 @@ class TestDemoReset:
             resp = await client.get("/demo")
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"]
+
+
+class TestPageRoutes:
+    async def test_landing_page(self) -> None:
+        """GET / serves the landing page."""
+        mem = Memory()
+        async with await _make_client(mem) as client:
+            resp = await client.get("/")
+            assert resp.status_code == 200
+            assert "text/html" in resp.headers["content-type"]
+
+    async def test_student_page(self) -> None:
+        """GET /student serves the student dashboard."""
+        mem = Memory()
+        async with await _make_client(mem) as client:
+            resp = await client.get("/student")
+            assert resp.status_code == 200
+            assert "text/html" in resp.headers["content-type"]
+
+    async def test_teacher_page(self) -> None:
+        """GET /teacher serves the teacher dashboard."""
+        mem = Memory()
+        async with await _make_client(mem) as client:
+            resp = await client.get("/teacher")
+            assert resp.status_code == 200
+            assert "text/html" in resp.headers["content-type"]
