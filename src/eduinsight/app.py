@@ -493,6 +493,16 @@ async def demo_reset() -> DemoResetResponse:
             _memory.add(user_id, fact_text, category=category)
         total_seeded += len(facts)
 
+    # Seed sample conversation messages for chat history display
+    from .demo_conversations import DEMO_CONVERSATIONS
+
+    for user_id, convos in DEMO_CONVERSATIONS.items():
+        for session_id, messages in convos:
+            for role, content in messages:
+                _memory._store.store_message(
+                    user_id, content, session_id=session_id, role=role,
+                )
+
     # Verify actual stored count (Lite-Mem dedup may reduce it)
     actual_total = 0
     for user_id in DEMO_STUDENTS:
