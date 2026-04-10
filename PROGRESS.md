@@ -204,7 +204,16 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] Enhanced student.html: 5-student switcher, per-student multi-course demo data, chat history
 - [x] Enhanced teacher.html: multi-course switching, AI summaries, student detail modals, care messages
 
+## Conversation History API (2026-04-10)
+- [x] GET /student/{id}/conversations — retrieve past chat sessions from messages table
+  - Groups messages by session_id, sorted most recent first
+  - Uses shared Memory connection (testable with :memory: DB)
+- [x] Student dashboard loads real conversation history on page load
+  - Shows past conversations with date dividers
+  - "新對話從這裡開始" separator before new messages
+- [x] 5 new tests (127 total)
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: Risk assessment API, enhanced demo UI, 122 tests passing
+Done: Conversation history API, risk assessment, enhanced demo UI, 127 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
