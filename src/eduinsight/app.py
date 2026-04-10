@@ -295,21 +295,17 @@ async def student_conversations(moodle_user_id: int, limit: int = 50) -> dict[st
     """Get past conversation history for a student from the messages table."""
     uid = f"moodle:{moodle_user_id}"
     try:
-        conn = _memory._store._get_conn()
-        rows = conn.execute(
-            "SELECT session_id, role, content, created_at FROM messages "
-            "WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
-            (uid, limit),
-        ).fetchall()
+        rows = _memory._store.get_messages(uid)
     except Exception:
         return {"moodle_user_id": moodle_user_id, "total_conversations": 0, "conversations": []}
 
     # Group by session
     sessions: dict[str, list[dict[str, Any]]] = {}
-    for sid, role, content, ts in rows:
+    for msg in rows:
+        sid = msg.get("session_id", "")
         if sid not in sessions:
             sessions[sid] = []
-        sessions[sid].append({"role": role, "content": content, "created_at": ts})
+        sessions[sid].append({"role": msg["role"], "content": msg["content"], "created_at": msg["created_at"]})
 
     # Sort sessions by earliest message, most recent first
     sorted_sessions = []
@@ -322,10 +318,22 @@ async def student_conversations(moodle_user_id: int, limit: int = 50) -> dict[st
         })
     sorted_sessions.sort(key=lambda s: s["timestamp"], reverse=True)
 
+    # Apply limit to total messages
+    total_msgs = 0
+    limited_sessions = []
+    for sess in sorted_sessions:
+        if total_msgs >= limit:
+            break
+        remaining = limit - total_msgs
+        if len(sess["messages"]) > remaining:
+            sess["messages"] = sess["messages"][:remaining]
+        total_msgs += len(sess["messages"])
+        limited_sessions.append(sess)
+
     return {
         "moodle_user_id": moodle_user_id,
-        "total_conversations": len(sorted_sessions),
-        "conversations": sorted_sessions,
+        "total_conversations": len(limited_sessions),
+        "conversations": limited_sessions,
     }
 
 

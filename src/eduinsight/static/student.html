@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>EduInsight — 學生學習助教</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <style>
 :root {
   --bg: #f0f4f8; --surface: #ffffff; --surface-2: #e8edf2;
@@ -117,6 +121,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .classroom-banner-text strong{color:#1e1b4b}
 .classroom-btn{padding:6px 14px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;margin-left:auto;white-space:nowrap;font-family:inherit}
 .classroom-btn:hover{background:#818cf8}
+
+/* Markdown in chat */
+.msg .md-content{line-height:1.7}
+.msg .md-content p{margin:6px 0}
+.msg .md-content h1,.msg .md-content h2,.msg .md-content h3{margin:10px 0 4px;font-weight:600}
+.msg .md-content h1{font-size:16px} .msg .md-content h2{font-size:14px} .msg .md-content h3{font-size:13px}
+.msg .md-content code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:3px;font-size:12px;font-family:'Fira Code',monospace}
+.msg .md-content pre{background:#1e293b;color:#e2e8f0;padding:10px 12px;border-radius:8px;overflow-x:auto;margin:8px 0;font-size:12px;line-height:1.5}
+.msg .md-content pre code{background:none;color:inherit;padding:0}
+.msg .md-content table{border-collapse:collapse;margin:8px 0;font-size:12px;width:100%}
+.msg .md-content th,.msg .md-content td{border:1px solid var(--border);padding:4px 8px;text-align:left}
+.msg .md-content th{background:rgba(29,111,165,.05);font-weight:500}
+.msg .md-content ul,.msg .md-content ol{padding-left:20px;margin:4px 0}
+.msg .md-content blockquote{border-left:3px solid var(--primary);padding-left:10px;margin:8px 0;color:var(--text-muted)}
+.msg .md-content strong{font-weight:600}
+.msg .md-content img{max-width:100%;border-radius:6px;margin:4px 0}
+
+/* KaTeX overrides */
+.msg .katex{font-size:14px}
+.msg .katex-display{margin:8px 0;overflow-x:auto}
+
+/* Embedded HTML iframe */
+.embed-container{position:relative;margin:8px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fff}
+.embed-toolbar{display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:var(--surface-2,#e8edf2);border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted)}
+.embed-toolbar button{background:none;border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;color:var(--text-muted);font-family:inherit;transition:all .15s}
+.embed-toolbar button:hover{background:var(--primary);color:#fff;border-color:var(--primary)}
+.embed-iframe{width:100%;border:none;min-height:200px;max-height:400px;display:block;transition:all .3s}
+
+/* Fullscreen overlay for embeds */
+.embed-fullscreen-overlay{display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.85);padding:20px;flex-direction:column}
+.embed-fullscreen-overlay.open{display:flex}
+.embed-fullscreen-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;color:#fff;font-size:13px}
+.embed-fullscreen-header button{background:rgba(255,255,255,.15);border:none;color:#fff;padding:6px 16px;border-radius:6px;cursor:pointer;font-size:13px;font-family:inherit}
+.embed-fullscreen-header button:hover{background:rgba(255,255,255,.3)}
+.embed-fullscreen-body{flex:1;border-radius:12px;overflow:hidden;background:#fff}
+.embed-fullscreen-body iframe{width:100%;height:100%;border:none}
 
 .stu-btn{padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text-muted);font-size:12px;cursor:pointer;font-family:inherit;transition:all .15s}
 .stu-btn:hover{border-color:var(--primary);color:var(--primary)}
@@ -243,6 +283,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
         <button id="sendBtn" onclick="sendMessage()">發送</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Fullscreen embed overlay -->
+<div class="embed-fullscreen-overlay" id="embedFullscreen">
+  <div class="embed-fullscreen-header">
+    <span id="embedFullscreenTitle">📐 互動式學習模組</span>
+    <button onclick="closeFullscreen()">✕ 關閉</button>
+  </div>
+  <div class="embed-fullscreen-body">
+    <iframe id="embedFullscreenFrame" sandbox="allow-scripts allow-same-origin"></iframe>
   </div>
 </div>
 
@@ -450,27 +501,56 @@ async function loadConversations(moodleId, courseName) {
       return;
     }
 
-    // Show past conversations (oldest first)
     const convos = data.conversations.slice().reverse();
     const s = STUDENTS[currentStudent];
 
-    // Divider for past conversations
-    chatMsgs.innerHTML += '<div style="text-align:center;font-size:11px;color:var(--text-dim);padding:8px;border-bottom:1px dashed var(--border);margin-bottom:8px">📜 過去的對話紀錄（' + data.total_conversations + ' 段）</div>';
+    // Helper: create element from HTML
+    function el(tag, attrs, html) {
+      const e = document.createElement(tag);
+      if (attrs) Object.entries(attrs).forEach(([k,v]) => {
+        if (k==='style') e.style.cssText=v;
+        else if (k==='className') e.className=v;
+        else e.setAttribute(k,v);
+      });
+      if (html) e.innerHTML = html;
+      return e;
+    }
 
-    convos.forEach(c => {
-      const date = new Date(c.timestamp * 1000);
+    // Divider
+    chatMsgs.appendChild(el('div', {style:'text-align:center;font-size:11px;color:var(--text-dim);padding:8px;border-bottom:1px dashed var(--border);margin-bottom:8px'}, '📜 過去的對話紀錄（' + data.total_conversations + ' 段）'));
+
+    convos.forEach(convo => {
+      const date = new Date(convo.timestamp * 1000);
       const dateStr = `${date.getMonth()+1}/${date.getDate()}`;
-      chatMsgs.innerHTML += `<div style="font-size:10px;color:var(--text-dim);text-align:center;padding:4px">— ${dateStr} —</div>`;
-      c.messages.forEach(m => {
-        const cls = m.role === 'user' ? 'user' : 'assistant';
-        const label = m.role === 'user' ? '你' : 'EduInsight AI';
-        chatMsgs.innerHTML += `<div class="msg ${cls}"><div class="role">${label}</div><div>${escapeHtml(m.content)}</div></div>`;
+      chatMsgs.appendChild(el('div', {style:'font-size:10px;color:var(--text-dim);text-align:center;padding:4px'}, `— ${dateStr} —`));
+
+      convo.messages.forEach(m => {
+        if (m.role === 'user') {
+          chatMsgs.appendChild(el('div', {'className':'msg user'}, `<div class="role">你</div><div>${escapeHtml(m.content)}</div>`));
+        } else {
+          const div = document.createElement('div');
+          div.className = 'msg assistant';
+          div.innerHTML = '<div class="role">EduInsight AI</div>';
+          const embeds = extractEmbeds(m.content);
+          let processed = m.content;
+          embeds.forEach(e => { processed = processed.replace(e.full, ''); });
+          const mdDiv = document.createElement('div');
+          mdDiv.className = 'md-content';
+          mdDiv.innerHTML = renderMarkdown(processed);
+          renderLatex(mdDiv);
+          div.appendChild(mdDiv);
+          embeds.forEach(e => div.appendChild(createEmbedIframe(e.html, '互動模組')));
+          chatMsgs.appendChild(div);
+        }
       });
     });
 
-    // Divider for new conversation
-    chatMsgs.innerHTML += '<div style="text-align:center;font-size:11px;color:var(--primary);padding:12px;border-top:1px dashed var(--border);margin-top:8px">✨ 新對話從這裡開始</div>';
-    chatMsgs.innerHTML += `<div class="msg assistant"><div class="role">EduInsight AI</div><div>嗨${s.name.replace(/\(.+\)/,'')}！根據之前的對話，你在 ${courseName} 有什麼新問題嗎？</div></div>`;
+    // New conversation divider
+    chatMsgs.appendChild(el('div', {style:'text-align:center;font-size:11px;color:var(--primary);padding:12px;border-top:1px dashed var(--border);margin-top:8px'}, '✨ 新對話從這裡開始'));
+    const greeting = document.createElement('div');
+    greeting.className = 'msg assistant';
+    greeting.innerHTML = `<div class="role">EduInsight AI</div><div>嗨${s.name.replace(/\(.+\)/,'')}！根據之前的對話，你在 ${courseName} 有什麼新問題嗎？</div>`;
+    chatMsgs.appendChild(greeting);
 
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
   } catch (e) {
@@ -483,6 +563,7 @@ function escapeHtml(text) {
 }
 
 // Init
+currentCourse = Object.keys(STUDENTS[currentStudent].courses)[0];
 renderCourseCards();
 renderDashboard();
 
@@ -493,17 +574,172 @@ const sendBtn=document.getElementById('sendBtn');
 msgInput.addEventListener('input',()=>{msgInput.style.height='auto';msgInput.style.height=Math.min(msgInput.scrollHeight,80)+'px'});
 msgInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
 
-function addMsg(role,text,mem){
-  const d=document.createElement('div');d.className=`msg ${role}`;
-  const r=document.createElement('div');r.className='role';r.textContent=role==='user'?'你':'EduInsight AI';d.appendChild(r);
-  const b=document.createElement('div');b.textContent=text;d.appendChild(b);
-  if(role==='assistant'&&mem&&mem.length){
-    const t=document.createElement('div');t.className='memory-toggle';t.textContent=`🧠 使用了 ${mem.length} 條記憶`;
-    const l=document.createElement('ul');l.className='memory-list';
-    mem.forEach(m=>{const li=document.createElement('li');li.textContent=m;l.appendChild(li)});
-    t.onclick=()=>l.classList.toggle('open');d.appendChild(t);d.appendChild(l);
+let _embedCounter = 0;
+
+// Detect embedded HTML blocks: ```html\n...``` or :::html\n...\n:::
+function extractEmbeds(text) {
+  const embeds = [];
+  // Match ```html ... ``` blocks that contain full HTML (with <html> or <body> or <style>)
+  const htmlBlockRe = /```html\s*\n([\s\S]*?)```/g;
+  let match;
+  while ((match = htmlBlockRe.exec(text)) !== null) {
+    const code = match[1].trim();
+    if (code.includes('<') && (code.includes('<style') || code.includes('<div') || code.includes('<canvas') || code.includes('<svg') || code.includes('<input') || code.includes('<button') || code.length > 300)) {
+      embeds.push({ full: match[0], html: code });
+    }
   }
-  chatMessages.appendChild(d);chatMessages.scrollTop=chatMessages.scrollHeight;
+  return embeds;
+}
+
+function createEmbedIframe(htmlContent, title) {
+  _embedCounter++;
+  const id = 'embed-' + _embedCounter;
+  const container = document.createElement('div');
+  container.className = 'embed-container';
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'embed-toolbar';
+  toolbar.innerHTML = `
+    <span>📐 ${title || '互動式學習模組'}</span>
+    <div>
+      <button onclick="resizeEmbed('${id}',250)">小</button>
+      <button onclick="resizeEmbed('${id}',450)">中</button>
+      <button onclick="openFullscreen('${id}')">⛶ 全螢幕</button>
+    </div>`;
+  container.appendChild(toolbar);
+
+  const iframe = document.createElement('iframe');
+  iframe.id = id;
+  iframe.className = 'embed-iframe';
+  iframe.style.height = '350px';
+  iframe.sandbox = 'allow-scripts allow-same-origin';
+  iframe.srcdoc = htmlContent;
+  container.appendChild(iframe);
+
+  // Store htmlContent for fullscreen
+  iframe.dataset.html = htmlContent;
+  return container;
+}
+
+function resizeEmbed(id, h) {
+  const el = document.getElementById(id);
+  if (el) el.style.height = h + 'px';
+}
+
+function openFullscreen(id) {
+  const src = document.getElementById(id);
+  if (!src) return;
+  const overlay = document.getElementById('embedFullscreen');
+  const frame = document.getElementById('embedFullscreenFrame');
+  frame.srcdoc = src.dataset.html || src.srcdoc || '';
+  overlay.classList.add('open');
+  document.addEventListener('keydown', _escFullscreen);
+}
+
+function closeFullscreen() {
+  document.getElementById('embedFullscreen').classList.remove('open');
+  document.removeEventListener('keydown', _escFullscreen);
+}
+
+function _escFullscreen(e) { if (e.key === 'Escape') closeFullscreen(); }
+
+function renderMarkdown(text) {
+  // Configure marked
+  if (typeof marked !== 'undefined') {
+    marked.setOptions({ breaks: true, gfm: true });
+    return marked.parse(text);
+  }
+  return text.replace(/\n/g, '<br>');
+}
+
+function renderLatex(element) {
+  if (typeof renderMathInElement !== 'undefined') {
+    renderMathInElement(element, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\[', right: '\\]', display: true},
+        {left: '\\(', right: '\\)', display: false}
+      ],
+      throwOnError: false
+    });
+  }
+}
+
+function addMsg(role, text, mem) {
+  const d = document.createElement('div');
+  d.className = `msg ${role}`;
+  const r = document.createElement('div');
+  r.className = 'role';
+  r.textContent = role === 'user' ? '你' : 'EduInsight AI';
+  d.appendChild(r);
+
+  if (role === 'assistant') {
+    // Extract embedded HTML blocks before markdown
+    const embeds = extractEmbeds(text);
+    let processedText = text;
+    const embedPlaceholders = [];
+    embeds.forEach((e, i) => {
+      const ph = `__EMBED_${i}__`;
+      processedText = processedText.replace(e.full, ph);
+      embedPlaceholders.push({ ph, html: e.html });
+    });
+
+    // Render markdown
+    const mdHtml = renderMarkdown(processedText);
+
+    // Split by embed placeholders and reconstruct
+    let parts = [mdHtml];
+    embedPlaceholders.forEach((ep, i) => {
+      const newParts = [];
+      parts.forEach(p => {
+        if (typeof p === 'string' && p.includes(ep.ph)) {
+          const [before, after] = p.split(ep.ph);
+          if (before) newParts.push(before);
+          newParts.push({ type: 'embed', html: ep.html, idx: i });
+          if (after) newParts.push(after);
+        } else {
+          newParts.push(p);
+        }
+      });
+      parts = newParts;
+    });
+
+    parts.forEach(p => {
+      if (typeof p === 'string') {
+        const span = document.createElement('div');
+        span.className = 'md-content';
+        span.innerHTML = p;
+        renderLatex(span);
+        d.appendChild(span);
+      } else {
+        // It's an embed
+        const title = `互動模組 #${p.idx + 1}`;
+        d.appendChild(createEmbedIframe(p.html, title));
+      }
+    });
+  } else {
+    // User message: plain text
+    const b = document.createElement('div');
+    b.textContent = text;
+    d.appendChild(b);
+  }
+
+  // Memory context toggle
+  if (role === 'assistant' && mem && mem.length) {
+    const t = document.createElement('div');
+    t.className = 'memory-toggle';
+    t.textContent = `🧠 使用了 ${mem.length} 條記憶`;
+    const l = document.createElement('ul');
+    l.className = 'memory-list';
+    mem.forEach(m => { const li = document.createElement('li'); li.textContent = m; l.appendChild(li); });
+    t.onclick = () => l.classList.toggle('open');
+    d.appendChild(t);
+    d.appendChild(l);
+  }
+
+  chatMessages.appendChild(d);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
 async function sendMessage(){
