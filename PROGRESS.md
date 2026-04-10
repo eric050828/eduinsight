@@ -236,7 +236,22 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Eliminates favicon.ico 404 console errors on all pages
 - [x] 128 tests still passing
 
+## Demo UX Polish (2026-04-10)
+- [x] Student stats cards fetch from real API (`/analytics/student/{id}`)
+  - 累計記憶、已知弱項、涵蓋主題 now reflect actual Lite-Mem data
+  - Hardcoded values serve as instant fallback while API loads
+  - Stats auto-refresh after each chat message (real-time feedback)
+- [x] Landing page one-click Demo button
+  - "🚀 一鍵載入 Demo 資料" button calls POST /demo/reset
+  - Shows loading state → success count → auto-redirect to /student
+  - Error handling with retry capability
+- [x] Navigation consistency across all pages
+  - SPA (index.html): added links to new student/teacher dashboards + demo walkthrough
+  - Landing page: added quick links to SPA prototype, demo walkthrough, semester simulation
+  - All pages now mutually reachable without manual URL entry
+- [x] 128 tests still passing
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: All supervisor-reported bugs fixed (30/30 pass), 128 tests passing
+Done: All supervisor-reported bugs fixed (30/30 pass), real-time stats, one-click demo, 128 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片

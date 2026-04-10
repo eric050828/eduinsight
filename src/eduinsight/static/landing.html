@@ -200,6 +200,8 @@
       <span>5 位學生</span>
       <span>4 門課程</span>
     </div>
+    <button id="demoBtn" onclick="startDemo()" style="margin-top:10px;padding:8px 24px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:.9rem;font-weight:600;cursor:pointer;transition:opacity .2s">🚀 一鍵載入 Demo 資料</button>
+    <div id="demoStatus" style="font-size:.8rem;color:var(--text-muted);margin-top:6px"></div>
   </div>
 
   <!-- Features -->
@@ -221,6 +223,13 @@
     </div>
   </section>
 
+  <!-- Quick Links -->
+  <div style="text-align:center;padding:12px 0;font-size:.82rem;color:var(--text-muted)">
+    <a href="/static/index.html" style="color:var(--accent);text-decoration:none;margin:0 10px">📋 SPA 原型</a>
+    <a href="/demo" style="color:var(--accent);text-decoration:none;margin:0 10px">🎬 Demo 導覽</a>
+    <a href="/semester" style="color:var(--accent);text-decoration:none;margin:0 10px">📅 學期模擬</a>
+  </div>
+
   <!-- Tech Stack -->
   <footer class="tech">
     <div class="tech-label">Tech Stack</div>
@@ -240,6 +249,24 @@
 fetch('/health').then(r=>r.json()).then(d=>{
   if(d.llm_provider)document.getElementById('llmBadge').textContent=d.llm_provider;
 }).catch(()=>{});
+
+async function startDemo(){
+  const btn=document.getElementById('demoBtn');
+  const status=document.getElementById('demoStatus');
+  btn.disabled=true;btn.style.opacity='.5';btn.textContent='⏳ 載入中...';
+  try{
+    const res=await fetch('/demo/reset',{method:'POST'});
+    if(!res.ok)throw new Error('seed failed');
+    const d=await res.json();
+    status.textContent=`✅ 已載入 ${d.students_seeded} 位學生、${d.total_memories} 筆記憶`;
+    status.style.color='#22c55e';
+    btn.textContent='✅ 資料已就緒';
+    setTimeout(()=>window.location.href='/student',1200);
+  }catch(e){
+    status.textContent='❌ 載入失敗: '+e.message;status.style.color='#ef4444';
+    btn.disabled=false;btn.style.opacity='1';btn.textContent='🚀 一鍵載入 Demo 資料';
+  }
+}
 
 (function(){
   const muted = '#94a3b8';

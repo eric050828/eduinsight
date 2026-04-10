@@ -452,10 +452,11 @@ function renderDashboard() {
   const c = s.courses[currentCourse];
   // Breadcrumb
   document.querySelector('.breadcrumb').innerHTML = `<a href="/">首頁</a> &gt; <a href="/student">我的課程</a> &gt; ${c.name}`;
-  // Stats
+  // Stats (hardcoded fallback, then API override)
   document.getElementById('statFacts').textContent = c.stats.facts;
   document.getElementById('statStruggles').textContent = c.stats.struggles;
   document.getElementById('statTopics').textContent = c.stats.topics;
+  refreshStats(s.moodle);
   // Radar
   if(radarChart) radarChart.destroy();
   radarChart = new Chart(document.getElementById('radarChart'),{type:'radar',data:{
@@ -487,6 +488,18 @@ function renderDashboard() {
   const chatMsgs = document.getElementById('chatMessages');
   chatMsgs.innerHTML = '<div class="msg assistant" style="opacity:.5;font-style:italic"><div class="role">系統</div><div>載入對話紀錄中...</div></div>';
   loadConversations(s.moodle, c.name);
+}
+
+async function refreshStats(moodleId) {
+  try {
+    const res = await fetch(`/analytics/student/${moodleId}`);
+    if (!res.ok) return;
+    const d = await res.json();
+    document.getElementById('statFacts').textContent = d.total_facts;
+    document.getElementById('statStruggles').textContent = d.weak_topics.length;
+    const topicCount = Object.keys(d.question_topics || {}).length;
+    document.getElementById('statTopics').textContent = topicCount || document.getElementById('statTopics').textContent;
+  } catch(e) { /* keep hardcoded fallback */ }
 }
 
 async function loadConversations(moodleId, courseName) {
@@ -759,6 +772,7 @@ async function sendMessage(){
     if(!res.ok){addMsg('assistant','連線錯誤，請稍後再試');return}
     const data=await res.json();
     addMsg('assistant',data.reply,data.memory_context);
+    refreshStats(s.moodle);
   }catch(e){document.getElementById('typing')?.remove();addMsg('assistant','連線錯誤: '+e.message)}
   finally{sendBtn.disabled=false;msgInput.focus()}
 }
