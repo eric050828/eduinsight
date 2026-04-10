@@ -212,8 +212,14 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Shows past conversations with date dividers
   - "新對話從這裡開始" separator before new messages
 - [x] 5 new tests (127 total)
+- [x] Error handling: conversations endpoint gracefully returns empty on DB errors
+- [x] Enhanced /health endpoint with memory DB status (path, user count, fact count)
+- [x] Demo conversation seeding (demo_conversations.py)
+  - 4 students with realistic Q&A exchanges (linked list, DP, Python, SQL)
+  - /demo/reset now seeds messages table alongside facts
+  - 1 new test (128 total)
 
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: Conversation history API, risk assessment, enhanced demo UI, 127 tests passing
+Done: Conversation history API + demo data, risk assessment, enhanced demo UI, 128 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
