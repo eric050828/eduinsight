@@ -167,7 +167,27 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Yellow banner clearly labels mock data sections (scatter, heatmap, alerts)
   - Distinguishes real API data (stats) from vision mockups
 
+## UI Redesign: Landing Page + Student Dashboard (2026-04-10)
+- [x] Landing page at `/` with portal cards (student/teacher entry points)
+  - Animated background blobs, radar chart preview (student), scatter chart preview (teacher)
+  - Demo scenario banner (114學年第2學期 第10週)
+  - Feature highlights: 記憶式學習、智慧預警、數據→行動
+  - Tech stack badges
+- [x] Student learning dashboard at `/student`
+  - Course cards row with active course highlight
+  - Classroom real-time feedback banner (課堂即時回饋)
+  - Stats from real API: 累計記憶、已知弱項、涵蓋主題
+  - Radar chart: topic distribution from `/analytics/student/{id}`
+  - AI suggestions: populated from real struggle data
+  - Learning trajectory chart from `/analytics/student/{id}/trajectory`
+  - Preferences section from real memory data
+  - Embedded AI chat panel (right sidebar) connected to `/chat` API
+  - URL param `?sid=` for student switching (default 1001)
+  - Dashboard auto-refreshes after each chat message
+- [x] Route refactor: `/` → landing.html, `/student` → student.html
+- [x] 3 new page route tests (113 total)
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: All supervisor-reported bugs fixed, 110 tests passing, competition drafts ready
+Done: Landing page + student dashboard with real API data, 113 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
