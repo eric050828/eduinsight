@@ -228,7 +228,15 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - KaTeX math formula support (LaTeX rendering)
   - Embedded HTML iframe with fullscreen toggle for interactive content
 
+## Hotfix: Supervisor Bug Reports Round 3 (2026-04-10)
+- [x] Fix student.html LLM label — fetch /health to display actual llm_provider dynamically
+  - Was always showing "AI Engine", now fetches /health on init and updates #llmLabel
+- [x] Add SVG favicon (🎓) to all 6 HTML pages
+  - landing.html, student.html, teacher.html, index.html, demo.html, semester.html
+  - Eliminates favicon.ico 404 console errors on all pages
+- [x] 128 tests still passing
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: Conversation history fix, enhanced student chat UI, 128 tests passing
+Done: All supervisor-reported bugs fixed (30/30 pass), 128 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
