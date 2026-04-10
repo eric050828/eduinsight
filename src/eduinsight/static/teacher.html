@@ -146,6 +146,8 @@ tr:hover td{background:rgba(99,102,241,.03)}
     <div class="nav-item" data-target="ai-summary"><span class="nav-icon">💬</span>AI 互動摘要</div>
     <div class="nav-item" data-target="trends"><span class="nav-icon">📈</span>週趨勢</div>
     <div class="nav-divider"></div>
+    <div class="nav-item" data-target="live-data"><span class="nav-icon">📡</span>即時數據</div>
+    <div class="nav-divider"></div>
     <a href="/student" class="nav-item"><span class="nav-icon">👨‍🎓</span>學生端預覽</a>
   </div>
   <div class="course-selector" id="courseSelectorContainer">
@@ -232,6 +234,40 @@ tr:hover td{background:rgba(99,102,241,.03)}
       <div class="card"><div class="card-title" style="font-size:13px;margin-bottom:10px">🧠 AI 使用行為（全班 vs 個人）</div><div class="chart-wrap-sm"><canvas id="behaviorChart"></canvas></div></div>
     </div>
 
+    <!-- Live Data Section -->
+    <div id="live-data" style="margin-top:8px">
+      <div style="background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(99,102,241,0.08));border:1px solid rgba(34,211,238,0.25);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted)">
+        <span style="font-size:20px">📡</span>
+        <span><strong style="color:var(--accent)">即時數據</strong> — 以下資料來自 EduInsight API，反映 Demo 學生的真實記憶與分析結果。<button id="liveRefreshBtn" style="margin-left:8px;padding:3px 10px;border-radius:6px;border:1px solid var(--accent);background:none;color:var(--accent);font-size:11px;cursor:pointer" onclick="loadLiveData()">🔄 重新整理</button></span>
+      </div>
+
+      <div class="stats-row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="stat-card"><div class="stat-label">Demo 學生數</div><div class="stat-value" id="live-students" style="color:var(--accent)">—</div><div class="stat-sub" id="live-students-sub">載入中...</div></div>
+        <div class="stat-card"><div class="stat-label">累計記憶</div><div class="stat-value" id="live-facts" style="color:var(--primary-hover)">—</div><div class="stat-sub" id="live-facts-sub">載入中...</div></div>
+        <div class="stat-card"><div class="stat-label">常見困難</div><div class="stat-value" id="live-struggles" style="color:var(--red)">—</div><div class="stat-sub" id="live-struggles-sub">載入中...</div></div>
+        <div class="stat-card"><div class="stat-label">⚠️ 風險學生</div><div class="stat-value" id="live-risk" style="color:var(--amber)">—</div><div class="stat-sub" id="live-risk-sub">載入中...</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">👤 Demo 學生即時狀態</div><div class="card-subtitle">來自 /teacher/students API · 點擊學生查看記憶詳情</div></div></div>
+        <table>
+          <thead><tr><th></th><th>Moodle ID</th><th>記憶數</th><th>分類</th><th>風險等級</th><th>Persistence</th></tr></thead>
+          <tbody id="liveStudentTableBody"><tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:20px">載入中...</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">🔥 全班困難概念</div><div class="card-subtitle">來自 /analytics/class API</div></div></div>
+          <div id="liveDifficultyList" style="color:var(--text-dim);font-size:13px;padding:12px">載入中...</div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">📊 主題分布</div><div class="card-subtitle">來自 /analytics/class API</div></div></div>
+          <div class="chart-wrap"><canvas id="liveTopicChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -257,6 +293,17 @@ tr:hover td{background:rgba(99,102,241,.03)}
     <div class="modal-actions">
       <button class="modal-btn modal-btn-secondary" onclick="closeStudentModal()">關閉</button>
       <button class="modal-btn modal-btn-primary" id="studentCareBtn">💌 發送關懷</button>
+    </div>
+  </div>
+</div>
+
+<!-- Live Memory Modal -->
+<div class="modal-overlay" id="liveMemoryModal">
+  <div class="modal modal-lg">
+    <h3 id="liveMemoryTitle">學生記憶詳情</h3>
+    <div id="liveMemoryContent" style="max-height:60vh;overflow-y:auto"></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-secondary" onclick="closeLiveMemoryModal()">關閉</button>
     </div>
   </div>
 </div>
@@ -1131,9 +1178,178 @@ function showToast(msg) {
 }
 
 // =====================================================================
+// LIVE DATA (Real API)
+// =====================================================================
+let liveTopicChart = null;
+
+async function loadLiveData() {
+  try {
+    const [studentsRes, classRes] = await Promise.all([
+      fetch('/teacher/students').then(r => r.json()),
+      fetch('/analytics/class').then(r => r.json())
+    ]);
+
+    const students = studentsRes.students || [];
+    const totalFacts = studentsRes.total_facts || 0;
+    const totalStudents = studentsRes.total_students || 0;
+
+    // Fetch risk for each student in parallel
+    const riskResults = await Promise.all(
+      students.map(s => fetch(`/analytics/student/${s.moodle_user_id}/risk`).then(r => r.json()).catch(() => ({risk_level:'unknown',persistence_score:0})))
+    );
+
+    // Stats cards
+    const avgFacts = totalStudents > 0 ? (totalFacts / totalStudents).toFixed(1) : 0;
+    document.getElementById('live-students').textContent = totalStudents;
+    document.getElementById('live-students-sub').textContent = `來自 Lite-Mem`;
+    document.getElementById('live-facts').textContent = totalFacts;
+    document.getElementById('live-facts-sub').textContent = `平均 ${avgFacts}/人`;
+
+    const struggles = (classRes.common_struggles || []).map(s => Array.isArray(s) ? {name:s[0], count:s[1]} : {name:String(s), count:1});
+    document.getElementById('live-struggles').textContent = struggles.length;
+    document.getElementById('live-struggles-sub').textContent = struggles.length > 0 ? struggles[0].name : '無困難紀錄';
+
+    const riskCount = riskResults.filter(r => r.risk_level === 'high' || r.risk_level === 'critical').length;
+    document.getElementById('live-risk').textContent = riskCount;
+    document.getElementById('live-risk-sub').textContent = riskCount > 0 ? '需要關注' : '目前安全';
+
+    // Student table
+    const tbody = document.getElementById('liveStudentTableBody');
+    if (students.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:20px">尚無 Demo 資料，請先在首頁點擊「一鍵載入 Demo 資料」</td></tr>';
+    } else {
+      tbody.innerHTML = students.map((s, i) => {
+        const risk = riskResults[i] || {};
+        const riskLevel = risk.risk_level || 'unknown';
+        const persistence = risk.persistence_score != null ? Math.round(risk.persistence_score) + '%' : '—';
+        const riskColor = riskLevel === 'high' || riskLevel === 'critical' ? 'var(--red)' : riskLevel === 'medium' ? 'var(--amber)' : riskLevel === 'low' ? 'var(--green)' : 'var(--text-dim)';
+        const dotColor = riskLevel === 'high' || riskLevel === 'critical' ? 'red' : riskLevel === 'medium' ? 'amber' : 'green';
+        const cats = s.categories || {};
+        const catHtml = Object.entries(cats).map(([k,v]) => {
+          const c = k === 'struggling' ? 'tag-struggle' : k === 'preference' ? 'tag-pref' : '';
+          return `<span class="tag ${c}">${k} ${v}</span>`;
+        }).join(' ');
+        const riskLabel = {low:'低風險',medium:'需關注',high:'高風險',critical:'極高風險'}[riskLevel] || riskLevel;
+        return `<tr style="cursor:pointer" onclick="openLiveMemoryModal(${s.moodle_user_id})">
+          <td><span class="dot dot-${dotColor}"></span></td>
+          <td><b>${s.moodle_user_id}</b></td>
+          <td>${s.fact_count}</td>
+          <td>${catHtml}</td>
+          <td style="color:${riskColor}">${riskLabel}</td>
+          <td style="color:${riskColor}">${persistence}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Class difficulty
+    const diffContainer = document.getElementById('liveDifficultyList');
+    if (struggles.length === 0) {
+      diffContainer.innerHTML = '<div style="padding:12px;color:var(--text-dim)">尚無困難紀錄</div>';
+    } else {
+      const maxCount = Math.max(...struggles.map(s => s.count), 1);
+      diffContainer.innerHTML = struggles.map((s, i) => {
+        const pct = Math.max(20, (s.count / maxCount) * 100);
+        const color = i === 0 ? 'var(--red)' : i < 3 ? 'var(--amber)' : 'var(--surface-3)';
+        return `<div class="diff-item">
+          <div class="diff-rank" ${i===0?'style="background:rgba(248,113,113,.2);color:var(--red)"':''}>${i+1}</div>
+          <div class="diff-bar-wrap">
+            <div class="diff-label"><span>${s.name}</span><span style="color:${color}">${s.count} 人</span></div>
+            <div class="diff-bar"><div class="diff-fill" style="width:${pct}%;background:${color}"></div></div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // Topic distribution chart (filter out week-based noise like W1-DB)
+    const rawTopicDist = classRes.topic_distribution || {};
+    const filteredTopics = Object.entries(rawTopicDist).filter(([k]) => !/^W\d/.test(k));
+    const topicLabels = filteredTopics.map(([k]) => k);
+    const topicValues = filteredTopics.map(([,v]) => v);
+    if (liveTopicChart) { liveTopicChart.destroy(); liveTopicChart = null; }
+    if (topicLabels.length > 0) {
+      const colors = ['#6366f1','#22d3ee','#34d399','#fbbf24','#f87171','#fb7185','#a78bfa','#38bdf8'];
+      liveTopicChart = new Chart(document.getElementById('liveTopicChart'), {
+        type: 'doughnut',
+        data: {labels: topicLabels, datasets: [{data: topicValues, backgroundColor: colors.slice(0, topicLabels.length), borderWidth: 0}]},
+        options: {responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{font:{size:10},padding:6}}}}
+      });
+    }
+  } catch (e) {
+    console.error('Live data load failed:', e);
+    document.getElementById('live-students-sub').textContent = 'API 連線失敗';
+  }
+}
+
+async function openLiveMemoryModal(moodleId) {
+  document.getElementById('liveMemoryTitle').textContent = `📋 學生 ${moodleId} — 記憶詳情`;
+  document.getElementById('liveMemoryContent').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim)">載入中...</div>';
+  document.getElementById('liveMemoryModal').classList.add('open');
+
+  try {
+    const [memRes, analyticsRes] = await Promise.all([
+      fetch(`/teacher/students/${moodleId}/memories`).then(r => r.json()),
+      fetch(`/analytics/student/${moodleId}`).then(r => r.json())
+    ]);
+
+    const memories = memRes.memories || memRes || [];
+    const weakTopics = analyticsRes.weak_topics || [];
+    const prefs = analyticsRes.preferences || [];
+
+    let html = '';
+
+    // Analytics summary
+    if (weakTopics.length > 0 || prefs.length > 0) {
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">';
+      if (weakTopics.length > 0) {
+        html += `<div style="background:var(--surface-2);padding:12px;border-radius:8px">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">🔥 弱項</div>
+          <div>${weakTopics.map(t => `<span class="tag tag-struggle">${t}</span>`).join(' ')}</div>
+        </div>`;
+      }
+      if (prefs.length > 0) {
+        html += `<div style="background:var(--surface-2);padding:12px;border-radius:8px">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">📚 學習偏好</div>
+          <div>${prefs.map(p => `<span class="tag tag-pref">${p}</span>`).join(' ')}</div>
+        </div>`;
+      }
+      html += '</div>';
+    }
+
+    // Memory list
+    if (Array.isArray(memories) && memories.length > 0) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">共 ${memories.length} 筆記憶</div>`;
+      html += memories.map(m => {
+        const text = typeof m === 'string' ? m : (m.fact || m.text || JSON.stringify(m));
+        const cat = text.toLowerCase().includes('struggling') || text.toLowerCase().includes('struggle') ? 'struggling'
+          : text.toLowerCase().includes('prefer') ? 'preference' : 'general';
+        const catClass = cat === 'struggling' ? 'tag-struggle' : cat === 'preference' ? 'tag-pref' : '';
+        return `<div style="background:var(--surface-2);padding:10px 14px;border-radius:8px;margin-bottom:6px;font-size:12px;line-height:1.6">
+          <span class="tag ${catClass}" style="font-size:10px;margin-right:6px">${cat}</span>${text.replace(/</g,'&lt;')}
+        </div>`;
+      }).join('');
+    } else {
+      html += '<div style="text-align:center;padding:20px;color:var(--text-dim)">此學生尚無記憶資料</div>';
+    }
+
+    document.getElementById('liveMemoryContent').innerHTML = html;
+  } catch (e) {
+    document.getElementById('liveMemoryContent').innerHTML = `<div style="text-align:center;padding:20px;color:var(--red)">載入失敗: ${e.message}</div>`;
+  }
+}
+
+function closeLiveMemoryModal() {
+  document.getElementById('liveMemoryModal').classList.remove('open');
+}
+
+document.getElementById('liveMemoryModal').addEventListener('click', function(e) {
+  if (e.target === this) closeLiveMemoryModal();
+});
+
+// =====================================================================
 // BOOT
 // =====================================================================
 init();
+loadLiveData();
 </script>
 </body>
 </html>

@@ -251,7 +251,19 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - All pages now mutually reachable without manual URL entry
 - [x] 128 tests still passing
 
+## Teacher Dashboard Live Data (2026-04-10)
+- [x] Add 「📡 即時數據」section to teacher.html — connects to real API
+  - Nav sidebar: new "即時數據" link scrolls to live data section
+  - Stats cards: Demo 學生數、累計記憶、常見困難、風險學生（from /teacher/students + /analytics/class + /analytics/student/{id}/risk）
+  - Student table: real students with fact count, categories, risk level, persistence score
+  - Click student → modal shows actual memories + weak topics + preferences from API
+  - Class difficulty ranking from /analytics/class common_struggles
+  - Topic distribution doughnut chart (filters out week-based noise)
+  - Refresh button for real-time updates
+  - Fixes demo flow disconnect: Landing → Demo Reset → Student chat → Teacher sees SAME students
+- [x] 128 tests still passing
+
 ## Current State
 Phase: 6 (Demo & Polish) — In Progress
-Done: All supervisor-reported bugs fixed (30/30 pass), real-time stats, one-click demo, 128 tests passing
+Done: All supervisor-reported bugs fixed (30/30 pass), real-time stats, one-click demo, teacher live data, 128 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片
