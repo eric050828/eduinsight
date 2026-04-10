@@ -225,7 +225,7 @@
     <div class="tech-label">Tech Stack</div>
     <div class="tech-badges">
       <span class="badge">Lite-Mem</span>
-      <span class="badge">Claude Haiku</span>
+      <span class="badge" id="llmBadge">AI Engine</span>
       <span class="badge">FastAPI</span>
       <span class="badge">Moodle API</span>
       <span class="badge">Chart.js</span>
@@ -236,6 +236,10 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>
+fetch('/health').then(r=>r.json()).then(d=>{
+  if(d.llm_provider)document.getElementById('llmBadge').textContent=d.llm_provider;
+}).catch(()=>{});
+
 (function(){
   const muted = '#94a3b8';
   const gridColor = 'rgba(148,163,184,.12)';

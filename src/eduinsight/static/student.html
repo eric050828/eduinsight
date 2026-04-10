@@ -233,7 +233,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="chat-header">
         <span>🤖</span> AI 學習助教
         <div class="dot" style="margin-left:auto"></div>
-        <span style="font-size:11px;color:var(--text-dim);font-weight:400">Claude Haiku</span>
+        <span id="llmLabel" style="font-size:11px;color:var(--text-dim);font-weight:400">AI Engine</span>
       </div>
       <div class="chat-messages" id="chatMessages">
         <div class="msg assistant">
@@ -251,6 +251,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 
 <script>
 Chart.defaults.color='#64748b';Chart.defaults.borderColor='rgba(209,217,224,0.5)';
+fetch('/health').then(r=>r.json()).then(d=>{if(d.llm_provider)document.getElementById('llmLabel').textContent=d.llm_provider}).catch(()=>{});
 
 // ── URL params ──
 const params=new URLSearchParams(location.search);
