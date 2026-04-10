@@ -39,6 +39,7 @@ _TOPIC_RE = re.compile(r"^\[([^\]]+)\]")
 _STRUGGLE_RE = re.compile(r"^Struggling with:?\s+(.+?)(?:\s*[—:]\s*(.*))?$")
 _PREFERENCE_RE = re.compile(r"^Learning preference:\s*(.+)$")
 _QUESTION_RE = re.compile(r"^\[([^\]]+)\]\s*Q:\s*(.+)$")
+_WEEK_NOISE_RE = re.compile(r"^W\d+")
 
 
 @dataclass
@@ -153,6 +154,8 @@ def analyze_class(memory: Memory) -> ClassAnalytics:
     result.total_students = len(result.students)
     result.total_facts = sum(s.total_facts for s in result.students)
     result.common_struggles = all_struggles.most_common()
+    # Filter out week-based noise keys (W1, W4-DB, W6-DB, etc.)
+    all_topics = Counter({k: v for k, v in all_topics.items() if not _WEEK_NOISE_RE.match(k)})
     result.topic_distribution = dict(all_topics.most_common())
 
     return result

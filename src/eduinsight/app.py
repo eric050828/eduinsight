@@ -165,8 +165,8 @@ async def health() -> dict[str, Any]:
         try:
             stats = _memory.detailed_stats()
             result["memory_db"] = settings.memory_db_path
-            result["total_users"] = stats.get("total_users", 0)
-            result["total_facts"] = stats.get("total_facts", 0)
+            result["total_users"] = stats.total_users
+            result["total_facts"] = stats.total_facts
         except Exception:
             result["memory_db"] = "error"
     return result
