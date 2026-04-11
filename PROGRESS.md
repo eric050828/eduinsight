@@ -374,7 +374,21 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - System prompt updated to cite source (filename + page) in answers
 - [x] 48 new tests (177 total), ruff clean
 
+## Frontend: RAG Material Upload & Chat Integration (2026-04-12)
+- [x] Teacher dashboard: 教材管理 UI
+  - Sidebar nav: 📚 教材管理 section
+  - Upload: drag-and-drop + file picker (PDF/PPTX), course ID input
+  - Upload progress with per-file status (chunks indexed, page count)
+  - Material list: auto-load indexed documents, delete with confirmation
+  - Toast notification on delete
+- [x] Student chat: course_id RAG integration
+  - Each course now has `courseId` field (ds101, py101, db101)
+  - Chat requests include `course_id` for RAG context retrieval
+  - Material citations displayed as collapsible "📚 引用了 N 段教材" toggle
+  - Consistent with existing memory context toggle pattern
+- [x] 177 tests passing, ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 1 (Moodle + AI) — RAG 教材問答已實作
-Done: RAG document parsing/indexing/search, API endpoints, chat integration, 177 tests passing
-Next step: 前端 UI 整合教材上傳、OBS 試錄、組隊
+Phase: ROADMAP Phase 1 (Moodle + AI) — RAG 前端整合完成
+Done: RAG full stack (parsing → indexing → search → chat → teacher upload UI → student citations), 177 tests passing
+Next step: OBS 試錄 Demo 影片、組隊

@@ -307,7 +307,7 @@ Chart.defaults.color='#64748b';Chart.defaults.borderColor='rgba(209,217,224,0.5)
 const STUDENTS = {
   A: { name:'A 陳同學', id:'B11209001', moodle:1001,
     courses: {
-      ds: {name:'資料結構',prof:'王教授',time:'週一三 10:20',icon:'📗',bg:'#dbeafe',mastery:72,
+      ds: {name:'資料結構',courseId:'ds101',prof:'王教授',time:'週一三 10:20',icon:'📗',bg:'#dbeafe',mastery:72,
         stats:{facts:78,struggles:3,topics:5},
         radar:{labels:['陣列/鏈結串列','堆疊/佇列','樹結構','雜湊表','圖論'],data:[82,78,48,65,55],avg:[75,72,60,68,58]},
         trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[5,12,20,28,35,42,50,58,72,78],struggles:[0,0,1,1,1,2,2,2,3,3]},
@@ -320,7 +320,7 @@ const STUDENTS = {
           {w:'W5',q:'linked list 插入節點的 pointer 怎麼接？',a:'AI 記錄學習偏好：喜歡 step-by-step 圖解。'},
           {w:'W1',q:'linked list 和 array 有什麼差別？',a:'第一次使用 EduInsight。AI 開始建立學習記憶。'}
         ]},
-      py: {name:'Python 程式設計',prof:'王教授',time:'週二 13:20',icon:'📘',bg:'#fef3c7',mastery:85,
+      py: {name:'Python 程式設計',courseId:'py101',prof:'王教授',time:'週二 13:20',icon:'📘',bg:'#fef3c7',mastery:85,
         stats:{facts:42,struggles:1,topics:4},
         radar:{labels:['變數/型別','迴圈/條件','函式','字串處理','檔案 I/O'],data:[90,88,75,82,70],avg:[80,78,72,70,65]},
         trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[3,8,14,20,25,29,33,36,40,42],struggles:[0,0,0,0,1,1,1,1,1,1]},
@@ -330,7 +330,7 @@ const STUDENTS = {
           {w:'W9',q:'f-string 裡面可以放 if-else 嗎？',a:'AI 教了三元運算式在 f-string 中的用法。'},
           {w:'W5',q:'為什麼函式裡面改了變數，外面沒有變？',a:'AI 記錄困難點：variable scope。'}
         ]},
-      db: {name:'資料庫系統',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:68,
+      db: {name:'資料庫系統',courseId:'db101',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:68,
         stats:{facts:35,struggles:2,topics:4},
         radar:{labels:['正規化','SQL 查詢','JOIN','索引','交易/ACID'],data:[72,65,50,60,58],avg:[70,68,62,55,60]},
         trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[2,6,12,16,20,24,27,30,33,35],struggles:[0,0,0,1,1,1,1,2,2,2]},
@@ -343,7 +343,7 @@ const STUDENTS = {
     }},
   B: { name:'B 林同學', id:'B11209002', moodle:1002,
     courses: {
-      ds: {name:'資料結構',prof:'王教授',time:'週一三 10:20',icon:'📗',bg:'#dbeafe',mastery:94,
+      ds: {name:'資料結構',courseId:'ds101',prof:'王教授',time:'週一三 10:20',icon:'📗',bg:'#dbeafe',mastery:94,
         stats:{facts:45,struggles:0,topics:6},
         radar:{labels:['陣列/鏈結串列','堆疊/佇列','樹結構','雜湊表','圖論'],data:[95,92,90,88,85],avg:[75,72,60,68,58]},
         trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[4,9,14,19,24,29,34,38,42,45],struggles:[0,0,0,0,0,0,0,0,0,0]},
@@ -353,7 +353,7 @@ const STUDENTS = {
           {w:'W9',q:'amortized analysis 用 potential method 怎麼證明？',a:'AI 提供完整數學推導。'},
           {w:'W7',q:'AVL tree 和 Red-Black tree 效能差異？',a:'AI 用 Big-O 比較表回答。'}
         ]},
-      db: {name:'資料庫系統',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:88,
+      db: {name:'資料庫系統',courseId:'db101',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:88,
         stats:{facts:38,struggles:1,topics:5},
         radar:{labels:['正規化','SQL 查詢','JOIN','索引','交易/ACID'],data:[90,85,82,78,88],avg:[70,68,62,55,60]},
         trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[3,7,12,17,22,26,30,33,36,38],struggles:[0,0,0,0,0,0,0,1,1,1]},
@@ -363,7 +363,7 @@ const STUDENTS = {
     }},
   C: { name:'C 王同學（重修）', id:'B11108015', moodle:1003,
     courses: {
-      py: {name:'Python 程式設計',prof:'王教授',time:'週二 13:20',icon:'📘',bg:'#fef3c7',mastery:42,
+      py: {name:'Python 程式設計',courseId:'py101',prof:'王教授',time:'週二 13:20',icon:'📘',bg:'#fef3c7',mastery:42,
         stats:{facts:34,struggles:4,topics:3},
         radar:{labels:['變數/型別','迴圈/條件','函式','字串處理','檔案 I/O'],data:[55,45,30,40,20],avg:[80,78,72,70,65]},
         trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[3,7,12,16,20,24,28,31,33,34],struggles:[1,1,2,2,3,3,3,4,4,4]},
@@ -374,7 +374,7 @@ const STUDENTS = {
           {w:'W4',q:'def 後面的括號要放什麼？',a:'AI 記錄困難：函式參數基礎概念。'},
           {w:'W2',q:'（去年記憶）什麼是 list？跟 tuple 差在哪？',a:'重修記憶：去年也問過類似問題。'}
         ]},
-      db: {name:'資料庫系統',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:45,
+      db: {name:'資料庫系統',courseId:'db101',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:45,
         stats:{facts:20,struggles:3,topics:3},
         radar:{labels:['正規化','SQL 查詢','JOIN','索引','交易/ACID'],data:[40,50,25,20,35],avg:[70,68,62,55,60]},
         trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[1,3,6,8,10,13,15,17,19,20],struggles:[0,1,1,2,2,2,3,3,3,3]},
@@ -384,7 +384,7 @@ const STUDENTS = {
     }},
   D: { name:'D 李同學', id:'B11209018', moodle:1004,
     courses: {
-      ds: {name:'資料結構',prof:'王教授',time:'週一三 10:20',icon:'📗',bg:'#dbeafe',mastery:15,
+      ds: {name:'資料結構',courseId:'ds101',prof:'王教授',time:'週一三 10:20',icon:'📗',bg:'#dbeafe',mastery:15,
         stats:{facts:12,struggles:5,topics:2},
         radar:{labels:['陣列/鏈結串列','堆疊/佇列','樹結構','雜湊表','圖論'],data:[25,20,5,10,5],avg:[75,72,60,68,58]},
         trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[2,4,6,8,9,10,11,12,12,12],struggles:[1,2,2,3,3,4,4,5,5,5]},
@@ -398,7 +398,7 @@ const STUDENTS = {
     }},
   E: { name:'E 張同學', id:'B11209025', moodle:1005,
     courses: {
-      db: {name:'資料庫系統',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:71,
+      db: {name:'資料庫系統',courseId:'db101',prof:'張教授',time:'週三 15:30',icon:'📙',bg:'#d1fae5',mastery:71,
         stats:{facts:52,struggles:2,topics:5},
         radar:{labels:['正規化','SQL 查詢','JOIN','索引','交易/ACID'],data:[68,75,62,58,70],avg:[70,68,62,55,60]},
         trajectory:{labels:['W1','W2','W3','W4','W5','W6','W7','W8','W9','W10'],facts:[4,9,15,21,27,32,38,43,48,52],struggles:[0,0,0,1,1,1,1,2,2,2]},
@@ -681,7 +681,7 @@ function renderLatex(element) {
   }
 }
 
-function addMsg(role, text, mem) {
+function addMsg(role, text, mem, matCtx) {
   const d = document.createElement('div');
   d.className = `msg ${role}`;
   const r = document.createElement('div');
@@ -753,6 +753,20 @@ function addMsg(role, text, mem) {
     d.appendChild(l);
   }
 
+  // Material context toggle (RAG citations)
+  if (role === 'assistant' && matCtx && matCtx.length) {
+    const t = document.createElement('div');
+    t.className = 'memory-toggle';
+    t.style.borderLeftColor = '#6366f1';
+    t.textContent = `📚 引用了 ${matCtx.length} 段教材`;
+    const l = document.createElement('ul');
+    l.className = 'memory-list';
+    matCtx.forEach(m => { const li = document.createElement('li'); li.textContent = m; l.appendChild(li); });
+    t.onclick = () => l.classList.toggle('open');
+    d.appendChild(t);
+    d.appendChild(l);
+  }
+
   chatMessages.appendChild(d);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
@@ -766,12 +780,13 @@ async function sendMessage(){
   typing.innerHTML='<div class="dots"><span>.</span><span>.</span><span>.</span></div>';
   chatMessages.appendChild(typing);chatMessages.scrollTop=chatMessages.scrollHeight;
   try{
+    const course=s.courses[currentCourse];
     const res=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({moodle_user_id:s.moodle,message:text,topic:s.courses[currentCourse].name})});
+      body:JSON.stringify({moodle_user_id:s.moodle,message:text,topic:course.name,course_id:course.courseId||''})});
     document.getElementById('typing')?.remove();
     if(!res.ok){addMsg('assistant','連線錯誤，請稍後再試');return}
     const data=await res.json();
-    addMsg('assistant',data.reply,data.memory_context);
+    addMsg('assistant',data.reply,data.memory_context,data.material_context);
     refreshStats(s.moodle);
   }catch(e){document.getElementById('typing')?.remove();addMsg('assistant','連線錯誤: '+e.message)}
   finally{sendBtn.disabled=false;msgInput.focus()}
