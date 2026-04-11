@@ -302,7 +302,37 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] 新增 Student 1005 profile card（mid-level DB learner）
 - [x] 129 tests still passing
 
+## Demo 影片試錄預檢 (2026-04-11)
+- [x] Playwright 完整 Demo 路線走查（7 步驟全 PASS）
+  - Landing → 一鍵 Demo → Student A/E/D → Teacher 預警 → Teacher 即時數據
+  - 所有頁面 0 console errors，切換流暢無延遲
+  - 截圖存於 `demo-walkthrough/`（9 張）
+- [x] 試錄注意事項確認
+  - ClaudeCLIClient 回覆 ~30-90 秒，需後製剪接
+  - 建議 Chrome Zoom 125% 讓文字清晰
+  - 匿名要求：localhost URL、代號姓名（已內建）、無學校 Logo
+- [x] 129 tests still passing
+
+## Demo 影片試錄預檢 Round 2 (2026-04-11)
+- [x] 完整 Demo 路線 Playwright 走查（8 步驟全 PASS）
+  - Step 1: Landing page — 學生端/教師端入口、Tech Stack 動態顯示 ✅
+  - Step 2: 一鍵 Demo — POST /demo/reset → 60 memories → 自動跳轉 /student ✅
+  - Step 3: Student A 陳同學 — 12 記憶、3 弱項、雷達圖、軌跡圖、2 段歷史對話 ✅
+  - Step 4: AI 問答 — 問 preorder vs inorder → AI 回覆含記憶引用（1 條）→ 統計即時更新 12→14 ✅
+  - Step 5: 切換 D 李同學 — 11 記憶、2 弱項、雷達圖不均衡 ✅
+  - Step 6: Teacher 儀表板 — 班級總覽、散佈圖、熱力圖 ✅
+  - Step 7: 預警中心 — D 李 12%、C 王 28%、A 陳 61%、困難排行 4 項 ✅
+  - Step 8: 即時數據 — 5 學生、62 記憶、學生 1005 modal 含弱項+偏好+15 筆記憶 ✅
+- [x] 截圖存於 `demo-trial/`（12 張）
+- [x] 所有頁面 0 console errors
+- [x] 129 tests passing (2.53s)
+- 試錄觀察：
+  - ClaudeCLIClient AI 回覆等待約 30 秒，錄影時需剪接加速
+  - 頁面切換流暢無延遲
+  - 1080p 下文字清晰，建議 Zoom 125% 更佳
+  - AI 回覆品質良好：preorder/inorder 差異 + 記憶引用 + 個人化追問
+
 ## Current State
 Phase: 6 (Demo & Polish) — Feature Complete
-Done: All features implemented, all bugs fixed (including Bug 6), demo video script ready, 129 tests passing
-Next step: 組隊、等第31屆須知公告、錄製 Demo 影片（腳本已完成）
+Done: All features implemented, all bugs fixed, demo video script ready, Playwright 預檢全通過（兩輪）, 129 tests passing
+Next step: 用 OBS 實際試錄 3 分鐘 Demo 影片、組隊、等第31屆須知公告

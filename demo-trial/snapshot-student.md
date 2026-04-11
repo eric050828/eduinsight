@@ -1,0 +1,197 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: 🎓 EduInsight
+      - generic [ref=e5]:
+        - link "首頁" [ref=e6] [cursor=pointer]:
+          - /url: /
+        - link "我的學習" [ref=e7] [cursor=pointer]:
+          - /url: /student
+        - link "教師端" [ref=e8] [cursor=pointer]:
+          - /url: /teacher
+    - generic [ref=e9]:
+      - generic [ref=e10]: 114學年度 第2學期
+      - generic [ref=e11]: A 陳同學 (B11209001)
+  - generic [ref=e12]:
+    - link "首頁" [ref=e13] [cursor=pointer]:
+      - /url: /
+    - text: ">"
+    - link "我的課程" [ref=e14] [cursor=pointer]:
+      - /url: /student
+    - text: "> 資料結構"
+  - generic [ref=e15]:
+    - generic [ref=e16]:
+      - generic [ref=e17]:
+        - button "A 陳同學" [ref=e18] [cursor=pointer]
+        - button "B 林同學" [ref=e19] [cursor=pointer]
+        - button "C 王同學 (重修)" [ref=e20] [cursor=pointer]
+        - button "D 李同學" [ref=e21] [cursor=pointer]
+        - button "E 張同學" [ref=e22] [cursor=pointer]
+      - generic [ref=e23]:
+        - generic [ref=e24] [cursor=pointer]:
+          - generic [ref=e25]: 📗
+          - generic [ref=e26]:
+            - heading "資料結構" [level=3] [ref=e27]
+            - paragraph [ref=e28]: 王教授 · 週一三 10:20 · 掌握度 72%
+        - generic [ref=e29] [cursor=pointer]:
+          - generic [ref=e30]: 📘
+          - generic [ref=e31]:
+            - heading "Python 程式設計" [level=3] [ref=e32]
+            - paragraph [ref=e33]: 王教授 · 週二 13:20 · 掌握度 85%
+        - generic [ref=e34] [cursor=pointer]:
+          - generic [ref=e35]: 📙
+          - generic [ref=e36]:
+            - heading "資料庫系統" [level=3] [ref=e37]
+            - paragraph [ref=e38]: 張教授 · 週三 15:30 · 掌握度 68%
+      - generic [ref=e39]:
+        - generic [ref=e40]: 📡
+        - generic [ref=e41]:
+          - strong [ref=e42]: 課堂即時回饋
+          - text: — 上課時標記「聽不懂」的概念，老師即時看到全班狀況（匿名）
+        - button "🙋 這裡聽不懂" [ref=e43] [cursor=pointer]
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - generic [ref=e46]: "12"
+          - generic [ref=e47]: 累計 AI 記憶
+        - generic [ref=e48]:
+          - generic [ref=e49]: "3"
+          - generic [ref=e50]: 已知弱項數
+        - generic [ref=e51]:
+          - generic [ref=e52]: "1"
+          - generic [ref=e53]: 涵蓋主題數
+      - generic [ref=e54]:
+        - generic [ref=e56]:
+          - generic [ref=e57]: 📊
+          - text: 知識維度掌握度
+        - generic [ref=e60]:
+          - generic [ref=e61]:
+            - generic [ref=e62]: 💡
+            - text: AI 建議你複習
+          - generic [ref=e63]:
+            - generic [ref=e64]:
+              - generic [ref=e65]: 🔴
+              - generic [ref=e66]:
+                - strong [ref=e67]: Binary Tree Traversal
+                - text: inorder 和 preorder 區別反覆卡關（問了 5 次）。建議用「畫給我看」功能視覺化。
+            - generic [ref=e68]:
+              - generic [ref=e69]: 🟡
+              - generic [ref=e70]:
+                - strong [ref=e71]: 均攤分析
+                - text: 期中考扣最多分。從 Dynamic Array Doubling 重新理解。
+            - generic [ref=e72]:
+              - generic [ref=e73]: 🟢
+              - generic [ref=e74]:
+                - strong [ref=e75]: Hash Table 碰撞
+                - text: 已理解 chaining，試挑戰 open addressing。
+      - generic [ref=e77]:
+        - generic [ref=e78]: 📈
+        - text: 學習軌跡（10 週）
+      - generic [ref=e81]:
+        - generic [ref=e82]:
+          - generic [ref=e83]: 🧠
+          - text: AI 觀察到的學習偏好
+        - generic [ref=e84]:
+          - generic [ref=e85]:
+            - generic [ref=e86]: 💡
+            - generic [ref=e87]: 偏好視覺圖解和 step-by-step 流程
+          - generic [ref=e88]:
+            - generic [ref=e89]: 💡
+            - generic [ref=e90]: 考前會密集使用 AI 助教
+          - generic [ref=e91]:
+            - generic [ref=e92]: 💡
+            - generic [ref=e93]: 喜歡用中文提問
+      - generic [ref=e94]:
+        - generic [ref=e95]:
+          - generic [ref=e96]: 💬
+          - text: 過去的對話紀錄
+        - generic [ref=e97]:
+          - generic [ref=e98]:
+            - generic [ref=e99]: W10
+            - generic [ref=e100]: 🙋 binary tree 的 inorder traversal 到底怎麼走？
+            - generic [ref=e101]: 🤖 AI 用 ASCII 圖解逐步走過，並記錄這是第 5 次問相同概念。
+          - generic [ref=e102]:
+            - generic [ref=e103]: W9
+            - generic [ref=e104]: 🙋 期中考前：linked list 怎麼反轉？時間複雜度怎麼算？
+            - generic [ref=e105]: 🤖 AI 根據偏好用圖解 + 表格回答，提醒均攤分析的觀念。
+          - generic [ref=e106]:
+            - generic [ref=e107]: W8
+            - generic [ref=e108]: 🙋 什麼是 binary tree？跟 binary search tree 差在哪？
+            - generic [ref=e109]: 🤖 AI 首次記錄 tree 相關困難。
+          - generic [ref=e110]:
+            - generic [ref=e111]: W5
+            - generic [ref=e112]: 🙋 linked list 插入節點的 pointer 怎麼接？
+            - generic [ref=e113]: 🤖 AI 記錄學習偏好：喜歡 step-by-step 圖解。
+          - generic [ref=e114]:
+            - generic [ref=e115]: W1
+            - generic [ref=e116]: 🙋 linked list 和 array 有什麼差別？
+            - generic [ref=e117]: 🤖 第一次使用 EduInsight。AI 開始建立學習記憶。
+    - generic [ref=e119]:
+      - generic [ref=e120]:
+        - generic [ref=e121]: 🤖
+        - text: AI 學習助教
+        - generic [ref=e123]: ClaudeCLIClient
+      - generic [ref=e124]:
+        - generic [ref=e125]: 📜 過去的對話紀錄（2 段）
+        - generic [ref=e126]: — 4/11 —
+        - generic [ref=e127]:
+          - generic [ref=e128]: 你
+          - generic [ref=e129]: linked list 跟 array 有什麼不同？
+        - generic [ref=e130]:
+          - generic [ref=e131]: EduInsight AI
+          - generic [ref=e132]:
+            - paragraph [ref=e133]: Linked list 和 array 的主要差異在於記憶體配置方式：
+            - list [ref=e134]:
+              - listitem [ref=e135]:
+                - strong [ref=e136]: Array
+                - text: ：使用連續記憶體，支援 O(1) 隨機存取，但插入/刪除需要搬移元素
+              - listitem [ref=e137]:
+                - strong [ref=e138]: Linked List
+                - text: ：每個節點存資料和指向下一個節點的指標，插入/刪除是 O(1)（已知位置時），但存取是 O(n)
+            - paragraph [ref=e139]: 簡單來說，如果你需要頻繁存取特定位置的資料，用 array；如果需要頻繁插入刪除，用 linked list。
+        - generic [ref=e140]: — 4/11 —
+        - generic [ref=e141]:
+          - generic [ref=e142]: 你
+          - generic [ref=e143]: 怎麼反轉一個 linked list？我一直搞不懂指標操作
+        - generic [ref=e144]:
+          - generic [ref=e145]: EduInsight AI
+          - generic [ref=e146]:
+            - paragraph [ref=e147]:
+              - text: 反轉 linked list 的核心是用三個指標：
+              - code [ref=e148]: prev
+              - text: 、
+              - code [ref=e149]: curr
+              - text: 、
+              - code [ref=e150]: next
+            - code [ref=e152]: "def reverse(head): prev = None curr = head while curr: next_node = curr.next # 先存下一個 curr.next = prev # 反轉指向 prev = curr # prev 前進 curr = next_node # curr 前進 return prev"
+            - paragraph [ref=e153]:
+              - text: 關鍵是：每一步都先把
+              - code [ref=e154]: curr.next
+              - text: 存起來，不然反轉後就找不到下一個節點了。建議你畫圖跟著走一遍！
+        - generic [ref=e155]:
+          - generic [ref=e156]: 你
+          - generic [ref=e157]: 原來要先存 next！我之前一直忘記這步驟
+        - generic [ref=e158]:
+          - generic [ref=e159]: EduInsight AI
+          - generic [ref=e160]:
+            - paragraph [ref=e161]: 對！這是最常見的錯誤。你可以記口訣：「存、轉、移、移」
+            - list [ref=e162]:
+              - listitem [ref=e163]:
+                - strong [ref=e164]: 存
+                - text: ：存下一個節點
+              - listitem [ref=e165]:
+                - strong [ref=e166]: 轉
+                - text: ：反轉 curr 指向
+              - listitem [ref=e167]:
+                - strong [ref=e168]: 移
+                - text: ：prev 前進
+              - listitem [ref=e169]:
+                - strong [ref=e170]: 移
+                - text: ：curr 前進
+            - paragraph [ref=e171]: 多練幾次就會變成直覺了 💪
+        - generic [ref=e172]: ✨ 新對話從這裡開始
+        - generic [ref=e173]:
+          - generic [ref=e174]: EduInsight AI
+          - generic [ref=e175]: 嗨A 陳同學！根據之前的對話，你在 資料結構 有什麼新問題嗎？
+      - generic [ref=e176]:
+        - textbox "問任何課業問題..." [ref=e177]
+        - button "發送" [ref=e178] [cursor=pointer]
