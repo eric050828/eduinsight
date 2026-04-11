@@ -31,6 +31,11 @@ from .analytics import (
 from .assistant import LearningAssistant
 from .config import settings
 from .documents import parse_document
+from .live_quiz import (
+    QuizSessionManager,
+    QuizSessionQuestion,
+    SessionStatus,
+)
 from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
 from .lti import router as lti_router
 from .moodle import MoodleClient
@@ -47,6 +52,7 @@ _assistant: LearningAssistant | None = None
 _llm: LLMClient | None = None
 _rag: CourseRAG | None = None
 _quiz: QuizGenerator | None = None
+_quiz_manager: QuizSessionManager = QuizSessionManager()
 
 
 def get_assistant() -> LearningAssistant:
@@ -670,6 +676,244 @@ async def generate_quiz(course_id: str, req: QuizGenerateRequest) -> QuizGenerat
         ],
         chunks_used=result.chunks_used,
     )
+
+
+# ------------------------------------------------------------------
+# Live quiz session endpoints
+# ------------------------------------------------------------------
+
+
+class CreateSessionRequest(BaseModel):
+    course_id: str
+    title: str = ""
+    questions: list[QuizQuestionResponse]
+
+
+class CreateSessionResponse(BaseModel):
+    session_id: str
+    course_id: str
+    title: str
+    status: str
+    question_count: int
+
+
+class SubmitAnswerRequest(BaseModel):
+    student_id: int
+    question_idx: int
+    selected: str  # "A", "B", "C", or "D"
+
+
+class SubmitAnswerResponse(BaseModel):
+    is_correct: bool
+    correct_answer: str
+
+
+class QuestionStatsResponse(BaseModel):
+    question_idx: int
+    total_answers: int
+    correct_count: int
+    correct_rate: float
+    option_distribution: dict[str, int]
+
+
+class SessionStatsResponse(BaseModel):
+    session_id: str
+    status: str
+    total_students: int
+    total_questions: int
+    overall_correct_rate: float
+    questions: list[QuestionStatsResponse]
+
+
+class SessionInfoResponse(BaseModel):
+    session_id: str
+    course_id: str
+    title: str
+    status: str
+    question_count: int
+    total_students: int
+
+
+@app.post("/quiz/sessions", response_model=CreateSessionResponse)
+async def create_quiz_session(req: CreateSessionRequest) -> CreateSessionResponse:
+    """Create a live quiz session from a set of questions.
+
+    Teacher creates a session; students can join once it's activated.
+    """
+    questions = [
+        QuizSessionQuestion(
+            question=q.question,
+            options=q.options,
+            answer=q.answer,
+            explanation=q.explanation,
+            source=q.source,
+        )
+        for q in req.questions
+    ]
+    try:
+        session = _quiz_manager.create_session(
+            req.course_id, questions, teacher_id=0, title=req.title
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return CreateSessionResponse(
+        session_id=session.session_id,
+        course_id=session.course_id,
+        title=session.title,
+        status=session.status.value,
+        question_count=len(session.questions),
+    )
+
+
+@app.post("/quiz/sessions/{session_id}/activate", response_model=SessionInfoResponse)
+async def activate_quiz_session(session_id: str) -> SessionInfoResponse:
+    """Activate a session so students can submit answers."""
+    try:
+        session = _quiz_manager.activate_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return SessionInfoResponse(
+        session_id=session.session_id,
+        course_id=session.course_id,
+        title=session.title,
+        status=session.status.value,
+        question_count=len(session.questions),
+        total_students=len(session.get_student_ids()),
+    )
+
+
+@app.post("/quiz/sessions/{session_id}/close", response_model=SessionInfoResponse)
+async def close_quiz_session(session_id: str) -> SessionInfoResponse:
+    """Close a session (no more answers accepted)."""
+    try:
+        session = _quiz_manager.close_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return SessionInfoResponse(
+        session_id=session.session_id,
+        course_id=session.course_id,
+        title=session.title,
+        status=session.status.value,
+        question_count=len(session.questions),
+        total_students=len(session.get_student_ids()),
+    )
+
+
+@app.get("/quiz/sessions/{session_id}", response_model=SessionInfoResponse)
+async def get_quiz_session(session_id: str) -> SessionInfoResponse:
+    """Get session info (without revealing correct answers)."""
+    try:
+        session = _quiz_manager.get_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return SessionInfoResponse(
+        session_id=session.session_id,
+        course_id=session.course_id,
+        title=session.title,
+        status=session.status.value,
+        question_count=len(session.questions),
+        total_students=len(session.get_student_ids()),
+    )
+
+
+@app.get("/quiz/sessions/{session_id}/questions")
+async def get_session_questions(session_id: str) -> list[dict]:
+    """Get questions for students (without correct answers)."""
+    try:
+        session = _quiz_manager.get_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if session.status == SessionStatus.WAITING:
+        raise HTTPException(status_code=403, detail="Session not yet active")
+
+    return [
+        {
+            "question_idx": idx,
+            "question": q.question,
+            "options": q.options,
+        }
+        for idx, q in enumerate(session.questions)
+    ]
+
+
+@app.post("/quiz/sessions/{session_id}/answer", response_model=SubmitAnswerResponse)
+async def submit_quiz_answer(
+    session_id: str, req: SubmitAnswerRequest
+) -> SubmitAnswerResponse:
+    """Submit a student's answer to a question."""
+    try:
+        answer = _quiz_manager.submit_answer(
+            session_id,
+            student_id=req.student_id,
+            question_idx=req.question_idx,
+            selected=req.selected,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Return whether correct + the correct answer (immediate feedback)
+    session = _quiz_manager.get_session(session_id)
+    correct_answer = session.questions[req.question_idx].answer
+    return SubmitAnswerResponse(
+        is_correct=answer.is_correct,
+        correct_answer=correct_answer,
+    )
+
+
+@app.get("/quiz/sessions/{session_id}/stats", response_model=SessionStatsResponse)
+async def get_quiz_stats(session_id: str) -> SessionStatsResponse:
+    """Get real-time statistics for a quiz session.
+
+    Returns per-question correct rate and option distribution.
+    """
+    try:
+        stats = _quiz_manager.get_stats(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return SessionStatsResponse(
+        session_id=stats.session_id,
+        status=stats.status.value,
+        total_students=stats.total_students,
+        total_questions=stats.total_questions,
+        overall_correct_rate=stats.overall_correct_rate,
+        questions=[
+            QuestionStatsResponse(
+                question_idx=qs.question_idx,
+                total_answers=qs.total_answers,
+                correct_count=qs.correct_count,
+                correct_rate=qs.correct_rate,
+                option_distribution=qs.option_distribution,
+            )
+            for qs in stats.questions
+        ],
+    )
+
+
+@app.get("/quiz/sessions")
+async def list_quiz_sessions(course_id: str | None = None) -> list[SessionInfoResponse]:
+    """List quiz sessions, optionally filtered by course."""
+    sessions = _quiz_manager.list_sessions(course_id)
+    return [
+        SessionInfoResponse(
+            session_id=s.session_id,
+            course_id=s.course_id,
+            title=s.title,
+            status=s.status.value,
+            question_count=len(s.questions),
+            total_students=len(s.get_student_ids()),
+        )
+        for s in sessions
+    ]
 
 
 # ------------------------------------------------------------------

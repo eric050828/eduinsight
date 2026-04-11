@@ -406,7 +406,24 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Export: copy all questions as plain text to clipboard
 - [x] 22 new tests (199 total), ruff clean
 
+## Live Quiz Sessions — Real-time Classroom Quiz (2026-04-12)
+- [x] QuizSessionManager (live_quiz.py)
+  - Session lifecycle: create → activate → close
+  - Student answer submission with duplicate replacement
+  - Real-time stats: per-question correct rate, option distribution, overall rate
+  - In-memory store (single-process demo)
+- [x] API endpoints (9 new routes)
+  - POST /quiz/sessions — create session from questions
+  - POST /quiz/sessions/{id}/activate — open for student answers
+  - POST /quiz/sessions/{id}/close — stop accepting answers
+  - GET /quiz/sessions/{id} — session info
+  - GET /quiz/sessions/{id}/questions — questions without answers (student view)
+  - POST /quiz/sessions/{id}/answer — submit answer (immediate feedback)
+  - GET /quiz/sessions/{id}/stats — real-time class statistics
+  - GET /quiz/sessions — list all sessions
+- [x] 29 new tests (228 total), ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 2 starting — AI 出題完成
-Done: Quiz generation (RAG → LLM → MCQ), full teacher UI, 199 tests passing
-Next step: OBS 試錄 Demo 影片、組隊
+Phase: ROADMAP Phase 2 — 課堂測驗即時統計完成
+Done: Live quiz sessions (create/activate/answer/stats), 228 tests passing
+Next step: Teacher UI for live quiz management, then 即時互動 (投票/匿名提問)
