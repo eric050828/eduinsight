@@ -1,6 +1,6 @@
 """Tests for memory-augmented conversation (Phase 2 integration)."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 from litemem import Memory
@@ -56,7 +56,9 @@ class TestAnswer:
         # Verify LLM was called with system prompt and a user prompt
         mock_llm.chat.assert_called_once()
         call_args = mock_llm.chat.call_args
-        assert SYSTEM_PROMPT in call_args.kwargs.get("system_prompt", call_args.args[1] if len(call_args.args) > 1 else "")
+        fallback = call_args.args[1] if len(call_args.args) > 1 else ""
+        sys_prompt = call_args.kwargs.get("system_prompt", fallback)
+        assert SYSTEM_PROMPT in sys_prompt
 
     @pytest.mark.asyncio
     async def test_answer_records_interaction(self) -> None:

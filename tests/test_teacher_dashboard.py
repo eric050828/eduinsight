@@ -3,7 +3,7 @@
 from httpx import ASGITransport, AsyncClient
 from litemem import Memory
 
-from eduinsight.app import app, _assistant, _memory
+from eduinsight.app import app
 from eduinsight.assistant import LearningAssistant
 
 

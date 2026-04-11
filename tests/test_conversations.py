@@ -16,7 +16,9 @@ async def _make_client(mem: Memory) -> AsyncClient:
     return AsyncClient(transport=transport, base_url="http://test")
 
 
-def _store_msg(mem: Memory, uid: str, content: str, session_id: str = "", role: str = "user") -> None:
+def _store_msg(
+    mem: Memory, uid: str, content: str, session_id: str = "", role: str = "user",
+) -> None:
     """Insert a message via Lite-Mem's internal store."""
     mem._store.store_message(uid, content, session_id=session_id, role=role)
 
@@ -35,7 +37,10 @@ class TestStudentConversations:
     async def test_conversations_returned(self) -> None:
         mem = Memory()
         _store_msg(mem, "moodle:1", "What is OOP?", session_id="s1", role="user")
-        _store_msg(mem, "moodle:1", "OOP stands for Object-Oriented Programming.", session_id="s1", role="assistant")
+        _store_msg(
+            mem, "moodle:1", "OOP stands for Object-Oriented Programming.",
+            session_id="s1", role="assistant",
+        )
 
         async with await _make_client(mem) as client:
             resp = await client.get("/student/1/conversations")

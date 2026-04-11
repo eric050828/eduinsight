@@ -2,11 +2,15 @@
 
 import time
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 from litemem import Memory
 
-from eduinsight.analytics import Struggle, analyze_class, analyze_student, assess_risk, learning_trajectory
+from eduinsight.analytics import (
+    analyze_class,
+    analyze_student,
+    assess_risk,
+    learning_trajectory,
+)
 from eduinsight.app import app
 from eduinsight.assistant import LearningAssistant
 from eduinsight.demo_data import DEMO_STUDENTS

@@ -2,7 +2,6 @@
 
 import json
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 from litemem import Memory
 

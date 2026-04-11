@@ -17,7 +17,7 @@ import hashlib
 import json
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -78,7 +78,7 @@ class FastAPILTIRequest(LTIRequest):
     def is_secure(self) -> bool:
         return self._request.url.scheme == "https"
 
-    def get_param(self, key: str) -> Optional[str]:
+    def get_param(self, key: str) -> str | None:
         # Check form data first (POST), then query params (GET)
         if self._form_data and key in self._form_data:
             return self._form_data[key]
@@ -96,11 +96,11 @@ class FastAPICookieService(_CookieService):
         """Build the actual cookie key with the LTI prefix."""
         return f"{self._cookie_prefix}-{name}"
 
-    def get_cookie(self, name: str) -> Optional[str]:
+    def get_cookie(self, name: str) -> str | None:
         key = self._get_key(name)
         return self._request._request.cookies.get(key)
 
-    def set_cookie(self, name: str, value: str | int, exp: Optional[int] = 3600) -> None:
+    def set_cookie(self, name: str, value: str | int, exp: int | None = 3600) -> None:
         key = self._get_key(name)
         self._cookie_data_to_set[key] = {"value": str(value), "exp": exp}
 

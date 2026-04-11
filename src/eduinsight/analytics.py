@@ -16,7 +16,7 @@ import re
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from litemem import Memory
 
@@ -189,7 +189,7 @@ class LearningTrajectory:
 
 def _week_key(ts: float) -> str:
     """Convert a Unix timestamp to the Monday of that week (ISO date)."""
-    dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+    dt = datetime.fromtimestamp(ts, tz=UTC)
     # Monday = 0, so subtract weekday to get Monday
     monday = dt.date() - __import__("datetime").timedelta(days=dt.weekday())
     return monday.isoformat()

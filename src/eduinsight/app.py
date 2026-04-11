@@ -10,24 +10,19 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from litemem import Memory
 from litemem.portable import MemoryBundle
 from pydantic import BaseModel
 
 from .analytics import (
-    ClassAnalytics,
-    LearningTrajectory,
-    StudentAnalytics,
-    StudentRisk,
     analyze_class,
     analyze_student,
     assess_risk,
@@ -87,7 +82,9 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
             await _llm.__aenter__()
             logger.info("LLM initialized: Claude CLI (haiku)")
         else:
-            logger.warning("No LLM API key or claude CLI found. /chat will return memory context only.")
+            logger.warning(
+                "No LLM API key or claude CLI found. /chat will return memory context only."
+            )
             _llm = None
 
     _assistant = LearningAssistant(_memory, llm=_llm)
@@ -198,7 +195,10 @@ async def chat(req: ChatRequest) -> ChatResponse:
     # Fallback: no LLM configured, return context only
     context_texts = assistant.get_student_context(req.moodle_user_id, req.message)
     assistant.record_question(req.moodle_user_id, req.message, topic=req.topic)
-    fallback_reply = "[No LLM configured] Memory context retrieved. Set GEMINI_API_KEY to enable AI answers."
+    fallback_reply = (
+        "[No LLM configured] Memory context retrieved."
+        " Set GEMINI_API_KEY to enable AI answers."
+    )
     # Store even fallback conversations for history
     _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
     _memory._store.store_message(uid, fallback_reply, session_id=session_id, role="assistant")
@@ -316,7 +316,11 @@ async def student_conversations(moodle_user_id: int, limit: int = 50) -> dict[st
         sid = msg.get("session_id", "")
         if sid not in sessions:
             sessions[sid] = []
-        sessions[sid].append({"role": msg["role"], "content": msg["content"], "created_at": msg["created_at"]})
+        sessions[sid].append({
+            "role": msg["role"],
+            "content": msg["content"],
+            "created_at": msg["created_at"],
+        })
 
     # Sort sessions by earliest message, most recent first
     sorted_sessions = []
