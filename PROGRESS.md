@@ -332,7 +332,16 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - 1080p 下文字清晰，建議 Zoom 125% 更佳
   - AI 回覆品質良好：preorder/inorder 差異 + 記憶引用 + 個人化追問
 
+## Competition Doc Sync (2026-04-11)
+- [x] Update 系統概述文件 to reflect current state
+  - Test count: 110 → 129, expanded test scope description
+  - Added: conversation history persistence (student feature)
+  - Added: student risk assessment (teacher feature)
+  - Removed "學習預警" from future plans (already implemented)
+  - Added push notification as new future plan item
+- [x] 129 tests still passing
+
 ## Current State
 Phase: 6 (Demo & Polish) — Feature Complete
-Done: All features implemented, all bugs fixed, demo video script ready, Playwright 預檢全通過（兩輪）, 129 tests passing
+Done: All features implemented, all bugs fixed, demo video script ready, Playwright 預檢全通過（兩輪）, competition doc synced, 129 tests passing
 Next step: 用 OBS 實際試錄 3 分鐘 Demo 影片、組隊、等第31屆須知公告
