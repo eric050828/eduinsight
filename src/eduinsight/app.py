@@ -30,9 +30,11 @@ from .analytics import (
 )
 from .assistant import LearningAssistant
 from .config import settings
+from .documents import parse_document
 from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
 from .lti import router as lti_router
 from .moodle import MoodleClient
+from .rag import CourseRAG
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +44,7 @@ logger = logging.getLogger(__name__)
 _memory: Memory | None = None
 _assistant: LearningAssistant | None = None
 _llm: LLMClient | None = None
+_rag: CourseRAG | None = None
 
 
 def get_assistant() -> LearningAssistant:
@@ -88,6 +91,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
             _llm = None
 
     _assistant = LearningAssistant(_memory, llm=_llm)
+    _rag = CourseRAG(_memory)
     yield
 
     logger.info("Shutting down EduInsight")
@@ -96,6 +100,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         _llm = None
     _memory = None
     _assistant = None
+    _rag = None
 
 
 # ------------------------------------------------------------------
@@ -121,11 +126,13 @@ class ChatRequest(BaseModel):
     moodle_user_id: int
     message: str
     topic: str = ""
+    course_id: str = ""  # Optional: include RAG context from course materials
 
 
 class ChatResponse(BaseModel):
     reply: str
     memory_context: list[str]
+    material_context: list[str] = []  # RAG references from course materials
 
 
 class RecordStruggleRequest(BaseModel):
@@ -174,23 +181,41 @@ async def health() -> dict[str, Any]:
 async def chat(req: ChatRequest) -> ChatResponse:
     """Student sends a message; assistant responds with memory-augmented AI answer.
 
-    If an LLM is configured, generates an AI answer using the student's
-    memory context. Otherwise, falls back to returning context only.
+    If course_id is provided, retrieves relevant course materials (RAG)
+    and includes them in the prompt context alongside student memories.
     """
     assistant = get_assistant()
 
     uid = f"moodle:{req.moodle_user_id}"
     session_id = f"chat_{int(time.time() * 1000)}"
 
+    # RAG: retrieve relevant course materials if course_id provided
+    material_refs: list[str] = []
+    rag_context = ""
+    if req.course_id and _rag is not None:
+        rag_results = _rag.search(req.course_id, req.message, top_k=5)
+        material_refs = [
+            f"[{r.source} p.{r.page}] {r.text}" if r.page else f"[{r.source}] {r.text}"
+            for r in rag_results
+        ]
+        rag_context = _rag.get_context_for_prompt(req.course_id, req.message)
+
     if assistant._llm is not None:
-        # Full AI answer with memory context
+        # Full AI answer with memory + RAG context
         response = await assistant.answer(
-            req.moodle_user_id, req.message, topic=req.topic
+            req.moodle_user_id, req.message, topic=req.topic,
+            material_context=rag_context,
         )
         # Store conversation messages for history retrieval
         _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
-        _memory._store.store_message(uid, response.answer, session_id=session_id, role="assistant")
-        return ChatResponse(reply=response.answer, memory_context=response.memory_context)
+        _memory._store.store_message(
+            uid, response.answer, session_id=session_id, role="assistant"
+        )
+        return ChatResponse(
+            reply=response.answer,
+            memory_context=response.memory_context,
+            material_context=material_refs,
+        )
 
     # Fallback: no LLM configured, return context only
     context_texts = assistant.get_student_context(req.moodle_user_id, req.message)
@@ -205,6 +230,7 @@ async def chat(req: ChatRequest) -> ChatResponse:
     return ChatResponse(
         reply=fallback_reply,
         memory_context=context_texts,
+        material_context=material_refs,
     )
 
 
@@ -471,6 +497,107 @@ async def get_class_analytics() -> ClassAnalyticsResponse:
         total_facts=ca.total_facts,
         common_struggles=[[t, c] for t, c in ca.common_struggles],
         topic_distribution=ca.topic_distribution,
+    )
+
+
+# ------------------------------------------------------------------
+# Course Materials (RAG) endpoints
+# ------------------------------------------------------------------
+
+
+class MaterialUploadResponse(BaseModel):
+    status: str
+    filename: str
+    course_id: str
+    chunks_indexed: int
+    total_pages: int
+
+
+class MaterialListResponse(BaseModel):
+    course_id: str
+    documents: list[str]
+
+
+class MaterialDeleteResponse(BaseModel):
+    status: str
+    filename: str
+    chunks_removed: int
+
+
+@app.post(
+    "/courses/{course_id}/materials",
+    response_model=MaterialUploadResponse,
+)
+async def upload_material(course_id: str, file: UploadFile) -> MaterialUploadResponse:
+    """Upload a course document (PDF/PPTX) for RAG-powered Q&A.
+
+    The document is parsed, chunked, and indexed into Lite-Mem so that
+    student questions can reference course materials in their answers.
+    """
+    if _rag is None:
+        raise HTTPException(status_code=503, detail="RAG not initialized")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in (".pdf", ".pptx"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {suffix}. Supported: .pdf, .pptx",
+        )
+
+    # Save to a temp file for parsing
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        doc = parse_document(tmp_path)
+        # Use the original filename instead of the temp path
+        doc.filename = file.filename
+        for chunk in doc.chunks:
+            chunk.source = file.filename
+        chunks_indexed = _rag.index_document(course_id, doc)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+    return MaterialUploadResponse(
+        status="indexed",
+        filename=file.filename,
+        course_id=course_id,
+        chunks_indexed=chunks_indexed,
+        total_pages=doc.total_pages,
+    )
+
+
+@app.get("/courses/{course_id}/materials", response_model=MaterialListResponse)
+async def list_materials(course_id: str) -> MaterialListResponse:
+    """List all indexed documents for a course."""
+    if _rag is None:
+        raise HTTPException(status_code=503, detail="RAG not initialized")
+    docs = _rag.list_documents(course_id)
+    return MaterialListResponse(course_id=course_id, documents=docs)
+
+
+@app.delete(
+    "/courses/{course_id}/materials/{filename}",
+    response_model=MaterialDeleteResponse,
+)
+async def delete_material(course_id: str, filename: str) -> MaterialDeleteResponse:
+    """Remove a document's indexed chunks from the course."""
+    if _rag is None:
+        raise HTTPException(status_code=503, detail="RAG not initialized")
+    removed = _rag.remove_document(course_id, filename)
+    return MaterialDeleteResponse(
+        status="removed" if removed > 0 else "not_found",
+        filename=filename,
+        chunks_removed=removed,
     )
 
 

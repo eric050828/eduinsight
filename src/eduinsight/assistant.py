@@ -32,6 +32,11 @@ Your role:
 
 You have access to the student's memory context (past questions, struggles, preferences).
 Use this context to personalize your response, but do NOT repeat it back verbatim.
+
+You may also receive "Course material references" from the instructor's uploaded documents.
+When available, cite the source (filename and page number) in your answer to help students
+find the relevant section in their course materials. Example: "根據 lecture03.pdf 第5頁..."
+
 If the context is empty or irrelevant, just answer the question directly.
 
 Always respond in the same language the student uses."""
@@ -163,12 +168,23 @@ class LearningAssistant:
             kwargs["top_k"] = top_k
         return self._memory.query(uid, query, **kwargs)
 
-    def _build_prompt(self, question: str, context: list[str], *, topic: str = "") -> str:
+    def _build_prompt(
+        self,
+        question: str,
+        context: list[str],
+        *,
+        topic: str = "",
+        material_context: str = "",
+    ) -> str:
         """Build a memory-augmented user prompt for the LLM.
 
-        Combines the student's question with relevant memory context.
+        Combines the student's question with relevant memory context
+        and optionally course material references (RAG).
         """
         parts: list[str] = []
+        if material_context:
+            parts.append(material_context)
+            parts.append("")
         if context:
             parts.append("Student memory context:")
             for i, mem in enumerate(context, 1):
@@ -185,6 +201,7 @@ class LearningAssistant:
         question: str,
         *,
         topic: str = "",
+        material_context: str = "",
     ) -> AssistantResponse:
         """Answer a student's question using memory context and LLM.
 
@@ -210,8 +227,10 @@ class LearningAssistant:
         # 1. Retrieve memory context
         context = self.get_student_context(moodle_user_id, question)
 
-        # 2. Build prompt
-        user_prompt = self._build_prompt(question, context, topic=topic)
+        # 2. Build prompt (with optional RAG material context)
+        user_prompt = self._build_prompt(
+            question, context, topic=topic, material_context=material_context
+        )
 
         # 3. Call LLM
         reply = await self._llm.chat(user_prompt, system_prompt=SYSTEM_PROMPT)

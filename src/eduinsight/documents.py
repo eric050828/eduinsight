@@ -1,0 +1,238 @@
+"""Document parsing and chunking for RAG (Retrieval-Augmented Generation).
+
+Extracts text from PDF and PPTX files, then splits into chunks suitable
+for embedding and retrieval via Lite-Mem.
+
+Supported formats:
+- PDF (via PyMuPDF)
+- PPTX (via python-pptx)
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DocumentChunk:
+    """A chunk of text extracted from a document."""
+
+    text: str
+    source: str  # filename
+    page: int | None = None  # page number (1-based) or slide number
+    chunk_index: int = 0  # position within the document
+
+
+@dataclass
+class ParsedDocument:
+    """Result of parsing a document file."""
+
+    filename: str
+    total_pages: int
+    chunks: list[DocumentChunk] = field(default_factory=list)
+
+
+def chunk_text(
+    text: str,
+    *,
+    chunk_size: int = 500,
+    overlap: int = 50,
+    source: str = "",
+    page: int | None = None,
+    start_index: int = 0,
+) -> list[DocumentChunk]:
+    """Split text into overlapping chunks of roughly equal size.
+
+    Splits on paragraph boundaries when possible, falling back to
+    sentence boundaries, then word boundaries.
+
+    Args:
+        text: The text to split.
+        chunk_size: Target chunk size in characters.
+        overlap: Number of characters to overlap between chunks.
+        source: Source filename for metadata.
+        page: Page/slide number for metadata.
+        start_index: Starting chunk index for numbering.
+
+    Returns:
+        List of DocumentChunk objects.
+    """
+    text = text.strip()
+    if not text:
+        return []
+
+    # If text fits in one chunk, return as-is
+    if len(text) <= chunk_size:
+        return [DocumentChunk(text=text, source=source, page=page, chunk_index=start_index)]
+
+    # Split into paragraphs first
+    paragraphs = re.split(r"\n\s*\n", text)
+    paragraphs = [p.strip() for p in paragraphs if p.strip()]
+
+    chunks: list[DocumentChunk] = []
+    current = ""
+    idx = start_index
+
+    for para in paragraphs:
+        # If adding this paragraph would exceed chunk_size
+        if current and len(current) + len(para) + 2 > chunk_size:
+            chunks.append(
+                DocumentChunk(text=current.strip(), source=source, page=page, chunk_index=idx)
+            )
+            idx += 1
+            # Overlap: keep the tail of the current chunk
+            if overlap > 0 and len(current) > overlap:
+                current = current[-overlap:] + "\n\n" + para
+            else:
+                current = para
+        else:
+            current = current + "\n\n" + para if current else para
+
+    # Don't forget the last chunk
+    if current.strip():
+        chunks.append(
+            DocumentChunk(text=current.strip(), source=source, page=page, chunk_index=idx)
+        )
+
+    return chunks
+
+
+def parse_pdf(file_path: str | Path) -> ParsedDocument:
+    """Extract text from a PDF file and split into chunks.
+
+    Uses PyMuPDF for fast, accurate text extraction.
+    Each page's text is chunked separately with page number metadata.
+
+    Args:
+        file_path: Path to the PDF file.
+
+    Returns:
+        ParsedDocument with chunks tagged by page number.
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist.
+        ValueError: If the file is not a valid PDF.
+    """
+    import fitz  # PyMuPDF
+
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"PDF not found: {path}")
+
+    try:
+        doc = fitz.open(str(path))
+    except Exception as e:
+        raise ValueError(f"Failed to open PDF: {e}") from e
+
+    filename = path.name
+    total_pages = len(doc)
+    all_chunks: list[DocumentChunk] = []
+    chunk_idx = 0
+
+    for page_num in range(total_pages):
+        page = doc[page_num]
+        text = page.get_text("text")  # type: ignore[attr-defined]
+        if not text or not text.strip():
+            continue
+
+        page_chunks = chunk_text(
+            text,
+            source=filename,
+            page=page_num + 1,  # 1-based
+            start_index=chunk_idx,
+        )
+        all_chunks.extend(page_chunks)
+        chunk_idx += len(page_chunks)
+
+    doc.close()
+
+    logger.info("Parsed PDF %s: %d pages, %d chunks", filename, total_pages, len(all_chunks))
+    return ParsedDocument(filename=filename, total_pages=total_pages, chunks=all_chunks)
+
+
+def parse_pptx(file_path: str | Path) -> ParsedDocument:
+    """Extract text from a PPTX file and split into chunks.
+
+    Extracts text from all shapes on each slide. Each slide's text
+    is chunked with slide number metadata.
+
+    Args:
+        file_path: Path to the PPTX file.
+
+    Returns:
+        ParsedDocument with chunks tagged by slide number.
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist.
+        ValueError: If the file is not a valid PPTX.
+    """
+    from pptx import Presentation
+
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"PPTX not found: {path}")
+
+    try:
+        prs = Presentation(str(path))
+    except Exception as e:
+        raise ValueError(f"Failed to open PPTX: {e}") from e
+
+    filename = path.name
+    all_chunks: list[DocumentChunk] = []
+    chunk_idx = 0
+    total_slides = len(prs.slides)
+
+    for slide_num, slide in enumerate(prs.slides, 1):
+        texts: list[str] = []
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for paragraph in shape.text_frame.paragraphs:
+                    para_text = paragraph.text.strip()
+                    if para_text:
+                        texts.append(para_text)
+
+        if not texts:
+            continue
+
+        slide_text = "\n\n".join(texts)
+        slide_chunks = chunk_text(
+            slide_text,
+            source=filename,
+            page=slide_num,
+            start_index=chunk_idx,
+        )
+        all_chunks.extend(slide_chunks)
+        chunk_idx += len(slide_chunks)
+
+    logger.info("Parsed PPTX %s: %d slides, %d chunks", filename, total_slides, len(all_chunks))
+    return ParsedDocument(filename=filename, total_pages=total_slides, chunks=all_chunks)
+
+
+def parse_document(file_path: str | Path) -> ParsedDocument:
+    """Auto-detect file type and parse accordingly.
+
+    Supports: .pdf, .pptx
+
+    Args:
+        file_path: Path to the document.
+
+    Returns:
+        ParsedDocument with extracted chunks.
+
+    Raises:
+        ValueError: If the file type is not supported.
+    """
+    path = Path(file_path)
+    suffix = path.suffix.lower()
+
+    if suffix == ".pdf":
+        return parse_pdf(path)
+    elif suffix == ".pptx":
+        return parse_pptx(path)
+    else:
+        raise ValueError(f"Unsupported file type: {suffix}. Supported: .pdf, .pptx")
