@@ -297,7 +297,12 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Added detailed recording preparation notes and anonymization checklist
 - [x] 129 tests still passing
 
+## Fix: Bug 6 — demo.html 文案同步 (2026-04-11)
+- [x] "4 students" → "5 students"（兩處文案）
+- [x] 新增 Student 1005 profile card（mid-level DB learner）
+- [x] 129 tests still passing
+
 ## Current State
 Phase: 6 (Demo & Polish) — Feature Complete
-Done: All features implemented, all bugs fixed, demo video script ready, 129 tests passing
+Done: All features implemented, all bugs fixed (including Bug 6), demo video script ready, 129 tests passing
 Next step: 組隊、等第31屆須知公告、錄製 Demo 影片（腳本已完成）
