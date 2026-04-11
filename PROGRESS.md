@@ -438,7 +438,19 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Score summary after completing all questions
 - [x] 2 new tests (230 total), ruff clean
 
+## Classroom Interaction — Polls, Anonymous Questions, Danmaku (2026-04-12)
+- [x] InteractionManager (interaction.py)
+  - **Polls**: create → activate → vote → close lifecycle, real-time stats (distribution per option)
+  - **Anonymous Questions**: post (student identity hidden in API response), upvote (idempotent), resolve (teacher action), sorted by upvotes
+  - **Danmaku (Text Wall)**: post (max 100 chars), get recent (newest-first, with limit + since filter), per-course isolation
+  - In-memory store (single-process demo, same pattern as live_quiz.py)
+- [x] API endpoints (14 new routes under /interaction/)
+  - Polls: POST /interaction/polls, POST .../activate, POST .../close, POST .../vote, GET .../stats, GET /interaction/polls
+  - Questions: POST /interaction/questions, POST .../upvote, POST .../resolve, GET /interaction/questions
+  - Danmaku: POST /interaction/danmaku, GET /interaction/danmaku
+- [x] 42 new tests (272 total), ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 2 — 課堂測驗 UI 完成（教師管理 + 學生作答）
-Done: Live quiz full stack (backend sessions + teacher management UI + student participation UI), 230 tests passing
-Next step: 即時互動（投票/匿名提問/彈幕）
+Phase: ROADMAP Phase 2 — 即時互動 backend 完成（投票/匿名提問/彈幕）
+Done: Interaction backend + API (polls, anon questions, danmaku), 272 tests passing
+Next step: 即時互動 UI（教師端 + 學生端）

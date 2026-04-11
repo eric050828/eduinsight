@@ -31,6 +31,7 @@ from .analytics import (
 from .assistant import LearningAssistant
 from .config import settings
 from .documents import parse_document
+from .interaction import InteractionManager
 from .live_quiz import (
     QuizSessionManager,
     QuizSessionQuestion,
@@ -53,6 +54,7 @@ _llm: LLMClient | None = None
 _rag: CourseRAG | None = None
 _quiz: QuizGenerator | None = None
 _quiz_manager: QuizSessionManager = QuizSessionManager()
+_interaction: InteractionManager = InteractionManager()
 
 
 def get_assistant() -> LearningAssistant:
@@ -913,6 +915,269 @@ async def list_quiz_sessions(course_id: str | None = None) -> list[SessionInfoRe
             total_students=len(s.get_student_ids()),
         )
         for s in sessions
+    ]
+
+
+# ------------------------------------------------------------------
+# Interaction endpoints (polls, anonymous questions, danmaku)
+# ------------------------------------------------------------------
+
+
+class CreatePollRequest(BaseModel):
+    course_id: str
+    title: str
+    options: list[str]
+
+
+class PollResponse(BaseModel):
+    poll_id: str
+    course_id: str
+    title: str
+    status: str
+    options: list[str]
+
+
+class PollStatsResponse(BaseModel):
+    poll_id: str
+    title: str
+    status: str
+    options: list[str]
+    total_votes: int
+    distribution: list[int]
+
+
+class VoteRequest(BaseModel):
+    student_id: int
+    option_idx: int
+
+
+class PostQuestionRequest(BaseModel):
+    course_id: str
+    student_id: int
+    text: str
+
+
+class AnonQuestionResponse(BaseModel):
+    question_id: str
+    text: str
+    upvote_count: int
+    resolved: bool
+    created_at: float
+
+
+class UpvoteRequest(BaseModel):
+    student_id: int
+
+
+class PostDanmakuRequest(BaseModel):
+    course_id: str
+    student_id: int
+    text: str
+
+
+class DanmakuResponse(BaseModel):
+    message_id: str
+    text: str
+    created_at: float
+
+
+# ── Polls ─────────────────────────────────────────────────────────
+
+
+@app.post("/interaction/polls", response_model=PollResponse)
+async def create_poll(req: CreatePollRequest) -> PollResponse:
+    """Create a new classroom poll."""
+    try:
+        poll = _interaction.create_poll(
+            req.course_id, teacher_id=0, title=req.title, options=req.options
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return PollResponse(
+        poll_id=poll.poll_id,
+        course_id=poll.course_id,
+        title=poll.title,
+        status=poll.status.value,
+        options=poll.options,
+    )
+
+
+@app.post("/interaction/polls/{poll_id}/activate", response_model=PollResponse)
+async def activate_poll(poll_id: str) -> PollResponse:
+    """Open a poll for voting."""
+    try:
+        poll = _interaction.activate_poll(poll_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Poll not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return PollResponse(
+        poll_id=poll.poll_id,
+        course_id=poll.course_id,
+        title=poll.title,
+        status=poll.status.value,
+        options=poll.options,
+    )
+
+
+@app.post("/interaction/polls/{poll_id}/close", response_model=PollResponse)
+async def close_poll(poll_id: str) -> PollResponse:
+    """Close a poll (no more votes accepted)."""
+    try:
+        poll = _interaction.close_poll(poll_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Poll not found")
+    return PollResponse(
+        poll_id=poll.poll_id,
+        course_id=poll.course_id,
+        title=poll.title,
+        status=poll.status.value,
+        options=poll.options,
+    )
+
+
+@app.post("/interaction/polls/{poll_id}/vote")
+async def vote_poll(poll_id: str, req: VoteRequest) -> dict[str, str]:
+    """Cast or change a vote on a poll."""
+    try:
+        _interaction.vote(poll_id, student_id=req.student_id, option_idx=req.option_idx)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Poll not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "voted"}
+
+
+@app.get("/interaction/polls/{poll_id}/stats", response_model=PollStatsResponse)
+async def poll_stats(poll_id: str) -> PollStatsResponse:
+    """Get real-time poll results."""
+    try:
+        stats = _interaction.poll_stats(poll_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Poll not found")
+    return PollStatsResponse(
+        poll_id=stats.poll_id,
+        title=stats.title,
+        status=stats.status.value,
+        options=stats.options,
+        total_votes=stats.total_votes,
+        distribution=stats.distribution,
+    )
+
+
+@app.get("/interaction/polls")
+async def list_polls(course_id: str | None = None) -> list[PollResponse]:
+    """List polls, optionally filtered by course."""
+    polls = _interaction.list_polls(course_id)
+    return [
+        PollResponse(
+            poll_id=p.poll_id,
+            course_id=p.course_id,
+            title=p.title,
+            status=p.status.value,
+            options=p.options,
+        )
+        for p in polls
+    ]
+
+
+# ── Anonymous Questions ───────────────────────────────────────────
+
+
+@app.post("/interaction/questions", response_model=AnonQuestionResponse)
+async def post_question(req: PostQuestionRequest) -> AnonQuestionResponse:
+    """Post an anonymous question (student identity hidden in response)."""
+    try:
+        q = _interaction.post_question(
+            req.course_id, text=req.text, student_id=req.student_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return AnonQuestionResponse(
+        question_id=q.question_id,
+        text=q.text,
+        upvote_count=q.upvote_count,
+        resolved=q.resolved,
+        created_at=q.created_at,
+    )
+
+
+@app.post("/interaction/questions/{question_id}/upvote")
+async def upvote_question(question_id: str, req: UpvoteRequest) -> dict[str, int]:
+    """Upvote an anonymous question."""
+    try:
+        count = _interaction.upvote_question(question_id, student_id=req.student_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return {"upvote_count": count}
+
+
+@app.post("/interaction/questions/{question_id}/resolve", response_model=AnonQuestionResponse)
+async def resolve_question(question_id: str) -> AnonQuestionResponse:
+    """Mark a question as resolved (teacher action)."""
+    try:
+        q = _interaction.resolve_question(question_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return AnonQuestionResponse(
+        question_id=q.question_id,
+        text=q.text,
+        upvote_count=q.upvote_count,
+        resolved=q.resolved,
+        created_at=q.created_at,
+    )
+
+
+@app.get("/interaction/questions")
+async def list_questions(
+    course_id: str, include_resolved: bool = True
+) -> list[AnonQuestionResponse]:
+    """List anonymous questions for a course, sorted by upvotes."""
+    questions = _interaction.list_questions(course_id, include_resolved=include_resolved)
+    return [
+        AnonQuestionResponse(
+            question_id=q.question_id,
+            text=q.text,
+            upvote_count=q.upvote_count,
+            resolved=q.resolved,
+            created_at=q.created_at,
+        )
+        for q in questions
+    ]
+
+
+# ── Danmaku (Text Wall) ──────────────────────────────────────────
+
+
+@app.post("/interaction/danmaku", response_model=DanmakuResponse)
+async def post_danmaku(req: PostDanmakuRequest) -> DanmakuResponse:
+    """Post a danmaku (text wall) message."""
+    try:
+        msg = _interaction.post_danmaku(
+            req.course_id, text=req.text, student_id=req.student_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return DanmakuResponse(
+        message_id=msg.message_id,
+        text=msg.text,
+        created_at=msg.created_at,
+    )
+
+
+@app.get("/interaction/danmaku")
+async def get_danmaku(
+    course_id: str, limit: int = 50, since: float | None = None
+) -> list[DanmakuResponse]:
+    """Get recent danmaku messages for a course."""
+    messages = _interaction.get_danmaku(course_id, limit=limit, since=since)
+    return [
+        DanmakuResponse(
+            message_id=m.message_id,
+            text=m.text,
+            created_at=m.created_at,
+        )
+        for m in messages
     ]
 
 
