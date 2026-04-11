@@ -160,6 +160,7 @@ tr:hover td{background:rgba(99,102,241,.03)}
     <div class="nav-item" data-target="live-data"><span class="nav-icon">📡</span>即時數據</div>
     <div class="nav-item" data-target="materials-section"><span class="nav-icon">📚</span>教材管理</div>
     <div class="nav-item" data-target="quiz-section"><span class="nav-icon">🎯</span>AI 出題</div>
+    <div class="nav-item" data-target="live-quiz-section"><span class="nav-icon">📡</span>即時測驗</div>
     <div class="nav-divider"></div>
     <a href="/student" class="nav-item"><span class="nav-icon">👨‍🎓</span>學生端預覽</a>
   </div>
@@ -350,12 +351,74 @@ tr:hover td{background:rgba(99,102,241,.03)}
         <div class="card" style="max-height:600px;overflow-y:auto">
           <div class="card-header">
             <div><div class="card-title">📝 題目預覽</div><div class="card-subtitle" id="quizPreviewSub">產生題目後顯示於此</div></div>
-            <button id="quizExportBtn" onclick="exportQuiz()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--primary);background:none;color:var(--primary-hover);font-size:11px;cursor:pointer;font-family:inherit;display:none">📋 複製</button>
+            <div style="display:flex;gap:6px">
+              <button id="quizExportBtn" onclick="exportQuiz()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--primary);background:none;color:var(--primary-hover);font-size:11px;cursor:pointer;font-family:inherit;display:none">📋 複製</button>
+              <button id="quizLiveBtn" onclick="createLiveSession()" style="padding:4px 12px;border-radius:6px;border:none;background:var(--green);color:#000;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;display:none">🚀 建立即時測驗</button>
+            </div>
           </div>
           <div id="quizPreview" style="min-height:100px">
             <div style="text-align:center;padding:40px 20px;color:var(--text-dim);font-size:13px">
               <div style="font-size:32px;margin-bottom:8px">🎯</div>
               填寫左側參數後點擊「AI 自動出題」
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Quiz Section -->
+    <div id="live-quiz-section" style="margin-top:8px">
+      <div style="background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(99,102,241,0.08));border:1px solid rgba(34,211,238,0.25);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted)">
+        <span style="font-size:20px">📡</span>
+        <span><strong style="color:var(--accent)">即時測驗</strong> — 管理課堂測驗 Session，即時查看全班作答統計。</span>
+        <button onclick="loadQuizSessions()" style="margin-left:auto;padding:3px 10px;border-radius:6px;border:1px solid var(--accent);background:none;color:var(--accent);font-size:11px;cursor:pointer">🔄 重整</button>
+      </div>
+
+      <!-- Session List -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header">
+          <div><div class="card-title">📋 測驗 Sessions</div><div class="card-subtitle" id="sessionListSub">載入中...</div></div>
+        </div>
+        <div id="sessionList" style="min-height:60px">
+          <div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px">載入中...</div>
+        </div>
+      </div>
+
+      <!-- Active Session Control + Stats -->
+      <div id="activeSessionPanel" style="display:none">
+        <div class="grid-2">
+          <!-- Control Panel -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="card-title" id="activeSessionTitle">—</div>
+                <div class="card-subtitle" id="activeSessionSub">—</div>
+              </div>
+              <div style="display:flex;gap:6px">
+                <button id="btnActivate" onclick="activateSession()" style="padding:5px 14px;border-radius:6px;border:none;background:var(--green);color:#000;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">▶ 開始作答</button>
+                <button id="btnClose" onclick="closeSession()" style="padding:5px 14px;border-radius:6px;border:none;background:var(--red);color:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;display:none">⏹ 結束測驗</button>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px">
+              <div class="stat-card"><div class="stat-label">狀態</div><div class="stat-value" id="sessionStatusVal" style="font-size:16px;color:var(--amber)">等待中</div></div>
+              <div class="stat-card"><div class="stat-label">作答人數</div><div class="stat-value" id="sessionStudentCount" style="font-size:16px;color:var(--accent)">0</div></div>
+              <div class="stat-card"><div class="stat-label">全班正確率</div><div class="stat-value" id="sessionOverallRate" style="font-size:16px;color:var(--green)">—</div></div>
+            </div>
+            <!-- Session ID for students -->
+            <div id="sessionIdDisplay" style="margin-top:12px;padding:10px 14px;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:space-between">
+              <div><span style="font-size:11px;color:var(--text-dim)">Session ID（提供給學生）</span><div id="sessionIdText" style="font-size:14px;font-weight:700;color:var(--accent);margin-top:2px;font-family:monospace">—</div></div>
+              <button onclick="copySessionId()" style="padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:none;color:var(--accent);font-size:11px;cursor:pointer">📋 複製</button>
+            </div>
+          </div>
+
+          <!-- Per-question Stats -->
+          <div class="card" style="max-height:500px;overflow-y:auto">
+            <div class="card-header"><div><div class="card-title">📊 各題統計</div><div class="card-subtitle" id="questionStatsSub">選擇 Session 後顯示</div></div></div>
+            <div id="questionStatsContainer" style="min-height:100px">
+              <div style="text-align:center;padding:40px 20px;color:var(--text-dim);font-size:13px">
+                <div style="font-size:32px;margin-bottom:8px">📊</div>
+                選擇或建立 Session 後即時顯示統計
+              </div>
             </div>
           </div>
         </div>
@@ -1566,6 +1629,7 @@ async function generateQuiz() {
     } else {
       sub.textContent = `${data.questions.length} 題 · ${data.chunks_used} 段教材參考`;
       document.getElementById('quizExportBtn').style.display = '';
+      document.getElementById('quizLiveBtn').style.display = '';
       renderQuiz(data.questions);
     }
     status.innerHTML = `<div style="color:var(--green);font-size:12px">✅ 成功產生 ${data.questions.length} 題</div>`;
@@ -1626,10 +1690,216 @@ function exportQuiz() {
 }
 
 // =====================================================================
+// LIVE QUIZ SESSION MANAGEMENT
+// =====================================================================
+let currentSessionId = null;
+let statsPollingTimer = null;
+
+async function createLiveSession() {
+  if (!lastQuizData || !lastQuizData.questions.length) {
+    alert('請先產生題目'); return;
+  }
+  const btn = document.getElementById('quizLiveBtn');
+  btn.disabled = true; btn.textContent = '建立中...';
+  try {
+    const res = await fetch('/quiz/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        course_id: lastQuizData.course_id,
+        title: lastQuizData.topic ? `${lastQuizData.course_id} — ${lastQuizData.topic}` : `${lastQuizData.course_id} Quiz`,
+        questions: lastQuizData.questions
+      })
+    });
+    if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || '建立失敗');
+    const data = await res.json();
+    showToast(`✅ 已建立測驗 Session: ${data.session_id}`);
+    // Navigate to live quiz section and select this session
+    document.querySelector('.nav-item[data-target="live-quiz-section"]').click();
+    await loadQuizSessions();
+    selectSession(data.session_id);
+  } catch (e) {
+    alert('建立即時測驗失敗: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '🚀 建立即時測驗';
+  }
+}
+
+async function loadQuizSessions() {
+  const container = document.getElementById('sessionList');
+  const sub = document.getElementById('sessionListSub');
+  try {
+    const res = await fetch('/quiz/sessions');
+    if (!res.ok) throw new Error('載入失敗');
+    const sessions = await res.json();
+    sub.textContent = `${sessions.length} 個 Session`;
+    if (sessions.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px">尚無測驗 Session。請先到「AI 出題」產生題目，再點擊「建立即時測驗」。</div>';
+      return;
+    }
+    container.innerHTML = sessions.map(s => {
+      const statusColors = { waiting: 'var(--amber)', active: 'var(--green)', closed: 'var(--text-dim)' };
+      const statusLabels = { waiting: '等待中', active: '進行中', closed: '已結束' };
+      const isSelected = s.session_id === currentSessionId;
+      return `<div onclick="selectSession('${s.session_id}')" style="display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s;${isSelected ? 'background:var(--primary-glow);' : ''}" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background='${isSelected ? 'var(--primary-glow)' : ''}'">
+        <div style="width:8px;height:8px;border-radius:50%;background:${statusColors[s.status]};flex-shrink:0"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.title}</div>
+          <div style="font-size:11px;color:var(--text-dim)">${s.question_count} 題 · ${s.total_students} 人作答</div>
+        </div>
+        <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:${statusColors[s.status]}22;color:${statusColors[s.status]};font-weight:600">${statusLabels[s.status]}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red);font-size:13px">❌ ${e.message}</div>`;
+  }
+}
+
+async function selectSession(sessionId) {
+  currentSessionId = sessionId;
+  document.getElementById('activeSessionPanel').style.display = '';
+  document.getElementById('sessionIdText').textContent = sessionId;
+  // Refresh session list to highlight selected
+  await loadQuizSessions();
+  await refreshSessionStats();
+  // Start polling if active
+  startStatsPolling();
+}
+
+async function refreshSessionStats() {
+  if (!currentSessionId) return;
+  try {
+    const [infoRes, statsRes] = await Promise.all([
+      fetch(`/quiz/sessions/${currentSessionId}`),
+      fetch(`/quiz/sessions/${currentSessionId}/stats`)
+    ]);
+    if (!infoRes.ok || !statsRes.ok) throw new Error('載入失敗');
+    const info = await infoRes.json();
+    const stats = await statsRes.json();
+
+    // Update control panel
+    document.getElementById('activeSessionTitle').textContent = info.title;
+    document.getElementById('activeSessionSub').textContent = `${info.course_id} · ${info.question_count} 題`;
+
+    const statusLabels = { waiting: '等待中', active: '🟢 進行中', closed: '已結束' };
+    const statusColors = { waiting: 'var(--amber)', active: 'var(--green)', closed: 'var(--text-dim)' };
+    document.getElementById('sessionStatusVal').textContent = statusLabels[info.status];
+    document.getElementById('sessionStatusVal').style.color = statusColors[info.status];
+    document.getElementById('sessionStudentCount').textContent = stats.total_students;
+    document.getElementById('sessionOverallRate').textContent = stats.total_students > 0 ? `${Math.round(stats.overall_correct_rate * 100)}%` : '—';
+
+    // Update buttons
+    document.getElementById('btnActivate').style.display = info.status === 'waiting' ? '' : 'none';
+    document.getElementById('btnClose').style.display = info.status === 'active' ? '' : 'none';
+
+    // Render per-question stats
+    renderQuestionStats(stats);
+
+    // Stop polling if closed
+    if (info.status === 'closed') stopStatsPolling();
+  } catch (e) {
+    console.error('refreshSessionStats error:', e);
+  }
+}
+
+function renderQuestionStats(stats) {
+  const container = document.getElementById('questionStatsContainer');
+  const sub = document.getElementById('questionStatsSub');
+  sub.textContent = `${stats.total_students} 人作答 · 全班正確率 ${Math.round(stats.overall_correct_rate * 100)}%`;
+
+  if (stats.questions.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim)">無題目</div>';
+    return;
+  }
+
+  container.innerHTML = stats.questions.map((q, i) => {
+    const rate = q.total_answers > 0 ? Math.round(q.correct_rate * 100) : 0;
+    const rateColor = rate >= 70 ? 'var(--green)' : rate >= 40 ? 'var(--amber)' : 'var(--red)';
+    const optColors = { A: '#6366f1', B: '#22d3ee', C: '#fbbf24', D: '#f87171' };
+    const maxOpt = Math.max(...Object.values(q.option_distribution), 1);
+
+    const bars = Object.entries(q.option_distribution).map(([opt, count]) => {
+      const pct = maxOpt > 0 ? (count / maxOpt) * 100 : 0;
+      return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+        <span style="width:16px;font-size:11px;font-weight:600;color:${optColors[opt]}">${opt}</span>
+        <div style="flex:1;height:14px;background:var(--surface-2);border-radius:4px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${optColors[opt]};border-radius:4px;transition:width .3s"></div>
+        </div>
+        <span style="font-size:10px;color:var(--text-dim);width:24px;text-align:right">${count}</span>
+      </div>`;
+    }).join('');
+
+    return `<div style="padding:12px 0;${i < stats.questions.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="width:22px;height:22px;border-radius:6px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text-muted)">${i + 1}</span>
+          <span style="font-size:12px;color:var(--text-muted)">${q.total_answers} 人作答</span>
+        </div>
+        <span style="font-size:12px;font-weight:600;color:${rateColor}">${rate}% 正確</span>
+      </div>
+      ${bars}
+    </div>`;
+  }).join('');
+}
+
+async function activateSession() {
+  if (!currentSessionId) return;
+  try {
+    const res = await fetch(`/quiz/sessions/${currentSessionId}/activate`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || '啟動失敗');
+    showToast('✅ 測驗已開始，學生可以作答');
+    await refreshSessionStats();
+    await loadQuizSessions();
+    startStatsPolling();
+  } catch (e) {
+    alert('啟動失敗: ' + e.message);
+  }
+}
+
+async function closeSession() {
+  if (!currentSessionId) return;
+  if (!confirm('確定要結束測驗？結束後學生將無法繼續作答。')) return;
+  try {
+    const res = await fetch(`/quiz/sessions/${currentSessionId}/close`, { method: 'POST' });
+    if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || '關閉失敗');
+    showToast('⏹ 測驗已結束');
+    stopStatsPolling();
+    await refreshSessionStats();
+    await loadQuizSessions();
+  } catch (e) {
+    alert('關閉失敗: ' + e.message);
+  }
+}
+
+function startStatsPolling() {
+  stopStatsPolling();
+  statsPollingTimer = setInterval(refreshSessionStats, 3000);
+}
+
+function stopStatsPolling() {
+  if (statsPollingTimer) { clearInterval(statsPollingTimer); statsPollingTimer = null; }
+}
+
+function copySessionId() {
+  if (!currentSessionId) return;
+  navigator.clipboard.writeText(currentSessionId).then(() => showToast('已複製 Session ID'));
+}
+
+function showToast(msg) {
+  // Reuse existing toast pattern or create
+  let toast = document.querySelector('.toast');
+  if (!toast) { toast = document.createElement('div'); toast.className = 'toast'; document.body.appendChild(toast); }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+// =====================================================================
 // BOOT
 // =====================================================================
 init();
 loadLiveData();
+loadQuizSessions();
 </script>
 </body>
 </html>

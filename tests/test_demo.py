@@ -103,3 +103,24 @@ class TestPageRoutes:
             resp = await client.get("/teacher")
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"]
+
+    async def test_teacher_page_has_live_quiz_section(self) -> None:
+        """Teacher dashboard includes live quiz management UI."""
+        mem = Memory()
+        async with await _make_client(mem) as client:
+            resp = await client.get("/teacher")
+            text = resp.text
+            assert "live-quiz-section" in text
+            assert "即時測驗" in text
+            assert "測驗 Sessions" in text
+            assert "建立即時測驗" in text
+
+    async def test_student_page_has_quiz_join(self) -> None:
+        """Student dashboard includes quiz participation banner."""
+        mem = Memory()
+        async with await _make_client(mem) as client:
+            resp = await client.get("/student")
+            text = resp.text
+            assert "quizJoinBanner" in text
+            assert "quizSessionInput" in text
+            assert "課堂測驗" in text

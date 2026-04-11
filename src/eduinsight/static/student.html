@@ -212,7 +212,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <div class="classroom-banner-text">
         <strong>課堂即時回饋</strong> — 上課時標記「聽不懂」的概念，老師即時看到全班狀況（匿名）
       </div>
-      <button class="classroom-btn" onclick="this.textContent=this.textContent==='✅ 已標記'?'🙋 這裡聽不懂':'✅ 已標記'">🙋 這裡聽不懂</button>
+      <button class="classroom-btn" onclick="this.textContent=this.textContent==='✅ 已標記'?'🙋 這裡聯不懂':'✅ 已標記'">🙋 這裡聽不懂</button>
+    </div>
+
+    <!-- Live Quiz Banner -->
+    <div id="quizJoinBanner" class="classroom-banner" style="background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(34,211,238,0.08));border-color:rgba(99,102,241,0.25)">
+      <div class="classroom-banner-icon">🎯</div>
+      <div class="classroom-banner-text">
+        <strong>課堂測驗</strong> — 輸入老師提供的 Session ID 加入即時測驗
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input id="quizSessionInput" type="text" placeholder="Session ID" style="width:140px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:monospace;outline:none">
+        <button onclick="joinQuizSession()" style="padding:6px 14px;border-radius:6px;border:none;background:var(--primary);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">加入測驗</button>
+      </div>
+    </div>
+
+    <!-- Live Quiz Panel (hidden until joined) -->
+    <div id="quizPanel" style="display:none;margin-bottom:16px">
+      <div class="card" style="border-color:var(--primary)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="card-title"><span class="icon">🎯</span> <span id="quizPanelTitle">課堂測驗</span></div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span id="quizPanelProgress" style="font-size:12px;color:var(--text-dim)"></span>
+            <button onclick="leaveQuiz()" style="padding:3px 10px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-dim);font-size:11px;cursor:pointer">離開</button>
+          </div>
+        </div>
+        <div id="quizQuestionsContainer"></div>
+        <div id="quizResultSummary" style="display:none;margin-top:12px;padding:12px;border-radius:8px;background:var(--surface)">
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px">📊 你的成績</div>
+          <div id="quizResultText" style="font-size:13px;color:var(--text-muted)"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Stats -->
@@ -790,6 +820,116 @@ async function sendMessage(){
     refreshStats(s.moodle);
   }catch(e){document.getElementById('typing')?.remove();addMsg('assistant','連線錯誤: '+e.message)}
   finally{sendBtn.disabled=false;msgInput.focus()}
+}
+
+// =====================================================================
+// LIVE QUIZ PARTICIPATION
+// =====================================================================
+let joinedSessionId = null;
+let quizQuestions = [];
+let quizAnswers = {};
+
+async function joinQuizSession() {
+  const input = document.getElementById('quizSessionInput');
+  const sessionId = input.value.trim();
+  if (!sessionId) { alert('請輸入 Session ID'); return; }
+
+  try {
+    // Check session exists and is active
+    const infoRes = await fetch(`/quiz/sessions/${sessionId}`);
+    if (!infoRes.ok) throw new Error('Session 不存在');
+    const info = await infoRes.json();
+    if (info.status === 'waiting') throw new Error('測驗尚未開始，請等待老師啟動');
+    if (info.status === 'closed') throw new Error('測驗已結束');
+
+    // Load questions
+    const qRes = await fetch(`/quiz/sessions/${sessionId}/questions`);
+    if (!qRes.ok) throw new Error('無法載入題目');
+    quizQuestions = await qRes.json();
+    joinedSessionId = sessionId;
+    quizAnswers = {};
+
+    document.getElementById('quizPanelTitle').textContent = info.title;
+    document.getElementById('quizJoinBanner').style.display = 'none';
+    document.getElementById('quizPanel').style.display = '';
+    document.getElementById('quizResultSummary').style.display = 'none';
+    renderQuizQuestions();
+  } catch (e) {
+    alert('加入失敗: ' + e.message);
+  }
+}
+
+function renderQuizQuestions() {
+  const container = document.getElementById('quizQuestionsContainer');
+  const answered = Object.keys(quizAnswers).length;
+  document.getElementById('quizPanelProgress').textContent = `${answered}/${quizQuestions.length} 已作答`;
+
+  container.innerHTML = quizQuestions.map((q, i) => {
+    const myAnswer = quizAnswers[i];
+    const opts = Object.entries(q.options).map(([k, v]) => {
+      let style = 'padding:8px 12px;border-radius:6px;margin-bottom:4px;font-size:12px;cursor:pointer;border:1px solid var(--border);transition:all .15s;display:flex;align-items:center;gap:8px;';
+      if (myAnswer) {
+        if (k === myAnswer.correct_answer) style += 'border-color:var(--green);background:rgba(52,211,153,0.1);';
+        else if (k === myAnswer.selected && !myAnswer.is_correct) style += 'border-color:var(--red);background:rgba(248,113,113,0.1);';
+        else style += 'opacity:0.5;';
+      }
+      const disabled = myAnswer ? 'pointer-events:none;' : '';
+      return `<div style="${style}${disabled}" onclick="submitQuizAnswer(${i},'${k}')">
+        <span style="width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:var(--surface);flex-shrink:0">${k}</span>
+        <span>${v}</span>
+        ${myAnswer && k === myAnswer.correct_answer ? '<span style="margin-left:auto;font-size:10px;color:var(--green)">✓</span>' : ''}
+        ${myAnswer && k === myAnswer.selected && !myAnswer.is_correct ? '<span style="margin-left:auto;font-size:10px;color:var(--red)">✗</span>' : ''}
+      </div>`;
+    }).join('');
+
+    const badge = myAnswer ? (myAnswer.is_correct
+      ? '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(52,211,153,0.15);color:var(--green)">✓ 正確</span>'
+      : '<span style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(248,113,113,0.15);color:var(--red)">✗ 錯誤</span>')
+      : '';
+
+    return `<div style="margin-bottom:16px;${i < quizQuestions.length - 1 ? 'padding-bottom:16px;border-bottom:1px solid var(--border);' : ''}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="width:22px;height:22px;border-radius:6px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${i + 1}</span>
+        <div style="font-size:13px;font-weight:500;flex:1">${q.question}</div>
+        ${badge}
+      </div>
+      ${opts}
+    </div>`;
+  }).join('');
+}
+
+async function submitQuizAnswer(questionIdx, selected) {
+  if (!joinedSessionId || quizAnswers[questionIdx]) return;
+  const s = STUDENTS[currentStudent];
+  try {
+    const res = await fetch(`/quiz/sessions/${joinedSessionId}/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student_id: s.moodle, question_idx: questionIdx, selected })
+    });
+    if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail || '提交失敗');
+    const data = await res.json();
+    quizAnswers[questionIdx] = { selected, is_correct: data.is_correct, correct_answer: data.correct_answer };
+    renderQuizQuestions();
+
+    // Check if all answered
+    if (Object.keys(quizAnswers).length === quizQuestions.length) {
+      const correct = Object.values(quizAnswers).filter(a => a.is_correct).length;
+      const total = quizQuestions.length;
+      document.getElementById('quizResultSummary').style.display = '';
+      document.getElementById('quizResultText').innerHTML = `答對 <b style="color:var(--green)">${correct}</b> / ${total} 題（${Math.round(correct/total*100)}%）`;
+    }
+  } catch (e) {
+    alert('提交答案失敗: ' + e.message);
+  }
+}
+
+function leaveQuiz() {
+  joinedSessionId = null;
+  quizQuestions = [];
+  quizAnswers = {};
+  document.getElementById('quizPanel').style.display = 'none';
+  document.getElementById('quizJoinBanner').style.display = '';
 }
 </script>
 </body>
