@@ -423,7 +423,22 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - GET /quiz/sessions — list all sessions
 - [x] 29 new tests (228 total), ruff clean
 
+## Live Quiz UI — Teacher Management + Student Participation (2026-04-12)
+- [x] Teacher dashboard: 即時測驗管理 UI
+  - Sidebar nav: 📡 即時測驗 section
+  - "🚀 建立即時測驗" button in quiz preview (creates session from AI-generated questions)
+  - Session list with status indicators (waiting/active/closed)
+  - Session control panel: activate (▶), close (⏹), copy session ID
+  - Real-time per-question stats: correct rate + option distribution bars (A/B/C/D)
+  - Auto-polling every 3s during active sessions for live updates
+- [x] Student dashboard: 課堂測驗參與 UI
+  - Quiz join banner with session ID input
+  - Question display with click-to-answer interaction
+  - Immediate feedback per question (correct ✓ / incorrect ✗ with correct answer shown)
+  - Score summary after completing all questions
+- [x] 2 new tests (230 total), ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 2 — 課堂測驗即時統計完成
-Done: Live quiz sessions (create/activate/answer/stats), 228 tests passing
-Next step: Teacher UI for live quiz management, then 即時互動 (投票/匿名提問)
+Phase: ROADMAP Phase 2 — 課堂測驗 UI 完成（教師管理 + 學生作答）
+Done: Live quiz full stack (backend sessions + teacher management UI + student participation UI), 230 tests passing
+Next step: 即時互動（投票/匿名提問/彈幕）
