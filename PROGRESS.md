@@ -351,7 +351,30 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] Added .env.example documenting all supported environment variables
 - [x] 129 tests still passing, ruff fully clean
 
+## RAG: Course Material Q&A (2026-04-12)
+- [x] Document parsing module (documents.py)
+  - PDF text extraction via PyMuPDF (page-level, with page metadata)
+  - PPTX text extraction via python-pptx (slide-level, with slide metadata)
+  - Text chunking with overlap (paragraph-aware splitting)
+  - Auto-detect file type from extension
+- [x] RAG engine (rag.py)
+  - CourseRAG class using Lite-Mem as vector store
+  - Course namespace: user_id = "course:{course_id}", category = "course_material"
+  - Reuses Lite-Mem's FTS5 + cosine hybrid search — zero modification to Lite-Mem
+  - Tagged text format: "[filename p.N] chunk text" for source tracking
+  - index_document / search / list_documents / remove_document / get_context_for_prompt
+- [x] API endpoints
+  - POST /courses/{id}/materials — upload PDF/PPTX, parse+chunk+index
+  - GET /courses/{id}/materials — list indexed documents
+  - DELETE /courses/{id}/materials/{filename} — remove document chunks
+- [x] Chat integration
+  - ChatRequest accepts optional course_id field
+  - When provided, searches course materials and injects RAG context into prompt
+  - ChatResponse includes material_context with source citations
+  - System prompt updated to cite source (filename + page) in answers
+- [x] 48 new tests (177 total), ruff clean
+
 ## Current State
-Phase: 6 (Demo & Polish) — Feature Complete, Code Quality Clean
-Done: All features implemented, all bugs fixed, demo video script ready, Playwright 預檢全通過（兩輪）, competition doc synced, ruff 0 warnings, 129 tests passing
-Next step: 用 OBS 實際試錄 3 分鐘 Demo 影片、組隊、等第31屆須知公告
+Phase: ROADMAP Phase 1 (Moodle + AI) — RAG 教材問答已實作
+Done: RAG document parsing/indexing/search, API endpoints, chat integration, 177 tests passing
+Next step: 前端 UI 整合教材上傳、OBS 試錄、組隊
