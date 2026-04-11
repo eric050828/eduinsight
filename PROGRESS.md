@@ -341,7 +341,17 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Added push notification as new future plan item
 - [x] 129 tests still passing
 
+## Code Quality Cleanup (2026-04-12)
+- [x] Fix all ruff lint warnings (15 errors → 0)
+  - Removed unused imports in app.py and test files (os, JSONResponse, ClassAnalytics, etc.)
+  - Modernized type annotations: `timezone.utc` → `UTC`, `Optional[X]` → `X | None`
+  - Fixed line-too-long in source and test files
+  - Added per-file E501 ignore for demo data files with long content strings
+  - Sorted imports across test files
+- [x] Added .env.example documenting all supported environment variables
+- [x] 129 tests still passing, ruff fully clean
+
 ## Current State
-Phase: 6 (Demo & Polish) — Feature Complete
-Done: All features implemented, all bugs fixed, demo video script ready, Playwright 預檢全通過（兩輪）, competition doc synced, 129 tests passing
+Phase: 6 (Demo & Polish) — Feature Complete, Code Quality Clean
+Done: All features implemented, all bugs fixed, demo video script ready, Playwright 預檢全通過（兩輪）, competition doc synced, ruff 0 warnings, 129 tests passing
 Next step: 用 OBS 實際試錄 3 分鐘 Demo 影片、組隊、等第31屆須知公告
