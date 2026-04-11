@@ -159,6 +159,7 @@ tr:hover td{background:rgba(99,102,241,.03)}
     <div class="nav-divider"></div>
     <div class="nav-item" data-target="live-data"><span class="nav-icon">📡</span>即時數據</div>
     <div class="nav-item" data-target="materials-section"><span class="nav-icon">📚</span>教材管理</div>
+    <div class="nav-item" data-target="quiz-section"><span class="nav-icon">🎯</span>AI 出題</div>
     <div class="nav-divider"></div>
     <a href="/student" class="nav-item"><span class="nav-icon">👨‍🎓</span>學生端預覽</a>
   </div>
@@ -312,6 +313,50 @@ tr:hover td{background:rgba(99,102,241,.03)}
           </div>
           <div id="matList" style="min-height:80px">
             <div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px">尚未載入</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="quiz-section" style="margin-top:8px">
+      <div style="background:linear-gradient(135deg,rgba(251,191,36,0.12),rgba(34,211,238,0.08));border:1px solid rgba(251,191,36,0.25);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted)">
+        <span style="font-size:20px">🎯</span>
+        <span><strong style="color:var(--amber)">AI 自動出題</strong> — 根據已上傳的課程教材，AI 自動產生選擇題。可指定主題與題數。</span>
+      </div>
+
+      <div class="grid-2">
+        <!-- Quiz Generator -->
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">⚡ 產生題目</div><div class="card-subtitle">AI 根據教材自動出選擇題</div></div></div>
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px">課程 ID</label>
+            <input id="quizCourseId" type="text" value="ds101" placeholder="例: ds101" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:13px;font-family:inherit;outline:none">
+          </div>
+          <div style="margin-bottom:10px">
+            <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px">主題（選填）</label>
+            <input id="quizTopic" type="text" placeholder="例: binary search、linked list" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:13px;font-family:inherit;outline:none">
+          </div>
+          <div style="margin-bottom:14px">
+            <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px">題數</label>
+            <input id="quizCount" type="number" value="5" min="1" max="20" style="width:80px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:13px;font-family:inherit;outline:none">
+          </div>
+          <button id="quizGenBtn" onclick="generateQuiz()" style="width:100%;padding:10px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .2s;display:flex;align-items:center;justify-content:center;gap:6px">
+            <span>🤖</span> AI 自動出題
+          </button>
+          <div id="quizStatus" style="margin-top:10px"></div>
+        </div>
+
+        <!-- Quiz Preview -->
+        <div class="card" style="max-height:600px;overflow-y:auto">
+          <div class="card-header">
+            <div><div class="card-title">📝 題目預覽</div><div class="card-subtitle" id="quizPreviewSub">產生題目後顯示於此</div></div>
+            <button id="quizExportBtn" onclick="exportQuiz()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--primary);background:none;color:var(--primary-hover);font-size:11px;cursor:pointer;font-family:inherit;display:none">📋 複製</button>
+          </div>
+          <div id="quizPreview" style="min-height:100px">
+            <div style="text-align:center;padding:40px 20px;color:var(--text-dim);font-size:13px">
+              <div style="font-size:32px;margin-bottom:8px">🎯</div>
+              填寫左側參數後點擊「AI 自動出題」
+            </div>
           </div>
         </div>
       </div>
@@ -1480,6 +1525,105 @@ async function deleteMaterial(courseId, filename) {
 
 // Auto-load materials when course ID changes
 document.getElementById('matCourseId').addEventListener('change', loadMaterials);
+
+// =====================================================================
+// QUIZ GENERATION
+// =====================================================================
+let lastQuizData = null;
+
+async function generateQuiz() {
+  const courseId = document.getElementById('quizCourseId').value.trim();
+  if (!courseId) { alert('請先填寫課程 ID'); return; }
+  const topic = document.getElementById('quizTopic').value.trim();
+  const numQ = parseInt(document.getElementById('quizCount').value) || 5;
+
+  const btn = document.getElementById('quizGenBtn');
+  const status = document.getElementById('quizStatus');
+  const preview = document.getElementById('quizPreview');
+  const sub = document.getElementById('quizPreviewSub');
+
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> AI 出題中...';
+  status.innerHTML = '';
+  preview.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim)"><div class="spinner" style="margin:0 auto 8px"></div>AI 正在根據教材產生題目，請稍候...</div>';
+
+  try {
+    const res = await fetch(`/courses/${encodeURIComponent(courseId)}/quiz/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic, num_questions: numQ }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || '出題失敗');
+    }
+    const data = await res.json();
+    lastQuizData = data;
+
+    if (data.questions.length === 0) {
+      preview.innerHTML = '<div style="text-align:center;padding:40px;color:var(--amber)">⚠️ AI 未能產生有效題目，請嘗試不同主題或確認已上傳教材。</div>';
+      sub.textContent = '0 題';
+    } else {
+      sub.textContent = `${data.questions.length} 題 · ${data.chunks_used} 段教材參考`;
+      document.getElementById('quizExportBtn').style.display = '';
+      renderQuiz(data.questions);
+    }
+    status.innerHTML = `<div style="color:var(--green);font-size:12px">✅ 成功產生 ${data.questions.length} 題</div>`;
+  } catch (e) {
+    preview.innerHTML = `<div style="text-align:center;padding:40px;color:var(--red)">❌ ${e.message}</div>`;
+    status.innerHTML = `<div style="color:var(--red);font-size:12px">❌ ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span>🤖</span> AI 自動出題';
+  }
+}
+
+function renderQuiz(questions) {
+  const container = document.getElementById('quizPreview');
+  container.innerHTML = questions.map((q, i) => {
+    const opts = Object.entries(q.options).map(([k, v]) => {
+      const isCorrect = k === q.answer;
+      return `<div style="padding:6px 10px;border-radius:6px;margin-bottom:4px;font-size:12px;border:1px solid ${isCorrect ? 'var(--green)' : 'var(--border)'};background:${isCorrect ? 'rgba(34,211,238,0.06)' : 'none'};display:flex;align-items:center;gap:8px">
+        <span style="width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:${isCorrect ? 'var(--green)' : 'var(--surface-2)'};color:${isCorrect ? '#000' : 'var(--text-muted)'};flex-shrink:0">${k}</span>
+        <span>${v}</span>
+        ${isCorrect ? '<span style="margin-left:auto;font-size:10px;color:var(--green)">✓ 正確</span>' : ''}
+      </div>`;
+    }).join('');
+
+    const sourceTag = q.source
+      ? `<span style="font-size:10px;color:var(--text-dim);background:var(--surface-2);padding:2px 6px;border-radius:3px">📄 ${q.source}</span>`
+      : '';
+
+    return `<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">
+        <span style="width:24px;height:24px;border-radius:6px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${i+1}</span>
+        <div style="font-size:13px;font-weight:500;line-height:1.5">${q.question}</div>
+      </div>
+      ${opts}
+      <div style="margin-top:8px;padding:8px 10px;border-radius:6px;background:rgba(99,102,241,0.06);border-left:3px solid var(--primary)">
+        <div style="font-size:11px;color:var(--primary-hover);font-weight:500;margin-bottom:2px">💡 解析</div>
+        <div style="font-size:12px;color:var(--text-muted)">${q.explanation}</div>
+      </div>
+      ${sourceTag ? `<div style="margin-top:6px">${sourceTag}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function exportQuiz() {
+  if (!lastQuizData || !lastQuizData.questions.length) return;
+  const lines = lastQuizData.questions.map((q, i) => {
+    const opts = Object.entries(q.options).map(([k, v]) => `  ${k}. ${v}`).join('\n');
+    return `${i+1}. ${q.question}\n${opts}\n  答案: ${q.answer}\n  解析: ${q.explanation}${q.source ? '\n  來源: ' + q.source : ''}`;
+  });
+  const text = `${lastQuizData.topic ? '主題: ' + lastQuizData.topic + '\n' : ''}課程: ${lastQuizData.course_id}\n\n` + lines.join('\n\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = `已複製 ${lastQuizData.questions.length} 題到剪貼簿`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
+  });
+}
 
 // =====================================================================
 // BOOT

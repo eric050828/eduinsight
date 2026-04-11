@@ -388,7 +388,25 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Consistent with existing memory context toggle pattern
 - [x] 177 tests passing, ruff clean
 
+## AI Quiz Generation (2026-04-12)
+- [x] Quiz generation module (quiz.py)
+  - QuizGenerator: uses RAG to retrieve material chunks → prompts LLM to generate MCQ
+  - QuizQuestion dataclass: question, options (A-D), answer, explanation, source
+  - Robust JSON parsing: handles markdown fences, trailing commas, surrounding text
+  - Fallback search when default query doesn't match FTS5 content
+  - Configurable: topic focus, num_questions (1-20), top_k chunks
+- [x] API endpoint: POST /courses/{course_id}/quiz/generate
+  - Request: { topic, num_questions }
+  - Response: { course_id, topic, questions[], chunks_used }
+  - 404 if no materials indexed, 503 if no LLM configured
+- [x] Teacher dashboard: AI 出題 UI
+  - Sidebar nav: 🎯 AI 出題 section
+  - Generator: course ID, topic (optional), question count inputs
+  - Preview: rendered MCQ with correct answer highlight + explanation
+  - Export: copy all questions as plain text to clipboard
+- [x] 22 new tests (199 total), ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 1 (Moodle + AI) — RAG 前端整合完成
-Done: RAG full stack (parsing → indexing → search → chat → teacher upload UI → student citations), 177 tests passing
+Phase: ROADMAP Phase 2 starting — AI 出題完成
+Done: Quiz generation (RAG → LLM → MCQ), full teacher UI, 199 tests passing
 Next step: OBS 試錄 Demo 影片、組隊

@@ -34,7 +34,7 @@ from .documents import parse_document
 from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
 from .lti import router as lti_router
 from .moodle import MoodleClient
-from .quiz import QuizGenerator, QuizQuestion, QuizResult
+from .quiz import QuizGenerator
 from .rag import CourseRAG
 
 logger = logging.getLogger(__name__)
