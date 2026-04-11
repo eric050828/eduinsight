@@ -34,6 +34,7 @@ from .documents import parse_document
 from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
 from .lti import router as lti_router
 from .moodle import MoodleClient
+from .quiz import QuizGenerator, QuizQuestion, QuizResult
 from .rag import CourseRAG
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ _memory: Memory | None = None
 _assistant: LearningAssistant | None = None
 _llm: LLMClient | None = None
 _rag: CourseRAG | None = None
+_quiz: QuizGenerator | None = None
 
 
 def get_assistant() -> LearningAssistant:
@@ -92,6 +94,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
 
     _assistant = LearningAssistant(_memory, llm=_llm)
     _rag = CourseRAG(_memory)
+    _quiz = QuizGenerator(_rag, _llm) if _llm is not None else None
     yield
 
     logger.info("Shutting down EduInsight")
@@ -101,6 +104,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     _memory = None
     _assistant = None
     _rag = None
+    _quiz = None
 
 
 # ------------------------------------------------------------------
@@ -598,6 +602,73 @@ async def delete_material(course_id: str, filename: str) -> MaterialDeleteRespon
         status="removed" if removed > 0 else "not_found",
         filename=filename,
         chunks_removed=removed,
+    )
+
+
+# ------------------------------------------------------------------
+# Quiz generation endpoints
+# ------------------------------------------------------------------
+
+
+class QuizGenerateRequest(BaseModel):
+    topic: str = ""
+    num_questions: int = 5
+
+
+class QuizQuestionResponse(BaseModel):
+    question: str
+    options: dict[str, str]
+    answer: str
+    explanation: str
+    source: str = ""
+
+
+class QuizGenerateResponse(BaseModel):
+    course_id: str
+    topic: str
+    questions: list[QuizQuestionResponse]
+    chunks_used: int
+
+
+@app.post(
+    "/courses/{course_id}/quiz/generate",
+    response_model=QuizGenerateResponse,
+)
+async def generate_quiz(course_id: str, req: QuizGenerateRequest) -> QuizGenerateResponse:
+    """Generate multiple-choice quiz questions from course materials using AI.
+
+    Retrieves relevant document chunks via RAG, then prompts the LLM
+    to create quiz questions based on the content.
+    """
+    if _quiz is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Quiz generation requires an LLM. Set GEMINI_API_KEY or install claude CLI.",
+        )
+
+    try:
+        result = await _quiz.generate(
+            course_id,
+            topic=req.topic,
+            num_questions=req.num_questions,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return QuizGenerateResponse(
+        course_id=result.course_id,
+        topic=result.topic,
+        questions=[
+            QuizQuestionResponse(
+                question=q.question,
+                options=q.options,
+                answer=q.answer,
+                explanation=q.explanation,
+                source=q.source,
+            )
+            for q in result.questions
+        ],
+        chunks_used=result.chunks_used,
     )
 
 
