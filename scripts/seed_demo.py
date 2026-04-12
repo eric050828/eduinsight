@@ -17,8 +17,9 @@ from pathlib import Path
 # Ensure the project source is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from eduinsight.demo_data import DEMO_STUDENTS  # noqa: E402
 from litemem import Memory  # noqa: E402
+
+from eduinsight.demo_data import DEMO_STUDENTS  # noqa: E402
 
 
 def seed_database(db_path: str, *, reset: bool = False) -> dict[str, int]:
