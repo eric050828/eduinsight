@@ -466,7 +466,39 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Enter key support for question and danmaku inputs
 - [x] 272 tests passing, ruff clean
 
+## Attendance / Check-in System (2026-04-12)
+- [x] AttendanceManager (attendance.py)
+  - Session lifecycle: create (open) → close, with auto-generated 6-digit check-in code
+  - Student check-in with code validation + duplicate prevention
+  - Late detection: configurable threshold (default 10 min)
+  - GPS proximity check: haversine distance validation within configurable radius
+  - Session stats: present/late counts, student list
+  - Student attendance history across sessions (filterable by course)
+  - Find session by code (case-insensitive, open sessions only)
+- [x] API endpoints (10 new routes under /attendance/)
+  - POST /attendance/sessions — create & open session
+  - POST /attendance/sessions/{id}/close — close session
+  - GET /attendance/sessions/{id} — session details
+  - GET /attendance/sessions — list sessions (optional course filter)
+  - POST /attendance/sessions/{id}/checkin — student check-in
+  - GET /attendance/sessions/{id}/records — all check-in records
+  - GET /attendance/sessions/{id}/stats — attendance statistics
+  - GET /attendance/student/{id}/history — student attendance history
+  - POST /attendance/checkin-by-code — check-in using code only (finds matching session)
+- [x] Teacher dashboard: 點名簽到管理 UI
+  - Sidebar nav: 📋 點名簽到 section
+  - Create session: course selector, title, late threshold, optional GPS (auto-detect location)
+  - Active session display: large check-in code, copy button, close button
+  - Session list: history with status indicators, click → stats panel
+  - Real-time stats: present/late counts with progress bar, auto-polling every 3s
+- [x] Student dashboard: 簽到 UI
+  - Check-in banner: 6-digit code input with uppercase formatting
+  - Auto GPS detection on check-in (optional)
+  - Immediate feedback: present/late status with timestamp
+  - Enter key support
+- [x] 44 new tests (316 total), ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 2 — 即時互動 UI 完成
-Done: Interaction UI (teacher: polls/questions/danmaku management; student: vote/ask/danmaku), 272 tests passing
-Next step: 待定（ROADMAP 下一步）
+Phase: ROADMAP Phase 2 — 點名簽到完成
+Done: Attendance system (code + GPS check-in, teacher management, student UI), 316 tests passing
+Next step: 完整成績管理（教授最在意的 — 即時加權總分、成績分布）

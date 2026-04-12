@@ -247,6 +247,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       </div>
     </div>
 
+    <!-- Attendance Check-in Banner -->
+    <div id="attendanceBanner" class="classroom-banner" style="background:linear-gradient(135deg,rgba(16,185,129,0.12),rgba(34,211,238,0.08));border-color:rgba(16,185,129,0.25)">
+      <div class="classroom-banner-icon">📋</div>
+      <div class="classroom-banner-text">
+        <strong>簽到點名</strong> — 輸入老師提供的簽到碼完成簽到
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input id="checkinCodeInput" type="text" maxlength="6" placeholder="簽到碼" style="width:100px;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:14px;font-family:monospace;outline:none;text-transform:uppercase;text-align:center;letter-spacing:2px">
+        <button onclick="doCheckin()" id="checkinBtn" style="padding:6px 14px;border-radius:6px;border:none;background:var(--green);color:#000;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">✅ 簽到</button>
+      </div>
+    </div>
+    <div id="checkinResult" style="display:none;padding:10px 14px;border-radius:8px;margin-bottom:8px;font-size:13px"></div>
+
     <!-- Live Quiz Banner -->
     <div id="quizJoinBanner" class="classroom-banner" style="background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(34,211,238,0.08));border-color:rgba(99,102,241,0.25)">
       <div class="classroom-banner-icon">🎯</div>
@@ -1155,6 +1168,45 @@ function leaveQuiz() {
   quizAnswers = {};
   document.getElementById('quizPanel').style.display = 'none';
   document.getElementById('quizJoinBanner').style.display = '';
+}
+
+// ── Attendance Check-in ──
+document.getElementById('checkinCodeInput').addEventListener('keydown', e => { if (e.key === 'Enter') doCheckin(); });
+
+async function doCheckin() {
+  const code = document.getElementById('checkinCodeInput').value.trim().toUpperCase();
+  if (!code) { alert('請輸入簽到碼'); return; }
+  const btn = document.getElementById('checkinBtn');
+  btn.disabled = true; btn.textContent = '簽到中...';
+  const resultDiv = document.getElementById('checkinResult');
+  const body = { student_id: currentStudentId, code };
+  // Try GPS
+  if (navigator.geolocation) {
+    try {
+      const pos = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 }));
+      body.latitude = pos.coords.latitude;
+      body.longitude = pos.coords.longitude;
+    } catch (_) { /* GPS optional */ }
+  }
+  try {
+    const res = await fetch('/attendance/checkin-by-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '簽到失敗');
+    const statusText = data.status === 'present' ? '✅ 準時簽到' : '⚠️ 遲到簽到';
+    const statusColor = data.status === 'present' ? 'var(--green)' : 'var(--amber)';
+    resultDiv.style.display = 'block';
+    resultDiv.style.background = data.status === 'present' ? 'rgba(16,185,129,0.15)' : 'rgba(251,191,36,0.15)';
+    resultDiv.style.border = `1px solid ${statusColor}`;
+    resultDiv.innerHTML = `<span style="color:${statusColor};font-weight:600">${statusText}</span> — ${new Date(data.checked_in_at * 1000).toLocaleString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+    document.getElementById('checkinCodeInput').value = '';
+  } catch (e) {
+    resultDiv.style.display = 'block';
+    resultDiv.style.background = 'rgba(239,68,68,0.15)';
+    resultDiv.style.border = '1px solid var(--red)';
+    resultDiv.innerHTML = `<span style="color:var(--red);font-weight:600">❌ ${e.message}</span>`;
+  } finally {
+    btn.disabled = false; btn.textContent = '✅ 簽到';
+  }
 }
 </script>
 </body>

@@ -29,6 +29,7 @@ from .analytics import (
     learning_trajectory,
 )
 from .assistant import LearningAssistant
+from .attendance import AttendanceManager, GPSLocation
 from .config import settings
 from .documents import parse_document
 from .interaction import InteractionManager
@@ -55,6 +56,7 @@ _rag: CourseRAG | None = None
 _quiz: QuizGenerator | None = None
 _quiz_manager: QuizSessionManager = QuizSessionManager()
 _interaction: InteractionManager = InteractionManager()
+_attendance: AttendanceManager = AttendanceManager()
 
 
 def get_assistant() -> LearningAssistant:
@@ -1395,6 +1397,213 @@ async def import_memory(file: UploadFile) -> ImportResponse:
         status="imported",
         user_id=bundle.user_id,
         records_imported=count,
+    )
+
+
+# ── Attendance ────────────────────────────────────────────────────
+
+
+class CreateAttendanceSessionRequest(BaseModel):
+    course_id: str
+    title: str = ""
+    late_threshold_sec: int = 600
+    latitude: float | None = None
+    longitude: float | None = None
+    gps_radius_m: float = 200.0
+
+
+class AttendanceSessionResponse(BaseModel):
+    session_id: str
+    course_id: str
+    title: str
+    status: str
+    checkin_code: str
+    created_at: float
+    closed_at: float | None = None
+    late_threshold_sec: int = 600
+    has_gps: bool = False
+
+
+class CheckinRequest(BaseModel):
+    student_id: int
+    code: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+
+
+class CheckinResponse(BaseModel):
+    student_id: int
+    session_id: str
+    status: str
+    checked_in_at: float
+
+
+class AttendanceStatsResponse(BaseModel):
+    session_id: str
+    title: str
+    status: str
+    total_checkins: int
+    present_count: int
+    late_count: int
+    student_ids: list[int]
+
+
+def _att_session_resp(s: Any) -> AttendanceSessionResponse:
+    return AttendanceSessionResponse(
+        session_id=s.session_id,
+        course_id=s.course_id,
+        title=s.title,
+        status=s.status.value,
+        checkin_code=s.checkin_code,
+        created_at=s.created_at,
+        closed_at=s.closed_at,
+        late_threshold_sec=s.late_threshold_sec,
+        has_gps=s.gps_location is not None,
+    )
+
+
+@app.post("/attendance/sessions", response_model=AttendanceSessionResponse)
+async def create_attendance_session(
+    req: CreateAttendanceSessionRequest,
+) -> AttendanceSessionResponse:
+    """Create and open an attendance session."""
+    gps = None
+    if req.latitude is not None and req.longitude is not None:
+        gps = GPSLocation(latitude=req.latitude, longitude=req.longitude)
+    session = _attendance.create_session(
+        req.course_id,
+        teacher_id=0,
+        title=req.title,
+        late_threshold_sec=req.late_threshold_sec,
+        gps_location=gps,
+        gps_radius_m=req.gps_radius_m,
+    )
+    return _att_session_resp(session)
+
+
+@app.post("/attendance/sessions/{session_id}/close", response_model=AttendanceSessionResponse)
+async def close_attendance_session(session_id: str) -> AttendanceSessionResponse:
+    """Close an attendance session."""
+    try:
+        session = _attendance.close_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _att_session_resp(session)
+
+
+@app.get("/attendance/sessions/{session_id}", response_model=AttendanceSessionResponse)
+async def get_attendance_session(session_id: str) -> AttendanceSessionResponse:
+    """Get session details."""
+    try:
+        session = _attendance.get_session(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return _att_session_resp(session)
+
+
+@app.get("/attendance/sessions")
+async def list_attendance_sessions(course_id: str | None = None) -> list[AttendanceSessionResponse]:
+    """List attendance sessions."""
+    sessions = _attendance.list_sessions(course_id)
+    return [_att_session_resp(s) for s in sessions]
+
+
+@app.post("/attendance/sessions/{session_id}/checkin", response_model=CheckinResponse)
+async def attendance_checkin(session_id: str, req: CheckinRequest) -> CheckinResponse:
+    """Student checks in to an attendance session."""
+    gps = None
+    if req.latitude is not None and req.longitude is not None:
+        gps = GPSLocation(latitude=req.latitude, longitude=req.longitude)
+    try:
+        record = _attendance.checkin(
+            session_id,
+            student_id=req.student_id,
+            code=req.code,
+            gps_location=gps,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return CheckinResponse(
+        student_id=record.student_id,
+        session_id=record.session_id,
+        status=record.status.value,
+        checked_in_at=record.checked_in_at,
+    )
+
+
+@app.get("/attendance/sessions/{session_id}/records")
+async def get_attendance_records(session_id: str) -> list[CheckinResponse]:
+    """Get all check-in records for a session."""
+    try:
+        records = _attendance.get_records(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return [
+        CheckinResponse(
+            student_id=r.student_id,
+            session_id=r.session_id,
+            status=r.status.value,
+            checked_in_at=r.checked_in_at,
+        )
+        for r in records
+    ]
+
+
+@app.get("/attendance/sessions/{session_id}/stats", response_model=AttendanceStatsResponse)
+async def get_attendance_stats(session_id: str) -> AttendanceStatsResponse:
+    """Get attendance statistics for a session."""
+    try:
+        stats = _attendance.session_stats(session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return AttendanceStatsResponse(
+        session_id=stats.session_id,
+        title=stats.title,
+        status=stats.status.value,
+        total_checkins=stats.total_checkins,
+        present_count=stats.present_count,
+        late_count=stats.late_count,
+        student_ids=stats.student_ids,
+    )
+
+
+@app.get("/attendance/student/{student_id}/history")
+async def get_student_attendance_history(
+    student_id: int, course_id: str | None = None
+) -> list[dict]:
+    """Get a student's attendance history."""
+    return _attendance.student_history(student_id, course_id)
+
+
+@app.post("/attendance/checkin-by-code", response_model=CheckinResponse)
+async def checkin_by_code(req: CheckinRequest) -> CheckinResponse:
+    """Student checks in using just a code (finds the matching session)."""
+    if not req.code:
+        raise HTTPException(status_code=400, detail="Check-in code is required")
+    session = _attendance.find_session_by_code(req.code)
+    if not session:
+        raise HTTPException(status_code=404, detail="No open session with this code")
+    gps = None
+    if req.latitude is not None and req.longitude is not None:
+        gps = GPSLocation(latitude=req.latitude, longitude=req.longitude)
+    try:
+        record = _attendance.checkin(
+            session.session_id,
+            student_id=req.student_id,
+            code=req.code,
+            gps_location=gps,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return CheckinResponse(
+        student_id=record.student_id,
+        session_id=record.session_id,
+        status=record.status.value,
+        checked_in_at=record.checked_in_at,
     )
 
 
