@@ -535,7 +535,19 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - /demo/reset now seeds grades alongside memories and conversations
 - [x] 1 new test (359 total), ruff clean
 
+## Student Grade View UI (2026-04-12)
+- [x] Student dashboard: 我的成績 section
+  - Grade card shows weighted total with letter grade (A/B/C/D/F color coding)
+  - Class rank display (e.g. "第 2 / 5 名")
+  - Per-category breakdown: name, weight, average %, weighted contribution
+  - Progress bars with color coding (green ≥80%, amber ≥60%, red <60%)
+  - Individual score items (e.g. "HW1: 82/100")
+  - Auto-loads from `/grades/{courseId}/student/{moodleId}` API
+  - Hidden when no grade data exists for current course
+  - Updates on course switch
+- [x] 1 new test (360 total), ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 2 — 成績管理 UI 完成
-Done: Grade management UI (category setup, score input, distribution chart, rankings), 359 tests passing
-Next step: 學生端成績檢視 UI 或 ROADMAP Phase 3 規劃
+Phase: ROADMAP Phase 2 — 學生端成績檢視 UI 完成
+Done: Student grade view UI (weighted total, rank, category breakdown, progress bars), 360 tests passing
+Next step: ROADMAP Phase 2 教學分析報表 或 Phase 3 規劃

@@ -166,6 +166,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .chat-history-item .ch-date{font-size:10px;color:var(--text-dim)}
 .chat-history-item .ch-q{color:var(--primary);font-weight:500}
 .chat-history-item .ch-a{color:var(--text-muted);margin-top:2px}
+/* Grade view */
+.grade-header{display:flex;align-items:center;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+.grade-total{font-size:28px;font-weight:700;color:var(--primary)}
+.grade-rank{font-size:13px;color:var(--text-muted)}
+.grade-letter{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;margin-left:8px}
+.grade-letter.A{background:#dcfce7;color:#166534}.grade-letter.B{background:#dbeafe;color:#1e40af}
+.grade-letter.C{background:#fef9c3;color:#854d0e}.grade-letter.D{background:#fed7aa;color:#9a3412}
+.grade-letter.F{background:#fecaca;color:#991b1b}
+.grade-cat{margin-bottom:10px}
+.grade-cat-header{display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:4px}
+.grade-cat-name{font-weight:600}
+.grade-cat-pct{color:var(--text-muted)}
+.grade-bar{height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden}
+.grade-bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
+.grade-items{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.grade-item{font-size:11px;color:var(--text-muted);background:var(--surface-2);padding:2px 8px;border-radius:4px}
 @media(max-width:900px){.layout{flex-direction:column}.side-col{width:100%}.chat-panel{height:400px;position:static}}
 </style>
 </head>
@@ -287,6 +303,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
           <div style="font-size:14px;font-weight:600;margin-bottom:4px">📊 你的成績</div>
           <div id="quizResultText" style="font-size:13px;color:var(--text-muted)"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Grade View -->
+    <div class="card" id="gradeCard" style="display:none">
+      <div class="card-title"><span class="icon">📝</span> 我的成績</div>
+      <div id="gradeContent">
+        <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">載入中...</div>
       </div>
     </div>
 
@@ -532,6 +556,7 @@ function renderDashboard() {
   document.getElementById('statStruggles').textContent = c.stats.struggles;
   document.getElementById('statTopics').textContent = c.stats.topics;
   refreshStats(s.moodle);
+  loadGrades(s.moodle, c.courseId || 'ds101');
   // Radar
   if(radarChart) radarChart.destroy();
   radarChart = new Chart(document.getElementById('radarChart'),{type:'radar',data:{
@@ -575,6 +600,36 @@ async function refreshStats(moodleId) {
     const topicCount = Object.keys(d.question_topics || {}).length;
     document.getElementById('statTopics').textContent = topicCount || document.getElementById('statTopics').textContent;
   } catch(e) { /* keep hardcoded fallback */ }
+}
+
+async function loadGrades(moodleId, courseId) {
+  const card = document.getElementById('gradeCard');
+  const content = document.getElementById('gradeContent');
+  try {
+    const res = await fetch(`/grades/${courseId}/student/${moodleId}`);
+    if (!res.ok) { card.style.display = 'none'; return; }
+    const g = await res.json();
+    card.style.display = '';
+    const letter = g.weighted_total >= 90 ? 'A' : g.weighted_total >= 80 ? 'B' : g.weighted_total >= 70 ? 'C' : g.weighted_total >= 60 ? 'D' : 'F';
+    const barColor = letter === 'A' ? 'var(--green)' : letter === 'B' ? 'var(--primary)' : letter === 'C' ? 'var(--amber)' : 'var(--red)';
+    let html = `<div class="grade-header">
+      <div><span class="grade-total">${g.weighted_total.toFixed(1)}</span><span class="grade-letter ${letter}">${letter}</span></div>
+      ${g.rank ? `<div class="grade-rank">班級排名 第 ${g.rank} / ${g.total_students} 名</div>` : ''}
+    </div>`;
+    g.categories.forEach(cat => {
+      const pct = cat.average_pct;
+      const catColor = pct >= 80 ? 'var(--green)' : pct >= 60 ? 'var(--amber)' : 'var(--red)';
+      html += `<div class="grade-cat">
+        <div class="grade-cat-header">
+          <span class="grade-cat-name">${cat.category}（佔 ${cat.weight}%）</span>
+          <span class="grade-cat-pct">${pct.toFixed(1)}% → 貢獻 ${cat.weighted_contribution.toFixed(1)} 分</span>
+        </div>
+        <div class="grade-bar"><div class="grade-bar-fill" style="width:${pct}%;background:${catColor}"></div></div>
+        <div class="grade-items">${cat.items.map(it => `<span class="grade-item">${it.item}: ${it.score}/${it.total}</span>`).join('')}</div>
+      </div>`;
+    });
+    content.innerHTML = html;
+  } catch(e) { card.style.display = 'none'; }
 }
 
 async function loadConversations(moodleId, courseName) {

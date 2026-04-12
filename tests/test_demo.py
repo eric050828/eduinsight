@@ -154,3 +154,14 @@ class TestPageRoutes:
             assert "quizJoinBanner" in text
             assert "quizSessionInput" in text
             assert "課堂測驗" in text
+
+    async def test_student_page_has_grade_view(self) -> None:
+        """Student dashboard includes grade view section."""
+        mem = Memory()
+        async with await _make_client(mem) as client:
+            resp = await client.get("/student")
+            text = resp.text
+            assert "gradeCard" in text
+            assert "gradeContent" in text
+            assert "我的成績" in text
+            assert "loadGrades" in text
