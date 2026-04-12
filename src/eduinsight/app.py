@@ -373,6 +373,7 @@ async def teacher_summaries() -> dict[str, Any]:
         1003: "C 王同學",
         1004: "D 李同學",
         1005: "E 張同學",
+        2001: "林小明（學期模擬）",
     }
     summaries = generate_class_summaries(mem, name_map=name_map)
     return {
@@ -2469,16 +2470,21 @@ async def book_office_hour_slot(slot_id: str, req: BookSlotRequest) -> BookingRe
 @app.get("/office-hours/bookings")
 async def list_office_hour_bookings(
     course_id: str | None = None,
-    student_id: int | None = None,
-    teacher_id: int | None = None,
+    student_id: str | None = None,
+    teacher_id: str | None = None,
     status: str | None = None,
 ) -> list[BookingResponse]:
     """List bookings with optional filters."""
     bk_status = BookingStatus(status) if status else None
+    try:
+        sid = int(student_id) if student_id else None
+        tid = int(teacher_id) if teacher_id else None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="student_id and teacher_id must be numeric")
     bookings = _office_hours.list_bookings(
         course_id=course_id,
-        student_id=student_id,
-        teacher_id=teacher_id,
+        student_id=sid,
+        teacher_id=tid,
         status=bk_status,
     )
     return [_booking_resp(b) for b in bookings]

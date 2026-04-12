@@ -896,83 +896,83 @@ tr:hover td{background:rgba(99,102,241,.03)}
     </div>
   </div>
 
-</div>
+  <!-- Office Hours Section -->
+  <div id="office-hours-section" style="margin-top:8px">
+    <div style="background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(168,85,247,0.08));border:1px solid rgba(99,102,241,0.25);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted)">
+      <span style="font-size:20px">🕐</span>
+      <span><strong style="color:var(--primary)">Office Hour 管理</strong> — 建立時段、管理預約，面談前查看學生 AI 學習摘要。</span>
+      <button onclick="refreshOfficeHours()" style="margin-left:auto;padding:3px 10px;border-radius:6px;border:1px solid var(--primary);background:none;color:var(--primary);font-size:11px;cursor:pointer">🔄 重整</button>
+    </div>
 
-<!-- Office Hours Section -->
-<div id="office-hours-section" style="margin-top:8px">
-  <div style="background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(168,85,247,0.08));border:1px solid rgba(99,102,241,0.25);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted)">
-    <span style="font-size:20px">🕐</span>
-    <span><strong style="color:var(--primary)">Office Hour 管理</strong> — 建立時段、管理預約，面談前查看學生 AI 學習摘要。</span>
-    <button onclick="refreshOfficeHours()" style="margin-left:auto;padding:3px 10px;border-radius:6px;border:1px solid var(--primary);background:none;color:var(--primary);font-size:11px;cursor:pointer">🔄 重整</button>
-  </div>
-
-  <div class="grid-2">
-    <!-- Create Slot -->
-    <div class="card">
-      <div class="card-header">
-        <div><div class="card-title">🆕 建立時段</div></div>
-      </div>
-      <div style="padding:12px;background:var(--surface-2);border-radius:8px">
-        <div style="display:flex;gap:8px;margin-bottom:6px">
-          <div style="flex:1">
-            <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px">課程</div>
-            <select id="ohCourse" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:inherit;outline:none">
-              <option value="ds101">資料結構</option>
-              <option value="py101">Python</option>
-              <option value="db101">資料庫</option>
-            </select>
-          </div>
-          <div style="flex:1">
-            <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px">地點</div>
-            <input id="ohLocation" type="text" placeholder="Room 301 / Zoom link" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:inherit;outline:none">
-          </div>
+    <div class="grid-2">
+      <!-- Create Slot -->
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">🆕 建立時段</div></div>
         </div>
-        <div style="display:flex;gap:8px;margin-bottom:6px">
-          <div style="flex:1">
-            <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px">開始時間</div>
-            <input id="ohStart" type="datetime-local" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:inherit;outline:none">
+        <div style="padding:12px;background:var(--surface-2);border-radius:8px">
+          <div style="display:flex;gap:8px;margin-bottom:6px">
+            <div style="flex:1">
+              <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px">課程</div>
+              <select id="ohCourse" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:inherit;outline:none">
+                <option value="ds101">資料結構</option>
+                <option value="py101">Python</option>
+                <option value="db101">資料庫</option>
+              </select>
+            </div>
+            <div style="flex:1">
+              <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px">地點</div>
+              <input id="ohLocation" type="text" placeholder="Room 301 / Zoom link" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:inherit;outline:none">
+            </div>
           </div>
-          <div style="flex:1">
-            <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px">結束時間</div>
-            <input id="ohEnd" type="datetime-local" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:inherit;outline:none">
+          <div style="display:flex;gap:8px;margin-bottom:6px">
+            <div style="flex:1">
+              <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px">開始時間</div>
+              <input id="ohStart" type="datetime-local" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:inherit;outline:none">
+            </div>
+            <div style="flex:1">
+              <div style="font-size:11px;color:var(--text-dim);margin-bottom:3px">結束時間</div>
+              <input id="ohEnd" type="datetime-local" style="width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12px;font-family:inherit;outline:none">
+            </div>
           </div>
+          <button onclick="createOHSlot()" style="padding:5px 14px;border-radius:6px;border:none;background:var(--primary);color:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">🕐 建立時段</button>
         </div>
-        <button onclick="createOHSlot()" style="padding:5px 14px;border-radius:6px;border:none;background:var(--primary);color:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">🕐 建立時段</button>
+      </div>
+
+      <!-- Slot List -->
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">📅 時段列表</div><div class="card-subtitle" id="ohSlotSub">—</div></div>
+        </div>
+        <div id="ohSlotList" style="max-height:300px;overflow-y:auto">
+          <div style="text-align:center;padding:20px;color:var(--text-dim);font-size:12px">尚無時段</div>
+        </div>
       </div>
     </div>
 
-    <!-- Slot List -->
-    <div class="card">
+    <!-- Bookings -->
+    <div class="card" style="margin-top:12px">
       <div class="card-header">
-        <div><div class="card-title">📅 時段列表</div><div class="card-subtitle" id="ohSlotSub">—</div></div>
+        <div><div class="card-title">📋 預約列表</div><div class="card-subtitle" id="ohBookingSub">—</div></div>
       </div>
-      <div id="ohSlotList" style="max-height:300px;overflow-y:auto">
-        <div style="text-align:center;padding:20px;color:var(--text-dim);font-size:12px">尚無時段</div>
+      <div id="ohBookingList" style="max-height:400px;overflow-y:auto">
+        <div style="text-align:center;padding:20px;color:var(--text-dim);font-size:12px">尚無預約</div>
+      </div>
+    </div>
+
+    <!-- Student Summary Modal Trigger Area -->
+    <div id="ohSummaryArea" style="margin-top:12px;display:none">
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">🧠 學生學習摘要</div><div class="card-subtitle" id="ohSummarySub">—</div></div>
+      </div>
+        <div id="ohSummaryContent" style="padding:12px">
+          <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">選擇預約以查看學生摘要</div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Bookings -->
-  <div class="card" style="margin-top:12px">
-    <div class="card-header">
-      <div><div class="card-title">📋 預約列表</div><div class="card-subtitle" id="ohBookingSub">—</div></div>
-    </div>
-    <div id="ohBookingList" style="max-height:400px;overflow-y:auto">
-      <div style="text-align:center;padding:20px;color:var(--text-dim);font-size:12px">尚無預約</div>
-    </div>
-  </div>
-
-  <!-- Student Summary Modal Trigger Area -->
-  <div id="ohSummaryArea" style="margin-top:12px;display:none">
-    <div class="card">
-      <div class="card-header">
-        <div><div class="card-title">🧠 學生學習摘要</div><div class="card-subtitle" id="ohSummarySub">—</div></div>
-      </div>
-      <div id="ohSummaryContent" style="padding:12px">
-        <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">選擇預約以查看學生摘要</div>
-      </div>
-    </div>
-  </div>
 </div>
 
 <!-- Care Modal -->

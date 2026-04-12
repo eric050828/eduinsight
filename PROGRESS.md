@@ -725,11 +725,26 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Graceful degradation: falls back to hardcoded mockup data if API unavailable
 - [x] 10 new tests (528 total), ruff clean
 
+## Bugfix: Supervisor Review Round 11 (2026-04-12)
+- [x] Fix Bug 5 [Critical] — teacher.html layout: office-hours-section 在 .main 外面
+  - `#office-hours-section` 是 `<body>` 的直接子元素，與 `.main` 在 flex row 中競爭空間
+  - `.main` 被壓縮到 width 0-293px，`#mainContent` height 僅 25px
+  - 所有教師端核心 sections（班級總覽、預警中心、AI 互動摘要等）完全不可見
+  - 修復：將 `office-hours-section` 移入 `.main` > `#mainContent` 內，成為最後一個子 section
+  - 驗證：Playwright 測試 sidebar 導航全部正常，0 console errors
+- [x] Fix Bug 4 — office-hours/bookings API student_id type
+  - `student_id: int | None` → `student_id: str | None`（teacher_id 同步修改）
+  - API 層 str→int 轉換，非數字 student_id 回 400 + 清楚錯誤訊息
+  - 前端不受影響（送 numeric moodle ID）
+- [x] Fix moodle:2001 name mapping in /teacher/summaries
+  - name_map 加入 `2001: "林小明（學期模擬）"`
+  - 不再顯示 raw uid "moodle:2001"
+- [x] 528 tests passing, ruff clean
+
 ## Current State
 Phase: ROADMAP 三階段全部完成 ✅
 Done: 所有計畫功能已實作（AI 助教、RAG、測驗、互動、點名、成績、報表、錄音、課堂助理、Office Hour）
 Tests: 528 passing
-Bugs fixed: Supervisor 報告的 4 個 bug 全部修復（global 宣告、sid 參數、grades 404、office-hours student_id）
-Demo: 一鍵 Demo 現在包含 RAG 教材 seed，可完整走通 RAG→AI 出題→即時測驗流程
-AI 摘要: 教師端 AI 互動摘要改為從即時 API 取得真實分析結果
+Bugs fixed: Supervisor Review Round 11 — Bug 5 (teacher layout critical) + Bug 4 (API type) + moodle:2001 name
+Demo: 教師端儀表板完整可見，所有 sidebar 導航正常
 Next step: 競賽準備（組隊、文件、影片）或新功能開發
