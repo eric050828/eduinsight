@@ -1377,7 +1377,7 @@ async def demo_reset() -> DemoResetResponse:
     This deletes all existing data and populates the database with
     5 demo students for walkthrough purposes.
     """
-    global _memory, _assistant
+    global _memory, _assistant, _rag, _quiz
 
     # Import seed data
     from .demo_data import DEMO_STUDENTS
@@ -1393,6 +1393,8 @@ async def demo_reset() -> DemoResetResponse:
 
     _memory = Memory(db_path, embedder=embedder)
     _assistant = LearningAssistant(_memory, llm=_llm)
+    _rag = CourseRAG(_memory)
+    _quiz = QuizGenerator(_rag, _llm) if _llm is not None else None
 
     # Seed demo data (each fact is a (text, category) tuple)
     total_seeded = 0
@@ -1426,6 +1428,12 @@ async def demo_reset() -> DemoResetResponse:
     from .demo_grades import seed_demo_grades
 
     seed_demo_grades(_grades)
+
+    # Seed demo course materials for RAG (enables AI quiz demo flow)
+    from .demo_materials import seed_demo_materials
+
+    chunks_indexed = seed_demo_materials(_rag)
+    logger.info("Demo seed: %d material chunks indexed for RAG", chunks_indexed)
 
     return DemoResetResponse(
         status="seeded",

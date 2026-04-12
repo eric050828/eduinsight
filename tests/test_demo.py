@@ -100,6 +100,29 @@ class TestDemoReset:
         finally:
             app_module.settings.memory_db_path = original_path
 
+    async def test_demo_reset_seeds_materials(self, tmp_path) -> None:
+        """POST /demo/reset seeds course materials for RAG."""
+        import eduinsight.app as app_module
+
+        db_path = str(tmp_path / "demo_materials.db")
+        app_module._memory = Memory(db_path)
+        app_module._assistant = LearningAssistant(app_module._memory)
+
+        original_path = app_module.settings.memory_db_path
+        app_module.settings.memory_db_path = db_path
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await client.post("/demo/reset")
+                # Check ds101 has indexed materials
+                resp = await client.get("/courses/ds101/materials")
+                assert resp.status_code == 200
+                docs = resp.json()["documents"]
+                assert len(docs) >= 1
+                assert "ds101_lecture_notes.pdf" in docs
+        finally:
+            app_module.settings.memory_db_path = original_path
+
     async def test_demo_page_served(self) -> None:
         """GET /demo serves the walkthrough page."""
         mem = Memory()
