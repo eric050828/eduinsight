@@ -741,10 +741,22 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - 不再顯示 raw uid "moodle:2001"
 - [x] 528 tests passing, ruff clean
 
+## Demo Quiz Session Seeding (2026-04-12)
+- [x] Pre-built quiz questions (demo_quiz.py)
+  - 5 MCQ from ds101 data structures (arrays, linked lists, stacks, BFS, hash tables)
+  - QuizSessionQuestion objects matching live_quiz.py data model
+  - 3 students' answer sets: 1001 (4/5), 1002 (3/5), 1004 (2/5 — risk student)
+- [x] seed_demo_quiz() creates session → activates → submits answers → closes
+  - Clears existing sessions before seeding
+  - Session title: "資料結構 第10週隨堂測驗"
+- [x] /demo/reset now seeds live quiz session alongside materials, grades, conversations
+  - Full demo flow: one-click reset → teacher sees quiz stats with real student answer data
+- [x] 1 new test (529 total), ruff clean
+
 ## Current State
 Phase: ROADMAP 三階段全部完成 ✅
 Done: 所有計畫功能已實作（AI 助教、RAG、測驗、互動、點名、成績、報表、錄音、課堂助理、Office Hour）
-Tests: 528 passing
+Tests: 529 passing
 Bugs fixed: Supervisor Review Round 11 — Bug 5 (teacher layout critical) + Bug 4 (API type) + moodle:2001 name
-Demo: 教師端儀表板完整可見，所有 sidebar 導航正常
+Demo: 教師端儀表板完整可見，所有 sidebar 導航正常，即時測驗有預建 demo 資料
 Next step: 競賽準備（組隊、文件、影片）或新功能開發
