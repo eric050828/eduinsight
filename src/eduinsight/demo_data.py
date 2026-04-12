@@ -68,18 +68,12 @@ DEMO_STUDENTS: dict[str, list[DemoFact]] = {
         ("Struggling with debugging techniques: doesn't know how to read Python tracebacks or use print debugging effectively", "struggling"),
         ("Learning preference: learns best from simple code examples with inline comments", "preference"),
     ],
-    # Student 1004 - database and SQL focus
+    # Student 1004 - at-risk, disengaged early, few interactions, high struggle ratio
     "moodle:1004": [
-        ("[Database Systems] Normalization theory: 1NF atomic values, 2NF no partial deps, 3NF no transitive deps, BCNF every determinant is candidate key", "general"),
-        ("[Database Systems] Indexing guidelines: index columns in WHERE/JOIN/ORDER BY, avoid for small tables, low cardinality columns, or heavy-write tables", "general"),
-        ("[Database Systems] ACID transaction properties: Atomicity (all-or-nothing), Consistency (valid states), Isolation (no interference), Durability (survives crashes)", "general"),
-        ("[Database Systems] SQL vs NoSQL paradigms: SQL is relational with schema and ACID, NoSQL is flexible with horizontal scaling and eventual consistency", "general"),
-        ("[Database Systems] Asked about normalization: What is database normalization and what are the normal forms?", "general"),
-        ("[Database Systems] Asked about indexing: When should I create a database index and when should I avoid it?", "general"),
-        ("[Database Systems] Asked about transactions: Explain the ACID properties of database transactions", "general"),
-        ("[Database Systems] Asked about database types: What is the difference between SQL and NoSQL databases?", "general"),
+        ("[Database Systems] Basic SELECT syntax: learned SELECT column FROM table WHERE condition basics", "general"),
         ("Struggling with JOIN queries: especially confused by LEFT JOIN vs INNER JOIN behavior with NULL values", "struggling"),
         ("Struggling with query optimization: understands EXPLAIN output but can't interpret execution plans effectively", "struggling"),
+        ("Struggling with table design: unsure when to split tables or use foreign keys for relationships", "struggling"),
         ("Learning preference: prefers real-world examples connecting theory to practical database design", "preference"),
     ],
     # Student 1005 - mid-level, practical DB learner

@@ -37,7 +37,7 @@ class TestDemoReset:
                 data = resp.json()
                 assert data["status"] == "seeded"
                 assert data["students_seeded"] == 5
-                assert data["total_memories"] == 60
+                assert data["total_memories"] == 54
 
                 # Verify teacher dashboard shows the seeded students
                 resp2 = await client.get("/teacher/students")

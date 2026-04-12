@@ -1430,11 +1430,23 @@ async def demo_reset() -> DemoResetResponse:
     _quiz = QuizGenerator(_rag, _llm) if _llm is not None else None
 
     # Seed demo data (each fact is a (text, category) tuple)
+    import time as _time
+
     total_seeded = 0
     for user_id, facts in DEMO_STUDENTS.items():
         for fact_text, category in facts:
             _memory.add(user_id, fact_text, category=category)
         total_seeded += len(facts)
+
+    # Backdate student 1004's facts to 3 weeks ago to create a "high risk" profile
+    _backdate_uid = "moodle:1004"
+    _backdate_ts = _time.time() - 21 * 86400  # 21 days ago
+    conn = _memory._store._get_conn()
+    conn.execute(
+        "UPDATE facts SET created_at = ?, updated_at = ? WHERE user_id = ?",
+        (_backdate_ts, _backdate_ts, _backdate_uid),
+    )
+    conn.commit()
 
     # Seed sample conversation messages for chat history display
     from .demo_conversations import DEMO_CONVERSATIONS
