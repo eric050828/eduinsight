@@ -244,7 +244,7 @@ tr:hover td{background:rgba(99,102,241,.03)}
 
     <!-- AI Interaction Summary -->
     <div class="card" id="ai-summary">
-      <div class="card-header"><div><div class="card-title">💬 AI 互動摘要</div><div class="card-subtitle">聚合式互動紀錄 · 保護學生隱私，僅顯示統計與趨勢</div></div></div>
+      <div class="card-header"><div><div class="card-title">💬 AI 互動摘要</div><div class="card-subtitle">聚合式互動紀錄 · 保護學生隱私，僅顯示統計與趨勢 · <span id="aiSummarySource" style="color:var(--text-dim)">載入中…</span></div></div></div>
       <div id="aiSummaryList"></div>
     </div>
 
@@ -1708,15 +1708,36 @@ function renderStudentTable(d) {
   }).join('');
 }
 
-function renderAISummaries(d) {
+function renderAISummaryItems(items) {
   const container = document.getElementById('aiSummaryList');
-  container.innerHTML = d.aiSummaries.map(s => {
+  container.innerHTML = items.map(s => {
     return `<div class="ai-summary-item risk-${s.risk}">
       <span class="summary-name">${s.name}</span>
       <span class="summary-tag" style="background:${s.risk==='high'?'rgba(248,113,113,.12);color:var(--red)':s.risk==='medium'?'rgba(251,191,36,.12);color:var(--amber)':'rgba(52,211,153,.12);color:var(--green)'}">${s.risk==='high'?'高風險':s.risk==='medium'?'需關注':'正常'}</span>
       — ${s.text}
     </div>`;
   }).join('');
+}
+
+function renderAISummaries(d) {
+  const srcEl = document.getElementById('aiSummarySource');
+  // Try real API first, fall back to hardcoded data
+  fetch('/teacher/summaries')
+    .then(r => r.json())
+    .then(data => {
+      if (data.summaries && data.summaries.length > 0) {
+        renderAISummaryItems(data.summaries);
+        srcEl.textContent = '📡 即時分析';
+        srcEl.style.color = 'var(--accent)';
+      } else {
+        renderAISummaryItems(d.aiSummaries);
+        srcEl.textContent = '模擬資料';
+      }
+    })
+    .catch(() => {
+      renderAISummaryItems(d.aiSummaries);
+      srcEl.textContent = '模擬資料';
+    });
 }
 
 function renderPrefChart(d) {

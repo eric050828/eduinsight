@@ -476,3 +476,139 @@ def assess_risk(
         factors=factors,
         days_since_last_activity=days_since,
     )
+
+
+# ------------------------------------------------------------------
+# Teacher-facing AI interaction summary (rule-based, no LLM needed)
+# ------------------------------------------------------------------
+
+
+@dataclass
+class AIInteractionSummary:
+    """A teacher-facing summary of a student's AI interaction patterns."""
+
+    moodle_user_id: int
+    name: str  # display label (e.g. "moodle:1001")
+    risk: str  # "high", "medium", "low"
+    text: str  # human-readable summary paragraph
+
+
+def generate_student_summary(
+    memory: Memory,
+    moodle_user_id: int,
+    *,
+    display_name: str | None = None,
+    class_avg_facts: float | None = None,
+    now: float | None = None,
+) -> AIInteractionSummary:
+    """Generate a teacher-facing summary of a student's AI interaction.
+
+    Aggregates analytics (struggles, topics, preferences), risk assessment,
+    and trajectory data into a concise text paragraph. Rule-based — no LLM.
+    """
+    uid = _student_uid(moodle_user_id)
+    name = display_name or uid
+    now_ts = now or time.time()
+
+    # Gather all data
+    sa = analyze_student(memory, moodle_user_id)
+    risk = assess_risk(memory, moodle_user_id, class_avg_facts=class_avg_facts, now=now_ts)
+    traj = learning_trajectory(memory, moodle_user_id)
+
+    # No data at all
+    if sa.total_facts == 0:
+        return AIInteractionSummary(
+            moodle_user_id=moodle_user_id,
+            name=name,
+            risk=risk.risk_level,
+            text="該學生尚無任何 AI 互動紀錄。",
+        )
+
+    parts: list[str] = []
+
+    # Total interaction count
+    parts.append(f"累計 {sa.total_facts} 筆 AI 互動記憶")
+
+    # Recent activity from trajectory
+    if traj.points:
+        last_point = traj.points[-1]
+        parts.append(f"最近一週新增 {last_point.new_facts} 筆")
+
+    # Struggle summary
+    if sa.struggles:
+        struggle_count = len(sa.struggles)
+        top_struggles = sa.weak_topics[:3]
+        struggle_str = "、".join(top_struggles)
+        parts.append(f"{struggle_count} 項困難（集中在 {struggle_str}）")
+    else:
+        parts.append("未記錄明顯困難")
+
+    # Topic focus
+    if sa.question_topics:
+        sorted_topics = sorted(sa.question_topics.items(), key=lambda x: -x[1])
+        top_topic = sorted_topics[0]
+        parts.append(f"最常提問主題：{top_topic[0]}（{top_topic[1]} 次）")
+
+    # Preferences
+    if sa.preferences:
+        parts.append(f"偏好 {sa.preferences[0]}")
+
+    # Risk factors
+    for factor in risk.factors:
+        if factor.severity == "high":
+            parts.append(f"⚠️ {factor.label}：{factor.detail}")
+
+    # Days since last activity
+    if risk.days_since_last_activity is not None and risk.days_since_last_activity > 7:
+        parts.append(f"已 {risk.days_since_last_activity} 天未上線")
+
+    # Persistence score context
+    parts.append(f"Persistence Score: {risk.persistence_score}%")
+
+    text = "。".join(parts) + "。"
+    return AIInteractionSummary(
+        moodle_user_id=moodle_user_id,
+        name=name,
+        risk=risk.risk_level,
+        text=text,
+    )
+
+
+def generate_class_summaries(
+    memory: Memory,
+    *,
+    name_map: dict[int, str] | None = None,
+    now: float | None = None,
+) -> list[AIInteractionSummary]:
+    """Generate summaries for all students in the class.
+
+    Parameters
+    ----------
+    name_map : dict mapping moodle_user_id → display name (optional)
+    """
+    stats = memory.detailed_stats()
+    moodle_users = [u for u in stats.users if u.user_id.startswith("moodle:")]
+
+    if not moodle_users:
+        return []
+
+    class_avg_facts = sum(u.fact_count for u in moodle_users) / len(moodle_users)
+    name_map = name_map or {}
+
+    summaries = []
+    for u in moodle_users:
+        mid = int(u.user_id.removeprefix("moodle:"))
+        display = name_map.get(mid)
+        s = generate_student_summary(
+            memory,
+            mid,
+            display_name=display,
+            class_avg_facts=class_avg_facts,
+            now=now,
+        )
+        summaries.append(s)
+
+    # Sort: high risk first, then medium, then low
+    risk_order = {"high": 0, "medium": 1, "low": 2}
+    summaries.sort(key=lambda s: (risk_order.get(s.risk, 3), -s.moodle_user_id))
+    return summaries

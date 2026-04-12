@@ -711,10 +711,25 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Enables full RAG → AI Quiz → Live Quiz demo flow from single click
 - [x] 1 new test (518 total), ruff clean
 
+## Teacher AI Interaction Summaries — Real Data (2026-04-12)
+- [x] AI interaction summary generator (analytics.py)
+  - generate_student_summary(): rule-based text from real analytics data (no LLM needed)
+  - Aggregates: fact count, struggles, weak topics, preferences, risk factors, trajectory
+  - generate_class_summaries(): batch summaries for all students, sorted by risk level
+  - AIInteractionSummary dataclass with moodle_user_id, name, risk, text
+- [x] GET /teacher/summaries API endpoint
+  - Returns all student summaries with risk level and display names
+  - Demo name map for known students (1001-1005)
+- [x] Teacher dashboard: AI 互動摘要 section now fetches from real API
+  - Shows "📡 即時分析" label when real data loaded, "模擬資料" as fallback
+  - Graceful degradation: falls back to hardcoded mockup data if API unavailable
+- [x] 10 new tests (528 total), ruff clean
+
 ## Current State
 Phase: ROADMAP 三階段全部完成 ✅
 Done: 所有計畫功能已實作（AI 助教、RAG、測驗、互動、點名、成績、報表、錄音、課堂助理、Office Hour）
-Tests: 518 passing
+Tests: 528 passing
 Bugs fixed: Supervisor 報告的 4 個 bug 全部修復（global 宣告、sid 參數、grades 404、office-hours student_id）
 Demo: 一鍵 Demo 現在包含 RAG 教材 seed，可完整走通 RAG→AI 出題→即時測驗流程
+AI 摘要: 教師端 AI 互動摘要改為從即時 API 取得真實分析結果
 Next step: 競賽準備（組隊、文件、影片）或新功能開發

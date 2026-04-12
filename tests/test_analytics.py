@@ -9,6 +9,8 @@ from eduinsight.analytics import (
     analyze_class,
     analyze_student,
     assess_risk,
+    generate_class_summaries,
+    generate_student_summary,
     learning_trajectory,
 )
 from eduinsight.app import app
@@ -457,3 +459,113 @@ class TestRiskEndpoint:
             assert data["risk_level"] == "high"
             assert data["persistence_score"] == 0
             assert data["days_since_last_activity"] is None
+
+
+# ------------------------------------------------------------------
+# Unit tests for AI interaction summaries
+# ------------------------------------------------------------------
+
+
+class TestGenerateStudentSummary:
+    def test_empty_student(self) -> None:
+        mem = Memory()
+        s = generate_student_summary(mem, 999, display_name="測試生")
+        assert s.moodle_user_id == 999
+        assert s.name == "測試生"
+        assert s.risk == "high"
+        assert "尚無任何 AI 互動" in s.text
+
+    def test_summary_with_struggles(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "Struggling with recursion: base case confusion")
+        mem.add("moodle:1", "Struggling with pointers: null dereference")
+        mem.add("moodle:1", "[OOP] Q: What is inheritance?")
+        mem.add("moodle:1", "Learning preference: visual diagrams")
+
+        s = generate_student_summary(mem, 1, display_name="A 同學", now=time.time())
+        assert s.name == "A 同學"
+        assert "困難" in s.text
+        assert "Persistence Score" in s.text
+        assert s.risk in ("high", "medium", "low")
+
+    def test_summary_with_no_struggles(self) -> None:
+        mem = Memory()
+        mem.add("moodle:2", "[Python] Q: How to use list comprehension?")
+        mem.add("moodle:2", "[Python] Q: What is a generator?")
+        mem.add("moodle:2", "Learning preference: code examples")
+
+        s = generate_student_summary(mem, 2, now=time.time())
+        assert "未記錄明顯困難" in s.text
+
+    def test_default_name(self) -> None:
+        mem = Memory()
+        mem.add("moodle:42", "[Math] Q: integral")
+        s = generate_student_summary(mem, 42, now=time.time())
+        assert s.name == "moodle:42"
+
+
+class TestGenerateClassSummaries:
+    def test_empty_class(self) -> None:
+        mem = Memory()
+        result = generate_class_summaries(mem)
+        assert result == []
+
+    def test_class_with_demo_data(self) -> None:
+        mem = Memory()
+        _seed_demo(mem)
+        result = generate_class_summaries(mem, now=time.time())
+        assert len(result) == 5  # 5 demo students
+        # All summaries have required fields
+        for s in result:
+            assert s.moodle_user_id > 0
+            assert s.risk in ("high", "medium", "low")
+            assert len(s.text) > 10
+
+    def test_sorted_by_risk(self) -> None:
+        mem = Memory()
+        _seed_demo(mem)
+        result = generate_class_summaries(mem, now=time.time())
+        # High risk should come first
+        risk_order = {"high": 0, "medium": 1, "low": 2}
+        for i in range(len(result) - 1):
+            assert risk_order[result[i].risk] <= risk_order[result[i + 1].risk]
+
+    def test_name_map(self) -> None:
+        mem = Memory()
+        _seed_demo(mem)
+        names = {1001: "陳同學", 1002: "林同學"}
+        result = generate_class_summaries(mem, name_map=names, now=time.time())
+        named = {s.moodle_user_id: s.name for s in result}
+        assert named[1001] == "陳同學"
+        assert named[1002] == "林同學"
+
+
+# ------------------------------------------------------------------
+# API tests for /teacher/summaries
+# ------------------------------------------------------------------
+
+
+class TestSummariesAPI:
+    async def test_summaries_empty(self) -> None:
+        mem = Memory()
+        async with await _make_client(mem) as client:
+            resp = await client.get("/teacher/summaries")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["count"] == 0
+            assert data["summaries"] == []
+
+    async def test_summaries_with_data(self) -> None:
+        mem = Memory()
+        _seed_demo(mem)
+        async with await _make_client(mem) as client:
+            resp = await client.get("/teacher/summaries")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["count"] == 5
+            for s in data["summaries"]:
+                assert "moodle_user_id" in s
+                assert "name" in s
+                assert "risk" in s
+                assert "text" in s
+                assert s["risk"] in ("high", "medium", "low")

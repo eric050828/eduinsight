@@ -26,6 +26,7 @@ from .analytics import (
     analyze_class,
     analyze_student,
     assess_risk,
+    generate_class_summaries,
     learning_trajectory,
 )
 from .assistant import LearningAssistant
@@ -354,6 +355,37 @@ async def teacher_student_memories(moodle_user_id: int) -> dict[str, Any]:
         "moodle_user_id": moodle_user_id,
         "count": len(memories),
         "memories": memories,
+    }
+
+
+@app.get("/teacher/summaries")
+async def teacher_summaries() -> dict[str, Any]:
+    """AI interaction summaries for all students (teacher view).
+
+    Returns rule-based summaries generated from real analytics data —
+    struggles, topics, risk factors, and trajectory patterns.
+    """
+    mem = get_assistant().memory
+    # Demo name map for known students
+    name_map = {
+        1001: "A 陳同學",
+        1002: "B 林同學",
+        1003: "C 王同學",
+        1004: "D 李同學",
+        1005: "E 張同學",
+    }
+    summaries = generate_class_summaries(mem, name_map=name_map)
+    return {
+        "count": len(summaries),
+        "summaries": [
+            {
+                "moodle_user_id": s.moodle_user_id,
+                "name": s.name,
+                "risk": s.risk,
+                "text": s.text,
+            }
+            for s in summaries
+        ],
     }
 
 
