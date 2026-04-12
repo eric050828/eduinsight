@@ -576,7 +576,60 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - One-click Excel export button
 - [x] 30 new tests (390 total), ruff clean
 
+## Lecture Recording System — Phase 3 Start (2026-04-12)
+- [x] Transcription module (transcribe.py)
+  - Groq Whisper API backend (whisper-large-v3-turbo, 25MB limit)
+  - OpenAI Whisper API backend
+  - StubTranscriber for testing (returns placeholder segments)
+  - auto_transcriber() factory: selects backend from GROQ_API_KEY / OPENAI_API_KEY
+  - TranscriptResult with segments (start, end, text) and full_text
+- [x] Lecture manager (lectures.py)
+  - LectureManager: full pipeline (transcribe → summarize → index to RAG)
+  - Lecture dataclass: id, course_id, title, filename, transcript, summary, chunks_indexed
+  - Transcript segments indexed into CourseRAG for student search
+  - CRUD: process_lecture, list, get, delete (with RAG cleanup)
+  - In-memory store (single-process demo)
+- [x] API endpoints (4 routes)
+  - POST /lectures/{course_id}/upload — upload audio file, transcribe + summarize + index
+  - GET /lectures/{course_id} — list lectures for course
+  - GET /lectures/{course_id}/{lecture_id}/transcript — full transcript with segments
+  - DELETE /lectures/{course_id}/{lecture_id} — remove lecture + RAG chunks
+- [x] Teacher dashboard: 課堂錄音管理 UI
+  - Sidebar nav: 🎙️ 課堂錄音 section
+  - Upload: file picker (audio), course ID + title input
+  - Lecture list: shows title, filename, chunk count, created date
+  - Transcript viewer: click lecture → view full transcript + summary
+  - Delete with confirmation
+- [x] Student dashboard: lecture browsing
+  - Lectures card showing available recordings per course
+  - Lecture content indexed into RAG — students can ask questions about lecture content in chat
+- [x] 40 new tests (430 total), ruff clean
+
+## AI Classroom Assistant — Real-time Teaching Insights (2026-04-12)
+- [x] ClassroomAssistant engine (classroom_assistant.py)
+  - Aggregates live data: quiz results, polls, anonymous questions, danmaku, attendance
+  - Alert system: warning + critical levels from 5 data sources
+  - Quiz analysis: per-question correct rate, low participation detection
+  - Poll analysis: confusion keyword detection (懂/不懂), confusion ratio calculation
+  - Question analysis: unresolved question surge, high-upvote individual alerts
+  - Attendance analysis: late ratio monitoring
+  - Danmaku analysis: confusion keyword burst in 5-min window, message rate
+  - Suggestion engine: rule-based actionable teaching advice from alerts
+  - Configurable thresholds: correct rate, confusion ratio, question surge, late ratio
+- [x] API endpoint
+  - GET /classroom/{course_id}/snapshot — real-time snapshot with alerts, suggestions, metrics
+  - Query param: expected_students (default 30)
+- [x] Teacher dashboard: 🤖 AI 課堂助理 UI
+  - Sidebar nav: AI 課堂助理 section
+  - 6 metric cards: quiz correct rate, participation, poll confusion, active questions, attendance, danmaku rate
+  - Color-coded metrics (green/amber/red based on thresholds)
+  - Alert feed: critical (🚨) and warning (⚠️) with source icons
+  - Suggestion cards with priority levels
+  - Course ID + expected students input
+  - Auto-refresh toggle (5s interval) for live monitoring
+- [x] 30 new tests (460 total), ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 2 — 教學分析報表完成
-Done: Teaching analytics report (weekly metrics, AI-grade correlation, Excel export, teacher UI), 390 tests passing
-Next step: ROADMAP Phase 3 規劃 或其他增強功能
+Phase: ROADMAP Phase 3 — AI 課堂助理完成
+Done: Classroom assistant (real-time alerts + suggestions from quiz/poll/question/attendance/danmaku), 460 tests passing
+Next step: Phase 3 continued — Office Hour 整合

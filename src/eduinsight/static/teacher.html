@@ -156,9 +156,11 @@ tr:hover td{background:rgba(99,102,241,.03)}
     <div class="nav-item" data-target="students"><span class="nav-icon">👤</span>學生列表</div>
     <div class="nav-item" data-target="ai-summary"><span class="nav-icon">💬</span>AI 互動摘要</div>
     <div class="nav-item" data-target="trends"><span class="nav-icon">📈</span>週趨勢</div>
+    <div class="nav-item" data-target="classroom-assistant-section"><span class="nav-icon">🤖</span>AI 課堂助理</div>
     <div class="nav-divider"></div>
     <div class="nav-item" data-target="live-data"><span class="nav-icon">📡</span>即時數據</div>
     <div class="nav-item" data-target="materials-section"><span class="nav-icon">📚</span>教材管理</div>
+    <div class="nav-item" data-target="lectures-section"><span class="nav-icon">🎙️</span>課堂錄音</div>
     <div class="nav-item" data-target="quiz-section"><span class="nav-icon">🎯</span>AI 出題</div>
     <div class="nav-item" data-target="live-quiz-section"><span class="nav-icon">📡</span>即時測驗</div>
     <div class="nav-item" data-target="interaction-section"><span class="nav-icon">🙋</span>課堂互動</div>
@@ -252,6 +254,65 @@ tr:hover td{background:rgba(99,102,241,.03)}
       <div class="card"><div class="card-title" style="font-size:13px;margin-bottom:10px">🧠 AI 使用行為（全班 vs 個人）</div><div class="chart-wrap-sm"><canvas id="behaviorChart"></canvas></div></div>
     </div>
 
+    <!-- AI Classroom Assistant Section -->
+    <div id="classroom-assistant-section" style="margin-top:8px">
+      <div style="background:linear-gradient(135deg,rgba(251,146,60,0.12),rgba(168,85,247,0.08));border:1px solid rgba(251,146,60,0.25);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted)">
+        <span style="font-size:20px">🤖</span>
+        <span><strong style="color:#fb923c">AI 課堂助理</strong> — 即時分析測驗、投票、提問、彈幕、出席等數據，自動產生教學建議。
+          <span style="margin-left:4px;font-size:11px;color:var(--text-dim)">Course:</span>
+          <input id="casCourseId" value="ds101" style="width:70px;padding:2px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:11px;margin-left:2px">
+          <span style="margin-left:4px;font-size:11px;color:var(--text-dim)">預期人數:</span>
+          <input id="casExpected" type="number" value="30" min="1" style="width:50px;padding:2px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:11px;margin-left:2px">
+          <button id="casRefreshBtn" style="margin-left:8px;padding:3px 10px;border-radius:6px;border:1px solid #fb923c;background:none;color:#fb923c;font-size:11px;cursor:pointer" onclick="loadClassroomSnapshot()">🔄 更新</button>
+          <label style="margin-left:8px;font-size:11px"><input type="checkbox" id="casAutoRefresh" style="margin-right:3px">自動更新 (5s)</label>
+        </span>
+      </div>
+
+      <!-- Metrics cards -->
+      <div id="casMetrics" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:16px">
+        <div class="stat-card" style="text-align:center;padding:12px">
+          <div style="font-size:22px;font-weight:700" id="casQuizCorrect">—</div>
+          <div style="font-size:11px;color:var(--text-dim)">測驗平均答對率</div>
+        </div>
+        <div class="stat-card" style="text-align:center;padding:12px">
+          <div style="font-size:22px;font-weight:700" id="casQuizParticipation">—</div>
+          <div style="font-size:11px;color:var(--text-dim)">測驗參與率</div>
+        </div>
+        <div class="stat-card" style="text-align:center;padding:12px">
+          <div style="font-size:22px;font-weight:700" id="casPollConfusion">—</div>
+          <div style="font-size:11px;color:var(--text-dim)">投票困惑比</div>
+        </div>
+        <div class="stat-card" style="text-align:center;padding:12px">
+          <div style="font-size:22px;font-weight:700" id="casActiveQuestions">—</div>
+          <div style="font-size:11px;color:var(--text-dim)">待答提問</div>
+        </div>
+        <div class="stat-card" style="text-align:center;padding:12px">
+          <div style="font-size:22px;font-weight:700" id="casAttendance">—</div>
+          <div style="font-size:11px;color:var(--text-dim)">出席 / 遲到</div>
+        </div>
+        <div class="stat-card" style="text-align:center;padding:12px">
+          <div style="font-size:22px;font-weight:700" id="casDanmakuRate">—</div>
+          <div style="font-size:11px;color:var(--text-dim)">彈幕速率 (則/分)</div>
+        </div>
+      </div>
+
+      <!-- Alerts -->
+      <div style="margin-bottom:16px">
+        <h3 style="font-size:14px;margin-bottom:8px">⚡ 即時警報 <span id="casAlertBadge" style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;display:none">0</span></h3>
+        <div id="casAlerts" style="display:flex;flex-direction:column;gap:6px">
+          <div style="color:var(--text-dim);font-size:12px;padding:12px;text-align:center">尚無警報，點擊「更新」取得即時狀態</div>
+        </div>
+      </div>
+
+      <!-- Suggestions -->
+      <div>
+        <h3 style="font-size:14px;margin-bottom:8px">💡 教學建議</h3>
+        <div id="casSuggestions" style="display:flex;flex-direction:column;gap:6px">
+          <div style="color:var(--text-dim);font-size:12px;padding:12px;text-align:center">點擊「更新」取得 AI 建議</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Live Data Section -->
     <div id="live-data" style="margin-top:8px">
       <div style="background:linear-gradient(135deg,rgba(34,211,238,0.12),rgba(99,102,241,0.08));border:1px solid rgba(34,211,238,0.25);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted)">
@@ -319,6 +380,60 @@ tr:hover td{background:rgba(99,102,241,.03)}
           <div id="matList" style="min-height:80px">
             <div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px">尚未載入</div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="lectures-section" style="margin-top:8px">
+      <div style="background:linear-gradient(135deg,rgba(168,85,247,0.12),rgba(34,211,238,0.08));border:1px solid rgba(168,85,247,0.25);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted)">
+        <span style="font-size:20px">🎙️</span>
+        <span><strong style="color:#a855f7">課堂錄音管理</strong> — 上傳課堂錄音，AI 自動轉錄文字、生成摘要，並索引至 RAG 讓學生搜尋課堂內容。</span>
+      </div>
+      <div class="card-grid" style="grid-template-columns:1fr 1fr">
+        <div class="card">
+          <div class="card-title">🎙️ 上傳錄音</div>
+          <div class="card-subtitle">支援 mp3, wav, m4a, ogg, flac, webm（最大 25MB）</div>
+          <div style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;gap:8px">
+              <input id="lecCourseId" type="text" placeholder="課程 ID (e.g. ds101)" value="ds101" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-family:inherit">
+              <input id="lecTitle" type="text" placeholder="講座標題 (e.g. Week 3: Binary Trees)" style="flex:2;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;font-family:inherit">
+            </div>
+            <div id="lecDropzone" style="border:2px dashed var(--border);border-radius:10px;padding:30px;text-align:center;cursor:pointer;transition:all .2s" ondragover="event.preventDefault();this.style.borderColor='#a855f7';this.style.background='rgba(168,85,247,0.05)'" ondragleave="this.style.borderColor='var(--border)';this.style.background=''" ondrop="handleLecDrop(event)">
+              <div style="font-size:28px;margin-bottom:8px">🎵</div>
+              <div style="color:var(--text-muted);font-size:13px">拖曳音訊檔案至此 或 <label style="color:#a855f7;cursor:pointer;text-decoration:underline"><input type="file" id="lecFileInput" accept=".mp3,.wav,.m4a,.ogg,.flac,.webm,.mp4" style="display:none" onchange="handleLecFile(this.files[0])">點擊選擇</label></div>
+            </div>
+            <div id="lecUploadProgress" style="display:none">
+              <div style="display:flex;align-items:center;gap:8px;padding:10px;background:rgba(168,85,247,0.08);border-radius:8px">
+                <div class="spinner" style="width:16px;height:16px;border-width:2px"></div>
+                <span id="lecUploadStatus" style="font-size:12px;color:var(--text-muted)">正在轉錄...</span>
+              </div>
+            </div>
+            <div id="lecUploadResult" style="display:none">
+              <div style="padding:10px;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.3);border-radius:8px;font-size:12px">
+                <div id="lecResultText" style="color:var(--green)"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div><div class="card-title">📋 課堂錄音列表</div><div class="card-subtitle" id="lecListSub">輸入課程 ID 後自動載入</div></div>
+            <button onclick="loadLectures()" style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-muted);font-size:11px;cursor:pointer;font-family:inherit">🔄 重新整理</button>
+          </div>
+          <div id="lecList" style="max-height:400px;overflow-y:auto">
+            <div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px">尚未載入</div>
+          </div>
+        </div>
+      </div>
+      <!-- Transcript viewer modal -->
+      <div id="lecTranscriptModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px">
+        <div style="background:var(--surface);border-radius:16px;max-width:800px;width:100%;max-height:80vh;display:flex;flex-direction:column;border:1px solid var(--border)">
+          <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+            <div><strong id="lecModalTitle" style="color:var(--text)"></strong><div id="lecModalSub" style="font-size:11px;color:var(--text-dim);margin-top:2px"></div></div>
+            <button onclick="closeLecModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text-muted)">✕</button>
+          </div>
+          <div id="lecModalSummary" style="padding:12px 20px;background:rgba(168,85,247,0.06);border-bottom:1px solid var(--border);font-size:13px;color:var(--text-muted);display:none"></div>
+          <div id="lecModalTranscript" style="padding:16px 20px;overflow-y:auto;flex:1;font-size:13px;line-height:1.8;white-space:pre-wrap;color:var(--text)"></div>
         </div>
       </div>
     </div>
@@ -1689,6 +1804,93 @@ function showToast(msg) {
 }
 
 // =====================================================================
+// AI CLASSROOM ASSISTANT
+// =====================================================================
+let casAutoTimer = null;
+
+async function loadClassroomSnapshot() {
+  const courseId = document.getElementById('casCourseId').value || 'ds101';
+  const expected = document.getElementById('casExpected').value || 30;
+  try {
+    const res = await fetch(`/classroom/${encodeURIComponent(courseId)}/snapshot?expected_students=${expected}`);
+    const data = await res.json();
+    const m = data.metrics;
+
+    // Update metric cards
+    document.getElementById('casQuizCorrect').textContent = m.quiz_avg_correct > 0 ? (m.quiz_avg_correct * 100).toFixed(0) + '%' : '—';
+    document.getElementById('casQuizParticipation').textContent = m.quiz_participation > 0 ? (m.quiz_participation * 100).toFixed(0) + '%' : '—';
+    document.getElementById('casPollConfusion').textContent = m.poll_confusion > 0 ? (m.poll_confusion * 100).toFixed(0) + '%' : '—';
+    document.getElementById('casActiveQuestions').textContent = m.active_questions;
+    document.getElementById('casAttendance').textContent = m.attendance_total > 0
+      ? `${m.attendance_present} / ${m.attendance_late} 遲`
+      : '—';
+    document.getElementById('casDanmakuRate').textContent = m.danmaku_rate > 0 ? m.danmaku_rate.toFixed(1) : '—';
+
+    // Color metrics based on status
+    const quizEl = document.getElementById('casQuizCorrect');
+    if (m.quiz_avg_correct > 0) {
+      quizEl.style.color = m.quiz_avg_correct >= 0.7 ? '#22c55e' : m.quiz_avg_correct >= 0.5 ? '#f59e0b' : '#ef4444';
+    }
+    const confEl = document.getElementById('casPollConfusion');
+    if (m.poll_confusion > 0) {
+      confEl.style.color = m.poll_confusion >= 0.5 ? '#ef4444' : m.poll_confusion >= 0.3 ? '#f59e0b' : '#22c55e';
+    }
+
+    // Alerts
+    const alertsEl = document.getElementById('casAlerts');
+    const badge = document.getElementById('casAlertBadge');
+    if (data.alerts.length === 0) {
+      alertsEl.innerHTML = '<div style="color:#22c55e;font-size:12px;padding:12px;text-align:center;background:rgba(34,197,94,0.08);border-radius:8px">✅ 目前無警報</div>';
+      badge.style.display = 'none';
+    } else {
+      badge.style.display = 'inline';
+      badge.textContent = data.alerts.length;
+      alertsEl.innerHTML = data.alerts.map(a => {
+        const color = a.level === 'critical' ? '#ef4444' : '#f59e0b';
+        const icon = a.level === 'critical' ? '🚨' : '⚠️';
+        const sourceIcon = {quiz:'📝', poll:'📊', question:'❓', attendance:'📋', danmaku:'💬'}[a.source] || '📌';
+        return `<div style="background:${a.level === 'critical' ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)'};border:1px solid ${color}33;border-radius:8px;padding:10px 14px;font-size:12px;display:flex;align-items:start;gap:8px">
+          <span>${icon}</span>
+          <div>
+            <span style="color:${color};font-weight:600">${a.level === 'critical' ? '嚴重' : '注意'}</span>
+            <span style="background:var(--bg);border-radius:4px;padding:1px 5px;font-size:10px;margin-left:4px">${sourceIcon} ${a.source}</span>
+            <div style="margin-top:3px;color:var(--text)">${a.message}</div>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    // Suggestions
+    const sugEl = document.getElementById('casSuggestions');
+    if (data.suggestions.length === 0) {
+      sugEl.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:12px;text-align:center">暫無建議</div>';
+    } else {
+      sugEl.innerHTML = data.suggestions.map(s => {
+        const priorityColor = s.priority >= 8 ? '#ef4444' : s.priority >= 5 ? '#f59e0b' : '#22c55e';
+        return `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;display:flex;align-items:center;gap:8px">
+          <span style="color:${priorityColor};font-size:16px">💡</span>
+          <span style="color:var(--text)">${s.text}</span>
+          <span style="margin-left:auto;font-size:10px;color:var(--text-dim);white-space:nowrap">P${s.priority}</span>
+        </div>`;
+      }).join('');
+    }
+  } catch (err) {
+    console.error('Classroom snapshot error:', err);
+    document.getElementById('casAlerts').innerHTML = `<div style="color:#ef4444;font-size:12px;padding:12px">載入失敗: ${err.message}</div>`;
+  }
+}
+
+document.getElementById('casAutoRefresh').addEventListener('change', function() {
+  if (this.checked) {
+    loadClassroomSnapshot();
+    casAutoTimer = setInterval(loadClassroomSnapshot, 5000);
+  } else {
+    clearInterval(casAutoTimer);
+    casAutoTimer = null;
+  }
+});
+
+// =====================================================================
 // LIVE DATA (Real API)
 // =====================================================================
 let liveTopicChart = null;
@@ -1942,6 +2144,144 @@ async function deleteMaterial(courseId, filename) {
 
 // Auto-load materials when course ID changes
 document.getElementById('matCourseId').addEventListener('change', loadMaterials);
+
+// =====================================================================
+// LECTURE RECORDING
+// =====================================================================
+
+function handleLecDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.borderColor = 'var(--border)';
+  e.currentTarget.style.background = '';
+  const file = e.dataTransfer.files[0];
+  if (file) handleLecFile(file);
+}
+
+async function handleLecFile(file) {
+  if (!file) return;
+  const courseId = document.getElementById('lecCourseId').value.trim();
+  const title = document.getElementById('lecTitle').value.trim() || file.name;
+  if (!courseId) { alert('請先填寫課程 ID'); return; }
+
+  const prog = document.getElementById('lecUploadProgress');
+  const result = document.getElementById('lecUploadResult');
+  prog.style.display = 'block';
+  result.style.display = 'none';
+  document.getElementById('lecUploadStatus').textContent = `正在轉錄 ${file.name}...（可能需要 30-60 秒）`;
+
+  const form = new FormData();
+  form.append('file', file);
+  form.append('title', title);
+
+  try {
+    const res = await fetch(`/lectures/${encodeURIComponent(courseId)}/upload`, { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || '上傳失敗');
+
+    prog.style.display = 'none';
+    result.style.display = 'block';
+    document.getElementById('lecResultText').innerHTML =
+      `✅ 轉錄完成！語言: ${data.language || '?'}, 時長: ${Math.round(data.duration)}s, ` +
+      `段落: ${data.segment_count}, 索引: ${data.chunks_indexed} chunks` +
+      (data.summary ? `<br><br>📝 摘要: ${data.summary.substring(0, 200)}...` : '');
+    loadLectures();
+  } catch (err) {
+    prog.style.display = 'none';
+    result.style.display = 'block';
+    document.getElementById('lecResultText').innerHTML = `❌ ${err.message}`;
+    document.getElementById('lecResultText').style.color = 'var(--red, #f87171)';
+  }
+}
+
+async function loadLectures() {
+  const courseId = document.getElementById('lecCourseId').value.trim();
+  if (!courseId) return;
+  const list = document.getElementById('lecList');
+  list.innerHTML = '<div style="text-align:center;padding:12px;color:var(--text-dim);font-size:12px">載入中...</div>';
+
+  try {
+    const res = await fetch(`/lectures/${encodeURIComponent(courseId)}`);
+    const data = await res.json();
+    document.getElementById('lecListSub').textContent = `${data.length} 筆錄音`;
+
+    if (data.length === 0) {
+      list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-dim);font-size:13px">尚無錄音</div>';
+      return;
+    }
+
+    list.innerHTML = data.map(lec => {
+      const dur = lec.duration > 0 ? `${Math.floor(lec.duration/60)}:${String(Math.floor(lec.duration%60)).padStart(2,'0')}` : '?';
+      const date = new Date(lec.created_at * 1000).toLocaleDateString('zh-TW');
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border);font-size:12px">
+        <div style="flex:1">
+          <div style="font-weight:600;color:var(--text);margin-bottom:2px">${lec.title}</div>
+          <div style="color:var(--text-dim);font-size:11px">⏱️ ${dur} · 📄 ${lec.segment_count} 段 · 🗂️ ${lec.chunks_indexed} chunks · ${date}</div>
+          ${lec.summary ? `<div style="color:var(--text-muted);font-size:11px;margin-top:4px;line-height:1.4">${lec.summary.substring(0, 120)}...</div>` : ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">
+          <button onclick="viewTranscript('${lec.course_id}','${lec.id}','${lec.title.replace(/'/g,"\\'")}',${lec.duration})" style="padding:4px 10px;border-radius:6px;border:1px solid #a855f7;background:none;color:#a855f7;font-size:11px;cursor:pointer;font-family:inherit">📜 逐字稿</button>
+          <button onclick="deleteLecture('${lec.course_id}','${lec.id}')" style="padding:4px 10px;border-radius:6px;border:1px solid var(--red, #f87171);background:none;color:var(--red, #f87171);font-size:11px;cursor:pointer;font-family:inherit">🗑️</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (err) {
+    list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--red, #f87171);font-size:12px">載入失敗: ${err.message}</div>`;
+  }
+}
+
+async function viewTranscript(courseId, lecId, title, duration) {
+  const modal = document.getElementById('lecTranscriptModal');
+  modal.style.display = 'flex';
+  document.getElementById('lecModalTitle').textContent = title;
+  const dur = duration > 0 ? `${Math.floor(duration/60)}:${String(Math.floor(duration%60)).padStart(2,'0')}` : '';
+  document.getElementById('lecModalSub').textContent = dur ? `⏱️ ${dur}` : '';
+  document.getElementById('lecModalTranscript').textContent = '載入中...';
+  document.getElementById('lecModalSummary').style.display = 'none';
+
+  try {
+    const res = await fetch(`/lectures/${encodeURIComponent(courseId)}/${lecId}/transcript`);
+    const data = await res.json();
+    if (data.segments && data.segments.length > 0) {
+      document.getElementById('lecModalTranscript').innerHTML = data.segments.map(s => {
+        const mm = Math.floor(s.start / 60);
+        const ss = Math.floor(s.start % 60);
+        return `<span style="color:#a855f7;font-size:11px;margin-right:6px">[${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')}]</span>${s.text}`;
+      }).join('\n');
+    } else {
+      document.getElementById('lecModalTranscript').textContent = data.text || '（無內容）';
+    }
+    if (data.title) {
+      // fetch lecture info for summary
+      const infoRes = await fetch(`/lectures/${encodeURIComponent(courseId)}`);
+      const lectures = await infoRes.json();
+      const lec = lectures.find(l => l.id === lecId);
+      if (lec && lec.summary) {
+        document.getElementById('lecModalSummary').style.display = 'block';
+        document.getElementById('lecModalSummary').innerHTML = `<strong>📝 AI 摘要：</strong><br>${lec.summary}`;
+      }
+    }
+  } catch (err) {
+    document.getElementById('lecModalTranscript').textContent = `載入失敗: ${err.message}`;
+  }
+}
+
+function closeLecModal() {
+  document.getElementById('lecTranscriptModal').style.display = 'none';
+}
+
+async function deleteLecture(courseId, lecId) {
+  if (!confirm('確定要刪除此錄音？')) return;
+  try {
+    const res = await fetch(`/lectures/${encodeURIComponent(courseId)}/${lecId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('刪除失敗');
+    loadLectures();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+// Auto-load lectures when course ID changes
+document.getElementById('lecCourseId').addEventListener('change', loadLectures);
 
 // =====================================================================
 // QUIZ GENERATION

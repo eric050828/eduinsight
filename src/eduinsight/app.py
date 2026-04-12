@@ -30,6 +30,7 @@ from .analytics import (
 )
 from .assistant import LearningAssistant
 from .attendance import AttendanceManager, GPSLocation
+from .classroom_assistant import ClassroomAssistant
 from .config import settings
 from .documents import parse_document
 from .grades import GradeManager
@@ -62,6 +63,11 @@ _interaction: InteractionManager = InteractionManager()
 _attendance: AttendanceManager = AttendanceManager()
 _grades: GradeManager = GradeManager()
 _lectures: LectureManager | None = None
+_classroom_assistant = ClassroomAssistant(
+    quiz_mgr=_quiz_manager,
+    interaction_mgr=_interaction,
+    attendance_mgr=_attendance,
+)
 
 
 def get_assistant() -> LearningAssistant:
@@ -2234,6 +2240,50 @@ async def demo_walkthrough() -> FileResponse:
 async def semester_page() -> FileResponse:
     """Serve the semester demo timeline page."""
     return FileResponse(_STATIC_DIR / "semester.html")
+
+
+# ── AI Classroom Assistant ────────────────────────────────────────────
+
+
+@app.get("/classroom/{course_id}/snapshot")
+async def classroom_snapshot(course_id: str, expected_students: int = 30) -> dict:
+    """Get real-time classroom snapshot with alerts and suggestions.
+
+    Aggregates live data from quiz, polls, anonymous questions, danmaku,
+    and attendance to produce actionable insights for the teacher.
+    """
+    _classroom_assistant._expected_students = expected_students
+    snap = _classroom_assistant.get_snapshot(course_id)
+    return {
+        "course_id": snap.course_id,
+        "timestamp": snap.timestamp,
+        "alert_count": snap.alert_count,
+        "critical_count": snap.critical_count,
+        "alerts": [
+            {
+                "level": a.level,
+                "source": a.source,
+                "message": a.message,
+                "data": a.data,
+            }
+            for a in snap.alerts
+        ],
+        "suggestions": [
+            {"text": s.text, "priority": s.priority}
+            for s in snap.suggestions
+        ],
+        "metrics": {
+            "quiz_participation": snap.quiz_participation,
+            "quiz_avg_correct": snap.quiz_avg_correct,
+            "active_questions": snap.active_questions,
+            "attendance_present": snap.attendance_present,
+            "attendance_late": snap.attendance_late,
+            "attendance_total": snap.attendance_total,
+            "poll_active": snap.poll_active,
+            "poll_confusion": snap.poll_confusion,
+            "danmaku_rate": snap.danmaku_rate,
+        },
+    }
 
 
 # LTI 1.3 integration
