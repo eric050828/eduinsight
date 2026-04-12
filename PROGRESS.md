@@ -498,7 +498,28 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Enter key support
 - [x] 44 new tests (316 total), ruff clean
 
+## Grade Management System (2026-04-12)
+- [x] GradeManager (grades.py)
+  - Course grade categories with configurable weights (must sum to 100%)
+  - Score recording per student/category/item with duplicate-update support
+  - Weighted total calculation: category average × weight → sum
+  - Student summary: per-category breakdown, average %, weighted contribution
+  - Class overview: mean, median, std_dev, min/max, A-F distribution bands
+  - Rankings with proper tie handling
+  - Score deletion, filtered queries (by student/category)
+- [x] API endpoints (10 new routes under /grades/)
+  - POST /grades/{course_id}/categories — set grade weights
+  - GET /grades/{course_id}/categories — get categories
+  - POST /grades/{course_id}/scores — record a score
+  - GET /grades/{course_id}/scores — list scores (filterable)
+  - DELETE /grades/{course_id}/scores — delete a score
+  - GET /grades/{course_id}/student/{student_id} — weighted summary with rank
+  - GET /grades/{course_id}/overview — class statistics + rankings + distribution
+  - GET /grades/courses — list courses with grades configured
+- [x] Renamed old Moodle grades proxy: /grades/ → /moodle/grades/ (route conflict fix)
+- [x] 42 new tests (358 total), ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 2 — 點名簽到完成
-Done: Attendance system (code + GPS check-in, teacher management, student UI), 316 tests passing
-Next step: 完整成績管理（教授最在意的 — 即時加權總分、成績分布）
+Phase: ROADMAP Phase 2 — 成績管理完成
+Done: Grade management (weighted scoring, distribution, rankings), 358 tests passing
+Next step: 教師儀表板成績管理 UI（成績輸入、分布圖表、排名表）

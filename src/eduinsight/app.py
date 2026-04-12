@@ -31,6 +31,7 @@ from .analytics import (
 from .assistant import LearningAssistant
 from .attendance import AttendanceManager, GPSLocation
 from .config import settings
+from .grades import GradeManager
 from .documents import parse_document
 from .interaction import InteractionManager
 from .live_quiz import (
@@ -57,6 +58,7 @@ _quiz: QuizGenerator | None = None
 _quiz_manager: QuizSessionManager = QuizSessionManager()
 _interaction: InteractionManager = InteractionManager()
 _attendance: AttendanceManager = AttendanceManager()
+_grades: GradeManager = GradeManager()
 
 
 def get_assistant() -> LearningAssistant:
@@ -275,7 +277,7 @@ async def get_courses(moodle_user_id: int) -> list[dict[str, Any]]:
     ]
 
 
-@app.get("/grades/{course_id}/{moodle_user_id}")
+@app.get("/moodle/grades/{course_id}/{moodle_user_id}")
 async def get_grades(course_id: int, moodle_user_id: int) -> list[dict[str, Any]]:
     """Get grades for a user in a course."""
     async with get_moodle_client() as client:
@@ -1604,6 +1606,218 @@ async def checkin_by_code(req: CheckinRequest) -> CheckinResponse:
         session_id=record.session_id,
         status=record.status.value,
         checked_in_at=record.checked_in_at,
+    )
+
+
+# ------------------------------------------------------------------
+# Grade management endpoints
+# ------------------------------------------------------------------
+
+
+class GradeCategoryRequest(BaseModel):
+    name: str
+    weight: float
+
+
+class SetCategoriesRequest(BaseModel):
+    categories: list[GradeCategoryRequest]
+
+
+class GradeCategoryResponse(BaseModel):
+    name: str
+    weight: float
+
+
+class RecordScoreRequest(BaseModel):
+    student_id: int
+    category: str
+    item: str
+    score: float
+    total: float = 100.0
+
+
+class ScoreResponse(BaseModel):
+    record_id: str
+    course_id: str
+    student_id: int
+    category: str
+    item: str
+    score: float
+    total: float
+
+
+class CategorySummaryResponse(BaseModel):
+    category: str
+    weight: float
+    items: list[dict[str, Any]]
+    average_pct: float
+    weighted_contribution: float
+
+
+class StudentGradeResponse(BaseModel):
+    course_id: str
+    student_id: int
+    categories: list[CategorySummaryResponse]
+    weighted_total: float
+    rank: int | None = None
+    total_students: int | None = None
+
+
+class ClassOverviewResponse(BaseModel):
+    course_id: str
+    total_students: int
+    mean: float
+    median: float
+    std_dev: float
+    min_score: float
+    max_score: float
+    distribution: dict[str, int]
+    rankings: list[dict[str, Any]]
+
+
+class DeleteScoreRequest(BaseModel):
+    student_id: int
+    category: str
+    item: str
+
+
+@app.get("/grades/courses")
+async def list_grade_courses() -> list[str]:
+    """List all courses with grade categories configured."""
+    return _grades.list_courses()
+
+
+@app.post("/grades/{course_id}/categories", response_model=list[GradeCategoryResponse])
+async def set_grade_categories(
+    course_id: str, req: SetCategoriesRequest
+) -> list[GradeCategoryResponse]:
+    """Set grade categories and weights for a course."""
+    try:
+        cats = _grades.set_categories(
+            course_id,
+            [{"name": c.name, "weight": c.weight} for c in req.categories],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return [GradeCategoryResponse(name=c.name, weight=c.weight) for c in cats]
+
+
+@app.get("/grades/{course_id}/categories", response_model=list[GradeCategoryResponse])
+async def get_grade_categories(course_id: str) -> list[GradeCategoryResponse]:
+    """Get grade categories for a course."""
+    try:
+        cats = _grades.get_categories(course_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return [GradeCategoryResponse(name=c.name, weight=c.weight) for c in cats]
+
+
+@app.post("/grades/{course_id}/scores", response_model=ScoreResponse)
+async def record_score(course_id: str, req: RecordScoreRequest) -> ScoreResponse:
+    """Record a score for a student."""
+    try:
+        rec = _grades.record_score(
+            course_id,
+            student_id=req.student_id,
+            category=req.category,
+            item=req.item,
+            score=req.score,
+            total=req.total,
+        )
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return ScoreResponse(
+        record_id=rec.record_id,
+        course_id=rec.course_id,
+        student_id=rec.student_id,
+        category=rec.category,
+        item=rec.item,
+        score=rec.score,
+        total=rec.total,
+    )
+
+
+@app.get("/grades/{course_id}/scores")
+async def get_scores(
+    course_id: str,
+    student_id: int | None = None,
+    category: str | None = None,
+) -> list[ScoreResponse]:
+    """Get score records, optionally filtered."""
+    records = _grades.get_scores(course_id, student_id=student_id, category=category)
+    return [
+        ScoreResponse(
+            record_id=r.record_id,
+            course_id=r.course_id,
+            student_id=r.student_id,
+            category=r.category,
+            item=r.item,
+            score=r.score,
+            total=r.total,
+        )
+        for r in records
+    ]
+
+
+@app.delete("/grades/{course_id}/scores")
+async def delete_score(course_id: str, req: DeleteScoreRequest) -> dict[str, bool]:
+    """Delete a specific score record."""
+    deleted = _grades.delete_score(
+        course_id,
+        student_id=req.student_id,
+        category=req.category,
+        item=req.item,
+    )
+    return {"deleted": deleted}
+
+
+@app.get("/grades/{course_id}/student/{student_id}", response_model=StudentGradeResponse)
+async def get_student_grades(
+    course_id: str, student_id: int
+) -> StudentGradeResponse:
+    """Get weighted grade summary for a student."""
+    try:
+        summary = _grades.student_summary_with_rank(course_id, student_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return StudentGradeResponse(
+        course_id=summary.course_id,
+        student_id=summary.student_id,
+        categories=[
+            CategorySummaryResponse(
+                category=c.category,
+                weight=c.weight,
+                items=c.items,
+                average_pct=c.average_pct,
+                weighted_contribution=c.weighted_contribution,
+            )
+            for c in summary.categories
+        ],
+        weighted_total=summary.weighted_total,
+        rank=summary.rank,
+        total_students=summary.total_students,
+    )
+
+
+@app.get("/grades/{course_id}/overview", response_model=ClassOverviewResponse)
+async def get_class_overview(course_id: str) -> ClassOverviewResponse:
+    """Get class-level grade statistics and rankings."""
+    try:
+        overview = _grades.class_overview(course_id)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return ClassOverviewResponse(
+        course_id=overview.course_id,
+        total_students=overview.total_students,
+        mean=overview.mean,
+        median=overview.median,
+        std_dev=overview.std_dev,
+        min_score=overview.min_score,
+        max_score=overview.max_score,
+        distribution=overview.distribution,
+        rankings=overview.rankings,
     )
 
 
