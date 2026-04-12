@@ -779,10 +779,17 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - 全頁 0 console errors, 0 warnings ✅
 - [x] 529 tests passing, ruff clean
 
+## Grade Distribution Polish (2026-04-13)
+- [x] 微調 ds101 成績分佈 — A:1 B:0 C:2 D:0 F:2 → A:1 B:1 C:1 D:1 F:1
+  - 1005 期末考 78→85 → 加權 80.0 = B
+  - 1003 期末考 60→67 → 加權 60.2 = D
+  - Demo 長條圖不再有空白柱子，五個等級完整呈現
+- [x] 529 tests passing, ruff clean
+
 ## Current State
 Phase: ROADMAP 三階段全部完成 ✅ → Demo-Ready 狀態確認
-Done: 所有功能實作 + Demo 資料品質改善 + 完整 Demo 路線驗證通過
+Done: 所有功能實作 + Demo 資料品質改善 + 成績分佈完整 + 完整 Demo 路線驗證通過
 Tests: 529 passing
-Demo: high-risk 學生（1004 persistence=25）、A-F 成績分佈、3 分鐘 demo 腳本就緒
+Demo: high-risk 學生（1004 persistence=25）、A-F 完整成績分佈、3 分鐘 demo 腳本就緒
 Verified: Playwright 走查全 PASS，0 errors
 Next step: OBS 錄製 Demo 影片 → InnoServe 文件準備
