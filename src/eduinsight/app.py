@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from litemem import Memory
@@ -34,6 +34,7 @@ from .config import settings
 from .documents import parse_document
 from .grades import GradeManager
 from .interaction import InteractionManager
+from .lectures import LectureManager
 from .live_quiz import (
     QuizSessionManager,
     QuizSessionQuestion,
@@ -60,6 +61,7 @@ _quiz_manager: QuizSessionManager = QuizSessionManager()
 _interaction: InteractionManager = InteractionManager()
 _attendance: AttendanceManager = AttendanceManager()
 _grades: GradeManager = GradeManager()
+_lectures: LectureManager | None = None
 
 
 def get_assistant() -> LearningAssistant:
@@ -80,7 +82,7 @@ def get_moodle_client() -> MoodleClient:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
-    global _memory, _assistant, _llm
+    global _memory, _assistant, _llm, _lectures
     logger.info("Starting EduInsight with memory DB: %s", settings.memory_db_path)
     embedder = settings.memory_embedder or None  # "" means disabled
     _memory = Memory(settings.memory_db_path, embedder=embedder)
@@ -108,6 +110,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     _assistant = LearningAssistant(_memory, llm=_llm)
     _rag = CourseRAG(_memory)
     _quiz = QuizGenerator(_rag, _llm) if _llm is not None else None
+    _lectures = LectureManager(_memory)
     yield
 
     logger.info("Shutting down EduInsight")
@@ -118,6 +121,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     _assistant = None
     _rag = None
     _quiz = None
+    _lectures = None
 
 
 # ------------------------------------------------------------------
@@ -1184,6 +1188,166 @@ async def get_danmaku(
         )
         for m in messages
     ]
+
+
+# ------------------------------------------------------------------
+# Lecture recording endpoints
+# ------------------------------------------------------------------
+
+
+class LectureUploadResponse(BaseModel):
+    id: str
+    course_id: str
+    title: str
+    filename: str
+    duration: float
+    language: str
+    provider: str
+    summary: str
+    chunks_indexed: int
+    segment_count: int
+
+
+class LectureInfoResponse(BaseModel):
+    id: str
+    course_id: str
+    title: str
+    filename: str
+    duration: float
+    language: str
+    provider: str
+    summary: str
+    chunks_indexed: int
+    segment_count: int
+    created_at: float
+
+
+class LectureTranscriptResponse(BaseModel):
+    id: str
+    title: str
+    text: str
+    timestamped: str
+    segments: list[dict]
+
+
+@app.post("/lectures/{course_id}/upload", response_model=LectureUploadResponse)
+async def upload_lecture(
+    course_id: str,
+    file: UploadFile,
+    title: str = Form("Untitled Lecture"),
+    language: str | None = Form(None),
+) -> LectureUploadResponse:
+    """Upload and process a lecture recording.
+
+    Accepts audio files (mp3, wav, m4a, etc.). The file is transcribed,
+    summarized, and indexed into the course RAG for student search.
+    """
+    if _lectures is None:
+        raise HTTPException(status_code=503, detail="Lecture manager not initialized")
+
+    import tempfile
+
+    from .transcribe import SUPPORTED_FORMATS
+
+    # Validate file extension
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in SUPPORTED_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format: {ext}. Supported: {', '.join(sorted(SUPPORTED_FORMATS))}",
+        )
+
+    # Save to temp file
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = tmp.name
+
+    try:
+        lecture = await _lectures.process_lecture(
+            course_id, tmp_path, title, language=language,
+        )
+        return LectureUploadResponse(
+            id=lecture.id,
+            course_id=lecture.course_id,
+            title=lecture.title,
+            filename=file.filename or "unknown",
+            duration=lecture.transcript.duration,
+            language=lecture.transcript.language,
+            provider=lecture.transcript.provider,
+            summary=lecture.summary,
+            chunks_indexed=lecture.chunks_indexed,
+            segment_count=len(lecture.transcript.segments),
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
+@app.get("/lectures/{course_id}", response_model=list[LectureInfoResponse])
+async def list_lectures(course_id: str) -> list[LectureInfoResponse]:
+    """List all lectures for a course."""
+    if _lectures is None:
+        raise HTTPException(status_code=503, detail="Lecture manager not initialized")
+
+    lectures = _lectures.list_lectures(course_id)
+    return [
+        LectureInfoResponse(
+            id=lec.id,
+            course_id=lec.course_id,
+            title=lec.title,
+            filename=lec.filename,
+            duration=lec.transcript.duration,
+            language=lec.transcript.language,
+            provider=lec.transcript.provider,
+            summary=lec.summary,
+            chunks_indexed=lec.chunks_indexed,
+            segment_count=len(lec.transcript.segments),
+            created_at=lec.created_at,
+        )
+        for lec in lectures
+    ]
+
+
+@app.get("/lectures/{course_id}/{lecture_id}/transcript")
+async def get_lecture_transcript(
+    course_id: str, lecture_id: str,
+) -> LectureTranscriptResponse:
+    """Get the full transcript of a lecture."""
+    if _lectures is None:
+        raise HTTPException(status_code=503, detail="Lecture manager not initialized")
+
+    lecture = _lectures.get_lecture(lecture_id)
+    if not lecture or lecture.course_id != course_id:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    return LectureTranscriptResponse(
+        id=lecture.id,
+        title=lecture.title,
+        text=lecture.transcript.text,
+        timestamped=lecture.transcript_with_timestamps(),
+        segments=[
+            {"start": s.start, "end": s.end, "text": s.text}
+            for s in lecture.transcript.segments
+        ],
+    )
+
+
+@app.delete("/lectures/{course_id}/{lecture_id}")
+async def delete_lecture(course_id: str, lecture_id: str) -> dict[str, bool]:
+    """Delete a lecture and its indexed content."""
+    if _lectures is None:
+        raise HTTPException(status_code=503, detail="Lecture manager not initialized")
+
+    lecture = _lectures.get_lecture(lecture_id)
+    if not lecture or lecture.course_id != course_id:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    deleted = _lectures.delete_lecture(lecture_id)
+    return {"deleted": deleted}
 
 
 # ------------------------------------------------------------------
