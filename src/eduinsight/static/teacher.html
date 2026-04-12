@@ -164,6 +164,7 @@ tr:hover td{background:rgba(99,102,241,.03)}
     <div class="nav-item" data-target="interaction-section"><span class="nav-icon">🙋</span>課堂互動</div>
     <div class="nav-item" data-target="attendance-section"><span class="nav-icon">📋</span>點名簽到</div>
     <div class="nav-item" data-target="grades-section"><span class="nav-icon">📝</span>成績管理</div>
+    <div class="nav-item" data-target="report-section"><span class="nav-icon">📋</span>教學分析報表</div>
     <div class="nav-divider"></div>
     <a href="/student" class="nav-item"><span class="nav-icon">👨‍🎓</span>學生端預覽</a>
   </div>
@@ -697,6 +698,88 @@ tr:hover td{background:rgba(99,102,241,.03)}
     </div>
 
   </div>
+
+  <!-- Teaching Analytics Report Section -->
+  <div id="report-section" style="margin-top:8px">
+    <div style="background:linear-gradient(135deg,rgba(99,102,241,0.12),rgba(59,130,246,0.08));border:1px solid rgba(99,102,241,0.25);border-radius:12px;padding:14px 20px;margin-bottom:16px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--text-muted)">
+      <span style="font-size:20px">📋</span>
+      <span><strong style="color:var(--primary)">教學分析報表</strong> — 綜合 AI 互動、成績、出席、課堂互動等多維數據，生成教學成效分析。</span>
+      <button onclick="loadReport()" style="margin-left:auto;padding:3px 10px;border-radius:6px;border:1px solid var(--primary);background:none;color:var(--primary);font-size:11px;cursor:pointer">🔄 生成報表</button>
+      <button onclick="exportExcel()" style="padding:3px 10px;border-radius:6px;border:1px solid var(--green);background:none;color:var(--green);font-size:11px;cursor:pointer">📥 匯出 Excel</button>
+    </div>
+
+    <!-- Overview Stats -->
+    <div id="reportOverview" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:16px">
+      <div class="card" style="padding:14px;text-align:center">
+        <div style="font-size:22px;font-weight:600;color:var(--primary)" id="rptStudents">—</div>
+        <div style="font-size:11px;color:var(--text-muted)">學生人數</div>
+      </div>
+      <div class="card" style="padding:14px;text-align:center">
+        <div style="font-size:22px;font-weight:600;color:var(--blue)" id="rptFacts">—</div>
+        <div style="font-size:11px;color:var(--text-muted)">AI 記憶總數</div>
+      </div>
+      <div class="card" style="padding:14px;text-align:center">
+        <div style="font-size:22px;font-weight:600;color:var(--amber)" id="rptGradeMean">—</div>
+        <div style="font-size:11px;color:var(--text-muted)">成績平均</div>
+      </div>
+      <div class="card" style="padding:14px;text-align:center">
+        <div style="font-size:22px;font-weight:600;color:var(--green)" id="rptAttendance">—</div>
+        <div style="font-size:11px;color:var(--text-muted)">平均出席率</div>
+      </div>
+      <div class="card" style="padding:14px;text-align:center">
+        <div style="font-size:22px;font-weight:600;color:var(--red)" id="rptHighRisk">—</div>
+        <div style="font-size:11px;color:var(--text-muted)">高風險學生</div>
+      </div>
+      <div class="card" style="padding:14px;text-align:center">
+        <div style="font-size:22px;font-weight:600;color:var(--purple)" id="rptQuizAvg">—</div>
+        <div style="font-size:11px;color:var(--text-muted)">測驗平均分</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+      <!-- AI-Grade Correlation Chart -->
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">📈 AI 互動 vs 成績 相關性</div><div class="card-subtitle" id="rptCorrelationSub">—</div></div>
+        </div>
+        <div style="padding:12px">
+          <canvas id="rptCorrelationChart" height="220"></canvas>
+          <div id="rptCorrelationInsight" style="margin-top:8px;padding:8px 12px;background:var(--surface-2);border-radius:8px;font-size:12px;color:var(--text-muted)"></div>
+        </div>
+      </div>
+
+      <!-- Struggles Ranking -->
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">🔥 常見困難排行</div><div class="card-subtitle" id="rptStruggleSub">—</div></div>
+        </div>
+        <div id="rptStruggles" style="padding:12px;max-height:280px;overflow-y:auto">
+          <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">點擊「生成報表」載入</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Student Detail Table -->
+    <div class="card">
+      <div class="card-header">
+        <div><div class="card-title">👤 學生綜合明細</div><div class="card-subtitle" id="rptStudentSub">—</div></div>
+      </div>
+      <div id="rptStudentTable" style="max-height:400px;overflow-y:auto">
+        <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">點擊「生成報表」載入</div>
+      </div>
+    </div>
+
+    <!-- Interaction Summary -->
+    <div class="card" style="margin-top:12px">
+      <div class="card-header">
+        <div><div class="card-title">💬 課堂互動統計</div></div>
+      </div>
+      <div style="padding:12px;display:flex;gap:20px;flex-wrap:wrap" id="rptInteraction">
+        <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px;width:100%">點擊「生成報表」載入</div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Care Modal -->
@@ -2789,6 +2872,154 @@ document.getElementById('gradeCourse').addEventListener('change', () => {
 // =====================================================================
 // BOOT
 // =====================================================================
+// === Teaching Analytics Report ===
+let rptCorrelationChart = null;
+
+function getCourseId() {
+  const sel = document.getElementById('courseSelectorContainer');
+  const select = sel ? sel.querySelector('select') : null;
+  return select ? select.value : 'ds101';
+}
+
+async function loadReport() {
+  const cid = getCourseId();
+  try {
+    const [rptResp, corrResp] = await Promise.all([
+      fetch(`/reports/weekly/${cid}`),
+      fetch(`/reports/correlation/${cid}`)
+    ]);
+    const rpt = await rptResp.json();
+    const corr = await corrResp.json();
+
+    // Overview stats
+    document.getElementById('rptStudents').textContent = rpt.total_students;
+    document.getElementById('rptFacts').textContent = rpt.total_facts;
+    document.getElementById('rptGradeMean').textContent = rpt.grade_mean != null ? rpt.grade_mean.toFixed(1) : 'N/A';
+    document.getElementById('rptAttendance').textContent = rpt.avg_attendance_rate != null ? rpt.avg_attendance_rate + '%' : 'N/A';
+    document.getElementById('rptHighRisk').textContent = rpt.high_risk_students.length;
+    document.getElementById('rptQuizAvg').textContent = rpt.avg_quiz_score != null ? rpt.avg_quiz_score.toFixed(0) + '%' : 'N/A';
+
+    // Struggles
+    const stEl = document.getElementById('rptStruggles');
+    if (rpt.common_struggles.length === 0) {
+      stEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">尚無困難記錄</div>';
+    } else {
+      const maxCount = rpt.common_struggles[0].count;
+      stEl.innerHTML = rpt.common_struggles.map((s, i) => {
+        const pct = maxCount > 0 ? (s.count / maxCount * 100) : 0;
+        return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="min-width:20px;font-size:12px;color:var(--text-dim)">${i+1}.</span>
+          <span style="min-width:120px;font-size:13px">${s.topic}</span>
+          <div style="flex:1;height:18px;background:var(--surface-2);border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,var(--red),var(--amber));border-radius:4px;transition:width .3s"></div>
+          </div>
+          <span style="min-width:30px;text-align:right;font-size:12px;color:var(--text-muted)">${s.count}</span>
+        </div>`;
+      }).join('');
+    }
+    document.getElementById('rptStruggleSub').textContent = `${rpt.common_struggles.length} 項困難`;
+
+    // Student table
+    const tblEl = document.getElementById('rptStudentTable');
+    if (rpt.students.length === 0) {
+      tblEl.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">無學生資料</div>';
+    } else {
+      const riskColor = l => l === 'high' ? 'var(--red)' : l === 'medium' ? 'var(--amber)' : 'var(--green)';
+      const riskLabel = l => l === 'high' ? '高' : l === 'medium' ? '中' : '低';
+      tblEl.innerHTML = `<table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted)">
+          <th style="padding:8px;text-align:left">學生 ID</th>
+          <th style="padding:8px;text-align:center">記憶數</th>
+          <th style="padding:8px;text-align:center">困難數</th>
+          <th style="padding:8px;text-align:center">風險</th>
+          <th style="padding:8px;text-align:center">持續力</th>
+          <th style="padding:8px;text-align:center">加權成績</th>
+          <th style="padding:8px;text-align:center">出席率</th>
+        </tr></thead>
+        <tbody>${rpt.students.map(s => `<tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:8px">${s.student_id}</td>
+          <td style="padding:8px;text-align:center">${s.fact_count}</td>
+          <td style="padding:8px;text-align:center">${s.struggle_count}</td>
+          <td style="padding:8px;text-align:center"><span style="padding:2px 8px;border-radius:10px;font-size:11px;background:${riskColor(s.risk_level)}22;color:${riskColor(s.risk_level)}">${riskLabel(s.risk_level)}</span></td>
+          <td style="padding:8px;text-align:center">${s.persistence_score}</td>
+          <td style="padding:8px;text-align:center">${s.weighted_grade != null ? s.weighted_grade.toFixed(1) : 'N/A'}</td>
+          <td style="padding:8px;text-align:center">${s.attendance_rate != null ? s.attendance_rate + '%' : 'N/A'}</td>
+        </tr>`).join('')}</tbody>
+      </table>`;
+    }
+    document.getElementById('rptStudentSub').textContent = `${rpt.students.length} 位學生`;
+
+    // Interaction summary
+    const intEl = document.getElementById('rptInteraction');
+    intEl.innerHTML = [
+      {label: '投票', val: rpt.total_polls, icon: '📊'},
+      {label: '提問', val: rpt.total_questions, icon: '❓'},
+      {label: '彈幕', val: rpt.total_danmaku, icon: '💬'},
+      {label: '測驗', val: rpt.total_quiz_sessions, icon: '🎯'},
+      {label: '出席次數', val: rpt.total_sessions, icon: '📋'},
+    ].map(i => `<div style="text-align:center;min-width:80px">
+      <div style="font-size:24px">${i.icon}</div>
+      <div style="font-size:20px;font-weight:600;color:var(--text)">${i.val}</div>
+      <div style="font-size:11px;color:var(--text-muted)">${i.label}</div>
+    </div>`).join('');
+
+    // Correlation chart
+    renderCorrelationChart(corr);
+    document.getElementById('rptCorrelationInsight').textContent = corr.insight || '';
+    const r1 = corr.fact_grade_correlation != null ? 'r=' + corr.fact_grade_correlation.toFixed(2) : '';
+    const r2 = corr.persistence_grade_correlation != null ? ', 持續力 r=' + corr.persistence_grade_correlation.toFixed(2) : '';
+    document.getElementById('rptCorrelationSub').textContent = r1 + r2 || '—';
+
+  } catch (e) {
+    console.error('Report load error:', e);
+  }
+}
+
+function renderCorrelationChart(corr) {
+  const ctx = document.getElementById('rptCorrelationChart');
+  if (rptCorrelationChart) rptCorrelationChart.destroy();
+  if (!corr.points || corr.points.length === 0) {
+    rptCorrelationChart = null;
+    return;
+  }
+  rptCorrelationChart = new Chart(ctx, {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        label: 'AI 記憶數 vs 成績',
+        data: corr.points.map(p => ({x: p.fact_count, y: p.weighted_grade})),
+        backgroundColor: 'rgba(99,102,241,0.7)',
+        borderColor: 'rgba(99,102,241,1)',
+        pointRadius: 6,
+        pointHoverRadius: 8,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: {display: false},
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const p = corr.points[ctx.dataIndex];
+              return `學生 ${p.student_id}: ${p.fact_count} 筆記憶, 成績 ${p.weighted_grade.toFixed(1)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {title: {display: true, text: 'AI 互動記憶數', color: '#999'}, grid: {color: 'rgba(255,255,255,0.06)'}},
+        y: {title: {display: true, text: '加權成績', color: '#999'}, grid: {color: 'rgba(255,255,255,0.06)'}}
+      }
+    }
+  });
+}
+
+function exportExcel() {
+  const cid = getCourseId();
+  window.open(`/reports/export/excel/${cid}`, '_blank');
+}
+
 init();
 loadLiveData();
 loadQuizSessions();

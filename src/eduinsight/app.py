@@ -44,6 +44,7 @@ from .lti import router as lti_router
 from .moodle import MoodleClient
 from .quiz import QuizGenerator
 from .rag import CourseRAG
+from .report import ReportGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -1827,6 +1828,216 @@ async def get_class_overview(course_id: str) -> ClassOverviewResponse:
 
 
 # ------------------------------------------------------------------
+# ------------------------------------------------------------------
+# Teaching analytics reports
+# ------------------------------------------------------------------
+
+
+def _get_report_generator() -> ReportGenerator:
+    if _memory is None:
+        raise RuntimeError("Application not initialized")
+    return ReportGenerator(
+        memory=_memory,
+        grades=_grades,
+        attendance=_attendance,
+        interaction=_interaction,
+        quiz=_quiz_manager,
+    )
+
+
+@app.get("/reports/weekly/{course_id}")
+async def weekly_report(course_id: str):
+    """Generate a weekly teaching analytics report for a course."""
+    gen = _get_report_generator()
+    report = gen.weekly_report(course_id)
+    return {
+        "course_id": report.course_id,
+        "total_students": report.total_students,
+        "total_facts": report.total_facts,
+        "avg_facts_per_student": round(report.avg_facts_per_student, 1),
+        "common_struggles": [
+            {"topic": t, "count": c} for t, c in report.common_struggles
+        ],
+        "high_risk_students": report.high_risk_students,
+        "grade_mean": report.grade_mean,
+        "grade_median": report.grade_median,
+        "grade_std_dev": report.grade_std_dev,
+        "grade_distribution": report.grade_distribution,
+        "total_sessions": report.total_sessions,
+        "avg_attendance_rate": report.avg_attendance_rate,
+        "total_polls": report.total_polls,
+        "total_questions": report.total_questions,
+        "total_danmaku": report.total_danmaku,
+        "total_quiz_sessions": report.total_quiz_sessions,
+        "avg_quiz_score": report.avg_quiz_score,
+        "students": [
+            {
+                "student_id": s.student_id,
+                "fact_count": s.fact_count,
+                "struggle_count": s.struggle_count,
+                "risk_level": s.risk_level,
+                "persistence_score": s.persistence_score,
+                "weighted_grade": s.weighted_grade,
+                "attendance_rate": s.attendance_rate,
+            }
+            for s in report.students
+        ],
+    }
+
+
+@app.get("/reports/correlation/{course_id}")
+async def ai_grade_correlation(course_id: str):
+    """Analyze correlation between AI engagement and grades."""
+    gen = _get_report_generator()
+    result = gen.ai_grade_correlation(course_id)
+    return {
+        "course_id": result.course_id,
+        "fact_grade_correlation": result.fact_grade_correlation,
+        "persistence_grade_correlation": result.persistence_grade_correlation,
+        "insight": result.insight,
+        "points": [
+            {
+                "student_id": p.student_id,
+                "fact_count": p.fact_count,
+                "struggle_count": p.struggle_count,
+                "persistence_score": p.persistence_score,
+                "weighted_grade": p.weighted_grade,
+            }
+            for p in result.points
+        ],
+    }
+
+
+@app.get("/reports/export/excel/{course_id}")
+async def export_report_excel(course_id: str):
+    """Export the weekly report as an Excel file (.xlsx)."""
+    import io
+
+    from fastapi.responses import Response
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    gen = _get_report_generator()
+    report = gen.weekly_report(course_id)
+    correlation = gen.ai_grade_correlation(course_id)
+
+    wb = Workbook()
+
+    # --- Sheet 1: Overview ---
+    ws = wb.active
+    ws.title = "教學總覽"
+    header_font = Font(bold=True, size=12)
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font_white = Font(bold=True, size=11, color="FFFFFF")
+
+    ws.append(["EduInsight 教學分析報表"])
+    ws["A1"].font = Font(bold=True, size=16)
+    ws.append([f"課程代碼: {course_id}"])
+    ws.append([])
+
+    ws.append(["指標", "數值"])
+    ws["A4"].font = header_font
+    ws["B4"].font = header_font
+    metrics = [
+        ("學生人數", report.total_students),
+        ("AI 互動記憶總數", report.total_facts),
+        ("每人平均記憶", round(report.avg_facts_per_student, 1)),
+        ("高風險學生數", len(report.high_risk_students)),
+        ("成績平均", report.grade_mean or "N/A"),
+        ("成績中位數", report.grade_median or "N/A"),
+        ("成績標準差", report.grade_std_dev or "N/A"),
+        ("出席次數", report.total_sessions),
+        ("平均出席率", f"{report.avg_attendance_rate}%" if report.avg_attendance_rate else "N/A"),
+        ("課堂投票數", report.total_polls),
+        ("匿名提問數", report.total_questions),
+        ("彈幕訊息數", report.total_danmaku),
+        ("測驗場次", report.total_quiz_sessions),
+        ("測驗平均分", f"{report.avg_quiz_score}%" if report.avg_quiz_score else "N/A"),
+    ]
+    for label, value in metrics:
+        ws.append([label, value])
+
+    # --- Sheet 2: Student details ---
+    ws2 = wb.create_sheet("學生明細")
+    headers = ["學生 ID", "記憶數", "困難數", "風險等級", "持續力", "加權成績", "出席率"]
+    ws2.append(headers)
+    for i, h in enumerate(headers, 1):
+        cell = ws2.cell(row=1, column=i)
+        cell.font = header_font_white
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+    for s in report.students:
+        ws2.append([
+            s.student_id,
+            s.fact_count,
+            s.struggle_count,
+            s.risk_level,
+            s.persistence_score,
+            s.weighted_grade if s.weighted_grade is not None else "N/A",
+            f"{s.attendance_rate}%" if s.attendance_rate is not None else "N/A",
+        ])
+
+    # --- Sheet 3: Common struggles ---
+    ws3 = wb.create_sheet("常見困難")
+    ws3.append(["困難主題", "學生人數"])
+    ws3["A1"].font = header_font
+    ws3["B1"].font = header_font
+    for topic, count in report.common_struggles:
+        ws3.append([topic, count])
+
+    # --- Sheet 4: AI-Grade Correlation ---
+    ws4 = wb.create_sheet("AI互動-成績相關")
+    ws4.append(["AI 互動與成績相關性分析"])
+    ws4["A1"].font = Font(bold=True, size=14)
+    ws4.append([])
+    ws4.append([
+        "互動量-成績相關係數",
+        correlation.fact_grade_correlation or "N/A",
+    ])
+    ws4.append([
+        "持續力-成績相關係數",
+        correlation.persistence_grade_correlation or "N/A",
+    ])
+    ws4.append(["分析結論", correlation.insight])
+    ws4.append([])
+    ws4.append(["學生 ID", "記憶數", "困難數", "持續力分數", "加權成績"])
+    row = ws4.max_row
+    for i in range(1, 6):
+        cell = ws4.cell(row=row, column=i)
+        cell.font = header_font_white
+        cell.fill = header_fill
+    for p in correlation.points:
+        ws4.append([
+            p.student_id,
+            p.fact_count,
+            p.struggle_count,
+            p.persistence_score,
+            p.weighted_grade,
+        ])
+
+    # Auto-width columns
+    for ws_sheet in [ws, ws2, ws3, ws4]:
+        for col in ws_sheet.columns:
+            max_len = 0
+            col_letter = col[0].column_letter
+            for cell in col:
+                if cell.value:
+                    max_len = max(max_len, len(str(cell.value)))
+            ws_sheet.column_dimensions[col_letter].width = min(max_len + 4, 40)
+
+    # Save to bytes
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"eduinsight_report_{course_id}.xlsx"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # Static files & SPA
 # ------------------------------------------------------------------
 

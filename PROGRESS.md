@@ -547,7 +547,36 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Updates on course switch
 - [x] 1 new test (360 total), ruff clean
 
+## Teaching Analytics Report (2026-04-12)
+- [x] Report generation module (report.py)
+  - ReportGenerator: aggregates Memory, Grades, Attendance, Interaction, Quiz data
+  - WeeklyReport: comprehensive metrics (students, facts, struggles, grades, attendance, polls, quiz)
+  - AIGradeCorrelation: Pearson correlation between AI engagement (fact count, persistence score) and weighted grades
+  - Per-student metrics: fact count, struggle count, risk level, persistence score, weighted grade, attendance rate
+  - Built-in Pearson correlation (no scipy dependency)
+  - Human-readable correlation insight (強正/弱負/無相關)
+- [x] API endpoints
+  - GET /reports/weekly/{course_id} — comprehensive weekly teaching report
+  - GET /reports/correlation/{course_id} — AI engagement vs grade correlation analysis
+  - GET /reports/export/excel/{course_id} — download Excel report (.xlsx with 4 sheets)
+- [x] Excel export (openpyxl)
+  - Sheet 1: 教學總覽 (overview metrics)
+  - Sheet 2: 學生明細 (per-student details with risk, grades, attendance)
+  - Sheet 3: 常見困難 (ranked struggle topics)
+  - Sheet 4: AI互動-成績相關 (correlation data + insight)
+  - Formatted headers, auto-width columns
+- [x] Teacher dashboard: 教學分析報表 UI
+  - Sidebar nav: 📋 教學分析報表 section
+  - Overview stats: 6 cards (students, AI facts, grade mean, attendance, high risk, quiz avg)
+  - Scatter chart: AI interaction count vs weighted grade (Chart.js)
+  - Correlation insight display (Pearson r value + interpretation)
+  - Struggles ranking: horizontal bar chart sorted by frequency
+  - Student detail table: comprehensive multi-metric view (ID, facts, struggles, risk, persistence, grade, attendance)
+  - Interaction summary: polls, questions, danmaku, quiz, attendance counts
+  - One-click Excel export button
+- [x] 30 new tests (390 total), ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 2 — 學生端成績檢視 UI 完成
-Done: Student grade view UI (weighted total, rank, category breakdown, progress bars), 360 tests passing
-Next step: ROADMAP Phase 2 教學分析報表 或 Phase 3 規劃
+Phase: ROADMAP Phase 2 — 教學分析報表完成
+Done: Teaching analytics report (weekly metrics, AI-grade correlation, Excel export, teacher UI), 390 tests passing
+Next step: ROADMAP Phase 3 規劃 或其他增強功能
