@@ -701,9 +701,20 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Also tests: chat with RAG context, material deletion cleanup, session listing
   - 4 new tests (517 total), ruff clean
 
+## Demo RAG Material Seeding (2026-04-12)
+- [x] Demo course material seed data (demo_materials.py)
+  - ds101 lecture notes: 9 chunks covering arrays, linked lists, stacks, queues, trees, hash tables, graphs, sorting
+  - Pre-built ParsedDocument objects — no real PDF needed
+  - seed_demo_materials() clears existing + indexes fresh chunks into CourseRAG
+- [x] /demo/reset now seeds course materials for RAG
+  - Rebuilds _rag and _quiz globals after Memory recreation
+  - Enables full RAG → AI Quiz → Live Quiz demo flow from single click
+- [x] 1 new test (518 total), ruff clean
+
 ## Current State
 Phase: ROADMAP 三階段全部完成 ✅
 Done: 所有計畫功能已實作（AI 助教、RAG、測驗、互動、點名、成績、報表、錄音、課堂助理、Office Hour）
-Tests: 517 passing
+Tests: 518 passing
 Bugs fixed: Supervisor 報告的 4 個 bug 全部修復（global 宣告、sid 參數、grades 404、office-hours student_id）
+Demo: 一鍵 Demo 現在包含 RAG 教材 seed，可完整走通 RAG→AI 出題→即時測驗流程
 Next step: 競賽準備（組隊、文件、影片）或新功能開發
