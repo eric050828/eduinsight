@@ -1468,6 +1468,12 @@ async def demo_reset() -> DemoResetResponse:
     chunks_indexed = seed_demo_materials(_rag)
     logger.info("Demo seed: %d material chunks indexed for RAG", chunks_indexed)
 
+    # Seed demo live quiz session (pre-built questions + student answers)
+    from .demo_quiz import seed_demo_quiz
+
+    quiz_session_id = seed_demo_quiz(_quiz_manager)
+    logger.info("Demo seed: quiz session %s created with student answers", quiz_session_id)
+
     return DemoResetResponse(
         status="seeded",
         students_seeded=len(DEMO_STUDENTS),

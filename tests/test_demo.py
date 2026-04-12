@@ -123,6 +123,40 @@ class TestDemoReset:
         finally:
             app_module.settings.memory_db_path = original_path
 
+    async def test_demo_reset_seeds_quiz_session(self, tmp_path) -> None:
+        """POST /demo/reset seeds a live quiz session with student answers."""
+        import eduinsight.app as app_module
+
+        db_path = str(tmp_path / "demo_quiz.db")
+        app_module._memory = Memory(db_path)
+        app_module._assistant = LearningAssistant(app_module._memory)
+
+        original_path = app_module.settings.memory_db_path
+        app_module.settings.memory_db_path = db_path
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await client.post("/demo/reset")
+                # Check quiz sessions exist
+                resp = await client.get("/quiz/sessions")
+                assert resp.status_code == 200
+                sessions = resp.json()
+                assert len(sessions) >= 1
+                # Session should be closed with student answers
+                session = sessions[0]
+                assert session["status"] == "closed"
+                assert session["question_count"] == 5
+                # Check stats show student answers
+                sid = session["session_id"]
+                stats_resp = await client.get(f"/quiz/sessions/{sid}/stats")
+                assert stats_resp.status_code == 200
+                stats = stats_resp.json()
+                assert stats["total_students"] == 3
+                assert stats["total_questions"] == 5
+                assert stats["overall_correct_rate"] > 0
+        finally:
+            app_module.settings.memory_db_path = original_path
+
     async def test_demo_page_served(self) -> None:
         """GET /demo serves the walkthrough page."""
         mem = Memory()
