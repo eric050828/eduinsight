@@ -44,6 +44,7 @@ from .live_quiz import (
 from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
 from .lti import router as lti_router
 from .moodle import MoodleClient
+from .office_hours import BookingStatus, OfficeHourManager, SlotStatus
 from .quiz import QuizGenerator
 from .rag import CourseRAG
 from .report import ReportGenerator
@@ -63,6 +64,7 @@ _interaction: InteractionManager = InteractionManager()
 _attendance: AttendanceManager = AttendanceManager()
 _grades: GradeManager = GradeManager()
 _lectures: LectureManager | None = None
+_office_hours: OfficeHourManager = OfficeHourManager()
 _classroom_assistant = ClassroomAssistant(
     quiz_mgr=_quiz_manager,
     interaction_mgr=_interaction,
@@ -117,6 +119,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     _rag = CourseRAG(_memory)
     _quiz = QuizGenerator(_rag, _llm) if _llm is not None else None
     _lectures = LectureManager(_memory)
+    _office_hours._memory = _memory
     yield
 
     logger.info("Shutting down EduInsight")
@@ -2283,6 +2286,235 @@ async def classroom_snapshot(course_id: str, expected_students: int = 30) -> dic
             "poll_confusion": snap.poll_confusion,
             "danmaku_rate": snap.danmaku_rate,
         },
+    }
+
+
+# ------------------------------------------------------------------
+# Office Hours
+# ------------------------------------------------------------------
+
+
+class CreateSlotRequest(BaseModel):
+    course_id: str
+    teacher_id: int = 0
+    start_time: float
+    end_time: float
+    location: str = ""
+
+
+class SlotResponse(BaseModel):
+    slot_id: str
+    course_id: str
+    teacher_id: int
+    start_time: float
+    end_time: float
+    location: str
+    status: str
+    created_at: float
+
+
+class BookSlotRequest(BaseModel):
+    student_id: int
+    topic: str = ""
+
+
+class BookingResponse(BaseModel):
+    booking_id: str
+    slot_id: str
+    course_id: str
+    student_id: int
+    teacher_id: int
+    topic: str
+    status: str
+    resolution_notes: str
+    created_at: float
+    completed_at: float
+
+
+class ResolveBookingRequest(BaseModel):
+    notes: str = ""
+
+
+def _slot_resp(s: Any) -> SlotResponse:
+    return SlotResponse(
+        slot_id=s.slot_id,
+        course_id=s.course_id,
+        teacher_id=s.teacher_id,
+        start_time=s.start_time,
+        end_time=s.end_time,
+        location=s.location,
+        status=s.status.value,
+        created_at=s.created_at,
+    )
+
+
+def _booking_resp(b: Any) -> BookingResponse:
+    return BookingResponse(
+        booking_id=b.booking_id,
+        slot_id=b.slot_id,
+        course_id=b.course_id,
+        student_id=b.student_id,
+        teacher_id=b.teacher_id,
+        topic=b.topic,
+        status=b.status.value,
+        resolution_notes=b.resolution_notes,
+        created_at=b.created_at,
+        completed_at=b.completed_at,
+    )
+
+
+@app.post("/office-hours/slots", response_model=SlotResponse)
+async def create_office_hour_slot(req: CreateSlotRequest) -> SlotResponse:
+    """Create an available office hour time slot."""
+    try:
+        slot = _office_hours.create_slot(
+            req.course_id,
+            teacher_id=req.teacher_id,
+            start_time=req.start_time,
+            end_time=req.end_time,
+            location=req.location,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _slot_resp(slot)
+
+
+@app.get("/office-hours/slots")
+async def list_office_hour_slots(
+    course_id: str | None = None,
+    status: str | None = None,
+) -> list[SlotResponse]:
+    """List office hour slots with optional filters."""
+    slot_status = SlotStatus(status) if status else None
+    slots = _office_hours.list_slots(course_id, status=slot_status)
+    return [_slot_resp(s) for s in slots]
+
+
+@app.get("/office-hours/slots/{slot_id}", response_model=SlotResponse)
+async def get_office_hour_slot(slot_id: str) -> SlotResponse:
+    """Get slot details."""
+    try:
+        slot = _office_hours.get_slot(slot_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    return _slot_resp(slot)
+
+
+@app.post("/office-hours/slots/{slot_id}/cancel", response_model=SlotResponse)
+async def cancel_office_hour_slot(slot_id: str) -> SlotResponse:
+    """Cancel an available slot."""
+    try:
+        slot = _office_hours.cancel_slot(slot_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _slot_resp(slot)
+
+
+@app.post("/office-hours/slots/{slot_id}/book", response_model=BookingResponse)
+async def book_office_hour_slot(slot_id: str, req: BookSlotRequest) -> BookingResponse:
+    """Book an available slot for a student."""
+    try:
+        booking = _office_hours.book_slot(
+            slot_id, student_id=req.student_id, topic=req.topic,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _booking_resp(booking)
+
+
+@app.get("/office-hours/bookings")
+async def list_office_hour_bookings(
+    course_id: str | None = None,
+    student_id: int | None = None,
+    teacher_id: int | None = None,
+    status: str | None = None,
+) -> list[BookingResponse]:
+    """List bookings with optional filters."""
+    bk_status = BookingStatus(status) if status else None
+    bookings = _office_hours.list_bookings(
+        course_id=course_id,
+        student_id=student_id,
+        teacher_id=teacher_id,
+        status=bk_status,
+    )
+    return [_booking_resp(b) for b in bookings]
+
+
+@app.get("/office-hours/bookings/{booking_id}", response_model=BookingResponse)
+async def get_office_hour_booking(booking_id: str) -> BookingResponse:
+    """Get booking details."""
+    try:
+        booking = _office_hours.get_booking(booking_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return _booking_resp(booking)
+
+
+@app.post("/office-hours/bookings/{booking_id}/start", response_model=BookingResponse)
+async def start_office_hour_meeting(booking_id: str) -> BookingResponse:
+    """Mark a booking as in-progress (meeting started)."""
+    try:
+        booking = _office_hours.start_meeting(booking_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _booking_resp(booking)
+
+
+@app.post("/office-hours/bookings/{booking_id}/resolve", response_model=BookingResponse)
+async def resolve_office_hour_booking(
+    booking_id: str, req: ResolveBookingRequest,
+) -> BookingResponse:
+    """Complete a booking with resolution notes (updates student memory)."""
+    try:
+        booking = _office_hours.resolve_booking(booking_id, notes=req.notes)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _booking_resp(booking)
+
+
+@app.post("/office-hours/bookings/{booking_id}/cancel", response_model=BookingResponse)
+async def cancel_office_hour_booking(booking_id: str) -> BookingResponse:
+    """Cancel a booking, returning the slot to available."""
+    try:
+        booking = _office_hours.cancel_booking(booking_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _booking_resp(booking)
+
+
+@app.post("/office-hours/bookings/{booking_id}/no-show", response_model=BookingResponse)
+async def mark_office_hour_no_show(booking_id: str) -> BookingResponse:
+    """Mark a student as no-show."""
+    try:
+        booking = _office_hours.mark_no_show(booking_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    return _booking_resp(booking)
+
+
+@app.get("/office-hours/students/{student_id}/summary")
+async def get_office_hour_student_summary(student_id: int) -> dict[str, Any]:
+    """Get AI-generated learning summary for a student (pre-meeting brief)."""
+    summary = _office_hours.get_student_summary(student_id)
+    return {
+        "student_id": summary.student_id,
+        "total_facts": summary.total_facts,
+        "struggles": summary.struggles,
+        "weak_topics": summary.weak_topics,
+        "preferences": summary.preferences,
+        "recent_questions": summary.recent_questions,
+        "risk_level": summary.risk_level,
+        "summary_text": summary.summary_text,
     }
 
 

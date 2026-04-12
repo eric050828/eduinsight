@@ -629,7 +629,41 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Auto-refresh toggle (5s interval) for live monitoring
 - [x] 30 new tests (460 total), ruff clean
 
+## Office Hour Integration (2026-04-12)
+- [x] OfficeHourManager (office_hours.py) — already existed with full business logic
+  - Slot lifecycle: create → book → cancel, with time validation
+  - Booking lifecycle: pending → in_progress → completed/cancelled/no_show
+  - Student learning summary: pulls struggles, weak topics, preferences from Lite-Mem
+  - Resolution notes recorded to student memory via Lite-Mem
+  - 33 unit tests already passing
+- [x] API endpoints (13 new routes under /office-hours/)
+  - POST /office-hours/slots — create available time slot
+  - GET /office-hours/slots — list slots (optional course_id, status filter)
+  - GET /office-hours/slots/{id} — get slot details
+  - POST /office-hours/slots/{id}/cancel — cancel available slot
+  - POST /office-hours/slots/{id}/book — student books a slot
+  - GET /office-hours/bookings — list bookings (filter by course/student/teacher/status)
+  - GET /office-hours/bookings/{id} — get booking details
+  - POST /office-hours/bookings/{id}/start — mark meeting started
+  - POST /office-hours/bookings/{id}/resolve — complete with notes (updates memory)
+  - POST /office-hours/bookings/{id}/cancel — cancel booking
+  - POST /office-hours/bookings/{id}/no-show — mark student no-show
+  - GET /office-hours/students/{id}/summary — AI learning summary (pre-meeting brief)
+- [x] Teacher dashboard: Office Hour 管理 UI
+  - Sidebar nav: 🕐 Office Hour section
+  - Create slot: course, datetime picker, location input
+  - Slot list: table with status, time, course, cancel action
+  - Booking list: table with student, topic, status, action buttons
+  - Actions: start meeting, resolve (prompt for notes), cancel, mark no-show
+  - Student summary panel: stats cards (facts/struggles/topics), detail breakdown
+- [x] Student dashboard: Office Hour 預約 UI
+  - Available slots display with one-click booking
+  - Topic input on booking (optional)
+  - My bookings list with cancel action
+  - Auto-loads on page init
+- [x] 14 new API tests (47 in test_office_hours.py), 507 total, ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 3 — AI 課堂助理完成
-Done: Classroom assistant (real-time alerts + suggestions from quiz/poll/question/attendance/danmaku), 460 tests passing
-Next step: Phase 3 continued — Office Hour 整合
+Phase: ROADMAP Phase 3 — Office Hour 整合完成
+Done: Office Hour (slot management, booking lifecycle, AI learning summary, memory integration), 507 tests passing
+Next step: Phase 3 完成 — 總結或開始下一階段功能
