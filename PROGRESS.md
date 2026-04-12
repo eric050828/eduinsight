@@ -668,8 +668,28 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - All Phase 1 (Moodle + AI), Phase 2 (Zuvio features), Phase 3 (虛實整合) items done
 - 507 tests passing, ruff clean
 
+## Bugfix: Supervisor Review Round 9 (2026-04-12)
+- [x] Fix Bug 1 [Critical] — app.py:93 global 宣告加入 `_rag, _quiz`
+  - RAG 和 Quiz 引擎在 lifespan 中正確初始化為 global
+  - 修復 7 個 API endpoint 503 錯誤 (materials CRUD, quiz generate, RAG chat context)
+  - 更新 test fixtures (test_rag_api.py, test_quiz.py) 以適配 lifespan global 覆蓋
+- [x] Fix Bug 2 — student.html `?sid=` URL 參數解析
+  - 頁面初始化時解析 `?sid=` 參數，映射 moodle ID → student key
+  - 自動更新 student button active state 和 user badge
+- [x] Fix Bug 3 — demo grades 擴展至 3 課程 (ds101, py101, db101)
+  - E 張同學切換到 db101 不再 404
+  - 新增 py101 (Lab/期中/期末專題) 和 db101 (作業/期中/專題) 成績資料
+- [x] Fix attendance UI auto-load — 教師端頁面載入時自動偵測 open session
+  - loadAttSessions() 發現 open session 時自動 showActiveSession + startAttPolling
+- [x] Add test_app_init.py — 6 個 regression tests 防止 global 宣告遺漏
+  - 驗證 _memory, _assistant, _rag, _quiz, _lectures 在 lifespan 後正確初始化
+  - 驗證 GET /courses/*/materials 不回 503
+- [x] .gitignore 加入 .playwright-mcp/, *.png, *-snapshot.md, demo-walkthrough/, demo-trial/
+- [x] 513 tests passing, ruff clean
+
 ## Current State
 Phase: ROADMAP 三階段全部完成 ✅
 Done: 所有計畫功能已實作（AI 助教、RAG、測驗、互動、點名、成績、報表、錄音、課堂助理、Office Hour）
-Tests: 507 passing
+Tests: 513 passing
+Bugs fixed: Supervisor 報告的 3 個 bug 全部修復（global 宣告、sid 參數、grades 404）
 Next step: 競賽準備（組隊、文件、影片）或新功能開發

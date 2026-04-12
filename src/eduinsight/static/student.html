@@ -749,6 +749,21 @@ function escapeHtml(text) {
   return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
 
+// Parse ?sid= URL parameter to select student
+const _urlSid = new URLSearchParams(window.location.search).get('sid');
+if (_urlSid) {
+  const match = Object.entries(STUDENTS).find(([, s]) => String(s.moodle) === _urlSid);
+  if (match) {
+    currentStudent = match[0];
+    const key = match[0];
+    // Update button active state (match via onclick attribute)
+    document.querySelectorAll('.stu-btn[onclick]').forEach(b => {
+      const isMatch = b.getAttribute('onclick') === `switchStudent('${key}')`;
+      b.classList.toggle('active', isMatch);
+    });
+    document.querySelector('.user-badge').textContent = `${match[1].name} (${match[1].id})`;
+  }
+}
 // Init
 currentCourse = Object.keys(STUDENTS[currentStudent].courses)[0];
 renderCourseCards();

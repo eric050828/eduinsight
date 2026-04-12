@@ -309,19 +309,17 @@ class TestQuizAPI:
         mock_llm = MockLLM(_valid_quiz_json(3))
         quiz_gen = QuizGenerator(rag, mock_llm)
 
-        # Patch module-level state
-        app_module._memory = mem
-        app_module._assistant = app_module.LearningAssistant(mem)
-        app_module._rag = rag
-        app_module._quiz = quiz_gen
-
         with TestClient(app_module.app) as c:
+            # Save originals created by lifespan, override for test
+            orig_llm = app_module._llm
+            app_module._memory = mem
+            app_module._assistant = app_module.LearningAssistant(mem)
+            app_module._rag = rag
+            app_module._quiz = quiz_gen
+            app_module._llm = mock_llm
             yield c
-
-        app_module._memory = None
-        app_module._assistant = None
-        app_module._rag = None
-        app_module._quiz = None
+            # Restore original _llm so lifespan cleanup (__aexit__) works
+            app_module._llm = orig_llm
 
     def test_generate_quiz_endpoint(self, client):
         resp = client.post("/courses/CS101/quiz/generate", json={"num_questions": 3})
@@ -365,18 +363,18 @@ class TestQuizAPI:
         from eduinsight import app as app_module
 
         mem = Memory(":memory:")
-        app_module._memory = mem
-        app_module._assistant = app_module.LearningAssistant(mem)
-        app_module._rag = CourseRAG(mem)
-        app_module._quiz = None
 
         with TestClient(app_module.app) as c:
+            # Save originals created by lifespan, override for test
+            orig_llm = app_module._llm
+            app_module._memory = mem
+            app_module._assistant = app_module.LearningAssistant(mem)
+            app_module._rag = CourseRAG(mem)
+            app_module._quiz = None
+            app_module._llm = None
             yield c
-
-        app_module._memory = None
-        app_module._assistant = None
-        app_module._rag = None
-        app_module._quiz = None
+            # Restore original _llm so lifespan cleanup (__aexit__) works
+            app_module._llm = orig_llm
 
     def test_generate_quiz_no_llm_returns_503(self, client_no_llm):
         resp = client_no_llm.post("/courses/CS101/quiz/generate", json={})

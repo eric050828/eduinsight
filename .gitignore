@@ -26,3 +26,12 @@ wheels/
 # OS
 .DS_Store
 Thumbs.db
+
+# Playwright MCP
+.playwright-mcp/
+
+# Screenshots / snapshots (dev artifacts)
+*.png
+*-snapshot.md
+demo-walkthrough/
+demo-trial/

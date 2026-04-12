@@ -90,7 +90,7 @@ def get_moodle_client() -> MoodleClient:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
-    global _memory, _assistant, _llm, _lectures
+    global _memory, _assistant, _llm, _lectures, _rag, _quiz
     logger.info("Starting EduInsight with memory DB: %s", settings.memory_db_path)
     embedder = settings.memory_embedder or None  # "" means disabled
     _memory = Memory(settings.memory_db_path, embedder=embedder)

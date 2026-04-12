@@ -17,18 +17,18 @@ def client():
     """Create a test client with in-memory database."""
     mem = Memory(":memory:")
     rag = CourseRAG(mem)
-    app_module._memory = mem
-    app_module._assistant = app_module.LearningAssistant(mem)
-    app_module._rag = rag
-    app_module._llm = None
 
     with TestClient(app_module.app, raise_server_exceptions=False) as c:
+        # Save originals created by lifespan, override for test
+        orig_llm = app_module._llm
+        app_module._memory = mem
+        app_module._assistant = app_module.LearningAssistant(mem)
+        app_module._rag = rag
+        app_module._llm = None
+        app_module._quiz = None
         yield c
-
-    app_module._memory = None
-    app_module._assistant = None
-    app_module._rag = None
-    app_module._llm = None
+        # Restore original _llm so lifespan cleanup (__aexit__) works
+        app_module._llm = orig_llm
 
 
 def _make_test_pdf(text: str = "Binary search works by dividing the array in half.") -> bytes:
