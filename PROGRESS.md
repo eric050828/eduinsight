@@ -769,9 +769,20 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Recording preparation checklist
 - [x] 529 tests passing, ruff clean
 
+## Demo Route Verification (2026-04-13)
+- [x] Playwright 完整 Demo 路線走查（重啟 server 後驗證）
+  - Landing → 一鍵 Demo (54 memories seeded) → Student A → Student D → Teacher
+  - Student 1004 (D 李同學): risk_level=high, persistence=25, 4 risk factors ✅
+  - 成績分佈: ds101 mean=67.04, A:1 C:2 F:2（之前全 F mean=38.12）✅
+  - AI 互動摘要: 6 學生按 risk 排序，1004 排第一（high risk）✅
+  - Teacher dashboard/預警中心/AI 摘要/即時數據 全部正常 ✅
+  - 全頁 0 console errors, 0 warnings ✅
+- [x] 529 tests passing, ruff clean
+
 ## Current State
-Phase: ROADMAP 三階段全部完成 ✅ → Demo 最佳化階段
-Done: 所有計畫功能已實作 + Demo 資料品質改善 + Demo 腳本
+Phase: ROADMAP 三階段全部完成 ✅ → Demo-Ready 狀態確認
+Done: 所有功能實作 + Demo 資料品質改善 + 完整 Demo 路線驗證通過
 Tests: 529 passing
 Demo: high-risk 學生（1004 persistence=25）、A-F 成績分佈、3 分鐘 demo 腳本就緒
+Verified: Playwright 走查全 PASS，0 errors
 Next step: OBS 錄製 Demo 影片 → InnoServe 文件準備
