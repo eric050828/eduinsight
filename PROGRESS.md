@@ -687,9 +687,23 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] .gitignore 加入 .playwright-mcp/, *.png, *-snapshot.md, demo-walkthrough/, demo-trial/
 - [x] 513 tests passing, ruff clean
 
+## Bugfix: Supervisor Review Round 10 (2026-04-12)
+- [x] Fix Bug 4 — office-hours/bookings student_id type mismatch
+  - student.html sent string ID ("B11209001") via `.id`, but API expects int
+  - Changed to use `.moodle` numeric ID (1001) for both loadStudentOH() and bookOHSlot()
+  - Office-hours booking query and booking creation now work correctly
+- [x] Commit untracked project files
+  - docker-compose.moodle.yml (Moodle dev environment)
+  - docs/ (competition pitch materials: PDF + markdown)
+  - src/eduinsight/lti_config.json (LTI 1.3 configuration)
+- [x] End-to-end RAG → AI Quiz → Live Quiz integration test
+  - Full pipeline: upload PDF → parse+chunk+index → AI generate MCQ → create live session → student answer → real-time stats → close
+  - Also tests: chat with RAG context, material deletion cleanup, session listing
+  - 4 new tests (517 total), ruff clean
+
 ## Current State
 Phase: ROADMAP 三階段全部完成 ✅
 Done: 所有計畫功能已實作（AI 助教、RAG、測驗、互動、點名、成績、報表、錄音、課堂助理、Office Hour）
-Tests: 513 passing
-Bugs fixed: Supervisor 報告的 3 個 bug 全部修復（global 宣告、sid 參數、grades 404）
+Tests: 517 passing
+Bugs fixed: Supervisor 報告的 4 個 bug 全部修復（global 宣告、sid 參數、grades 404、office-hours student_id）
 Next step: 競賽準備（組隊、文件、影片）或新功能開發
