@@ -1334,7 +1334,7 @@ function fmtOHTime(ts) {
 }
 
 async function loadStudentOH() {
-  const sid = STUDENTS[currentStudent].id;
+  const sid = STUDENTS[currentStudent].moodle;
   const section = document.getElementById('ohStudentSection');
 
   // Load available slots
@@ -1382,7 +1382,7 @@ async function loadStudentOH() {
 }
 
 async function bookOHSlot(slotId) {
-  const sid = STUDENTS[currentStudent].id;
+  const sid = STUDENTS[currentStudent].moodle;
   const topic = prompt('想討論什麼��題？（可留空）') || '';
   const r = await fetch(`/office-hours/slots/${slotId}/book`, {
     method: 'POST',

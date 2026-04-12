@@ -1,0 +1,16 @@
+{
+  "http://localhost:8080": [
+    {
+      "default": true,
+      "client_id": "HfGbuDZTj36GZgR",
+      "auth_login_url": "http://localhost:8080/mod/lti/auth.php",
+      "auth_token_url": "http://localhost:8080/mod/lti/token.php",
+      "auth_audience": null,
+      "key_set_url": "http://localhost:8080/mod/lti/certs.php",
+      "key_set": null,
+      "deployment_ids": [
+        "1"
+      ]
+    }
+  ]
+}
