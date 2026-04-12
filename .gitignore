@@ -32,6 +32,8 @@ Thumbs.db
 
 # Screenshots / snapshots (dev artifacts)
 *.png
+*.jpeg
+*.jpg
 *-snapshot.md
 demo-walkthrough/
 demo-trial/
