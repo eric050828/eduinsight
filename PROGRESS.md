@@ -753,10 +753,25 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Full demo flow: one-click reset → teacher sees quiz stats with real student answer data
 - [x] 1 new test (529 total), ruff clean
 
+## Demo Data Quality + Script (2026-04-13)
+- [x] Commit teacher.html layout fix (closing div placement from Bug 5)
+- [x] Student 1004 → high risk profile
+  - Reduced facts from 11 to 5 (1 general + 3 struggling + 1 preference)
+  - Struggle ratio 60% (> 35% threshold)
+  - Backdated to 21 days ago → recency_score 16, trend_score 10
+  - Persistence score ~25 → risk_level: high
+- [x] Realistic grade distribution (ds101 A-F spread)
+  - Added 期末考 scores for all 5 students in ds101
+  - Added 期末專題/專題 for py101 and db101
+  - 1002: A, 1001: B, 1005: B-, 1003: C, 1004: D/F
+- [x] Demo script (scripts/demo_script.md)
+  - 9-step, 3-minute walkthrough with timing and talking points
+  - Recording preparation checklist
+- [x] 529 tests passing, ruff clean
+
 ## Current State
-Phase: ROADMAP 三階段全部完成 ✅
-Done: 所有計畫功能已實作（AI 助教、RAG、測驗、互動、點名、成績、報表、錄音、課堂助理、Office Hour）
+Phase: ROADMAP 三階段全部完成 ✅ → Demo 最佳化階段
+Done: 所有計畫功能已實作 + Demo 資料品質改善 + Demo 腳本
 Tests: 529 passing
-Bugs fixed: Supervisor Review Round 11 — Bug 5 (teacher layout critical) + Bug 4 (API type) + moodle:2001 name
-Demo: 教師端儀表板完整可見，所有 sidebar 導航正常，即時測驗有預建 demo 資料
-Next step: 競賽準備（組隊、文件、影片）或新功能開發
+Demo: high-risk 學生（1004 persistence=25）、A-F 成績分佈、3 分鐘 demo 腳本就緒
+Next step: OBS 錄製 Demo 影片 → InnoServe 文件準備
