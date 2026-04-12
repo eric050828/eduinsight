@@ -450,7 +450,23 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
   - Danmaku: POST /interaction/danmaku, GET /interaction/danmaku
 - [x] 42 new tests (272 total), ruff clean
 
+## Classroom Interaction UI — Teacher + Student (2026-04-12)
+- [x] Teacher dashboard: 課堂互動管理 UI
+  - Sidebar nav: 🙋 課堂互動 section
+  - **投票管理**: create poll (title + options), poll list with status indicators, select → stats panel
+  - Poll stats: real-time bar chart (per-option votes + percentage), activate/close controls
+  - Auto-polling every 3s during active polls for live vote updates
+  - **匿名提問**: question feed sorted by upvotes, resolve button per question, show/hide resolved toggle
+  - **彈幕文字牆**: colorful bubble display, course selector, refresh button
+- [x] Student dashboard: 課堂互動參與 UI
+  - Tabbed interface (📊 投票 / ❓ 提問 / 💬 彈幕) in interaction panel
+  - **投票**: shows active polls with live results, click to vote, visual percentage bars
+  - **匿名提問**: input + send, question feed with upvote buttons (👍), resolved status
+  - **彈幕**: input + send (max 100 chars), colorful bubble stream display
+  - Enter key support for question and danmaku inputs
+- [x] 272 tests passing, ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 2 — 即時互動 backend 完成（投票/匿名提問/彈幕）
-Done: Interaction backend + API (polls, anon questions, danmaku), 272 tests passing
-Next step: 即時互動 UI（教師端 + 學生端）
+Phase: ROADMAP Phase 2 — 即時互動 UI 完成
+Done: Interaction UI (teacher: polls/questions/danmaku management; student: vote/ask/danmaku), 272 tests passing
+Next step: 待定（ROADMAP 下一步）

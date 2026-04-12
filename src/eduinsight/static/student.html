@@ -206,13 +206,45 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
     <!-- Course cards -->
     <div class="course-cards" id="courseCards"></div>
 
-    <!-- Classroom mode -->
-    <div class="classroom-banner">
-      <div class="classroom-banner-icon">📡</div>
-      <div class="classroom-banner-text">
-        <strong>課堂即時回饋</strong> — 上課時標記「聽不懂」的概念，老師即時看到全班狀況（匿名）
+    <!-- Classroom Interaction Panel -->
+    <div id="interactionPanel" class="card" style="border-color:rgba(99,102,241,0.3);background:linear-gradient(135deg,rgba(99,102,241,0.03),rgba(34,211,238,0.02))">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title"><span class="icon">🙋</span> 課堂互動</div>
+        <div style="display:flex;gap:4px">
+          <button class="stu-btn" style="font-size:11px;padding:4px 10px" onclick="showInteractionTab('poll')" id="tabPoll">📊 投票</button>
+          <button class="stu-btn" style="font-size:11px;padding:4px 10px" onclick="showInteractionTab('question')" id="tabQuestion">❓ 提問</button>
+          <button class="stu-btn" style="font-size:11px;padding:4px 10px" onclick="showInteractionTab('danmaku')" id="tabDanmaku">💬 彈幕</button>
+        </div>
       </div>
-      <button class="classroom-btn" onclick="this.textContent=this.textContent==='✅ 已標記'?'🙋 這裡聯不懂':'✅ 已標記'">🙋 這裡聽不懂</button>
+
+      <!-- Poll Tab -->
+      <div id="interactionPoll" style="display:none">
+        <div id="activePollContainer">
+          <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">目前沒有進行中的投票</div>
+        </div>
+      </div>
+
+      <!-- Question Tab -->
+      <div id="interactionQuestion" style="display:none">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input id="anonQuestionInput" type="text" placeholder="匿名提問（老師和同學看不到你是誰）" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;outline:none">
+          <button onclick="postAnonQuestion()" style="padding:8px 16px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap">送出</button>
+        </div>
+        <div id="questionFeed" style="max-height:300px;overflow-y:auto">
+          <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">載入中...</div>
+        </div>
+      </div>
+
+      <!-- Danmaku Tab -->
+      <div id="interactionDanmaku" style="display:none">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <input id="danmakuInput" type="text" maxlength="100" placeholder="發送彈幕（最多 100 字）" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-family:inherit;outline:none">
+          <button onclick="sendDanmaku()" style="padding:8px 16px;border-radius:8px;border:none;background:#6366f1;color:#fff;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap">發送</button>
+        </div>
+        <div id="danmakuStream" style="min-height:60px;max-height:200px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:6px;align-content:flex-start">
+          <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px;width:100%">尚無彈幕</div>
+        </div>
+      </div>
     </div>
 
     <!-- Live Quiz Banner -->
@@ -821,6 +853,199 @@ async function sendMessage(){
   }catch(e){document.getElementById('typing')?.remove();addMsg('assistant','連線錯誤: '+e.message)}
   finally{sendBtn.disabled=false;msgInput.focus()}
 }
+
+// =====================================================================
+// CLASSROOM INTERACTION (Polls, Anon Questions, Danmaku)
+// =====================================================================
+let activeInteractionTab = null;
+let studentPollPolling = null;
+let studentQuestionPolling = null;
+let studentDanmakuPolling = null;
+
+function showInteractionTab(tab) {
+  ['poll', 'question', 'danmaku'].forEach(t => {
+    document.getElementById('interaction' + t.charAt(0).toUpperCase() + t.slice(1)).style.display = t === tab ? '' : 'none';
+    document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1)).classList.toggle('active', t === tab);
+  });
+  activeInteractionTab = tab;
+  if (tab === 'poll') loadActivePolls();
+  else if (tab === 'question') loadStudentQuestions();
+  else if (tab === 'danmaku') loadStudentDanmaku();
+}
+
+function getStudentCourseId() {
+  const s = STUDENTS[currentStudent];
+  const c = s.courses[currentCourse];
+  return c.courseId || 'ds101';
+}
+
+// ── Student Polls ──
+async function loadActivePolls() {
+  const container = document.getElementById('activePollContainer');
+  const courseId = getStudentCourseId();
+  try {
+    const res = await fetch(`/interaction/polls?course_id=${courseId}`);
+    if (!res.ok) throw new Error('載入失敗');
+    const polls = await res.json();
+    const activePolls = polls.filter(p => p.status === 'active');
+    if (activePolls.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">目前沒有進行中的投票</div>';
+      return;
+    }
+    // Render each active poll with vote buttons
+    let html = '';
+    for (const poll of activePolls) {
+      const statsRes = await fetch(`/interaction/polls/${poll.poll_id}/stats`);
+      const stats = statsRes.ok ? await statsRes.json() : null;
+      html += `<div style="margin-bottom:12px;padding:12px;border-radius:8px;border:1px solid var(--border);background:var(--surface)">
+        <div style="font-size:14px;font-weight:600;margin-bottom:8px">${poll.title}</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${poll.options.map((opt, i) => {
+            const count = stats ? stats.distribution[i] : 0;
+            const total = stats ? stats.total_votes : 0;
+            const pct = total > 0 ? Math.round(count / total * 100) : 0;
+            return `<button onclick="votePoll('${poll.poll_id}', ${i}, this.parentElement)" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;cursor:pointer;text-align:left;font-family:inherit;transition:all .15s;position:relative;overflow:hidden" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+              <span style="position:absolute;left:0;top:0;height:100%;width:${pct}%;background:rgba(99,102,241,0.08);transition:width .3s"></span>
+              <span style="position:relative">${opt}</span>
+              <span style="position:relative;margin-left:auto;font-size:11px;color:var(--text-dim)">${count} 票 (${pct}%)</span>
+            </button>`;
+          }).join('')}
+        </div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:6px">共 ${stats ? stats.total_votes : 0} 票</div>
+      </div>`;
+    }
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = `<div style="text-align:center;padding:16px;color:var(--red);font-size:12px">❌ ${e.message}</div>`;
+  }
+}
+
+async function votePoll(pollId, optionIdx, parentEl) {
+  const s = STUDENTS[currentStudent];
+  try {
+    const res = await fetch(`/interaction/polls/${pollId}/vote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student_id: s.moodle, option_idx: optionIdx })
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || '投票失敗');
+    // Briefly highlight the voted button
+    const btns = parentEl.querySelectorAll('button');
+    btns[optionIdx].style.borderColor = 'var(--green)';
+    btns[optionIdx].style.background = 'rgba(52,211,153,0.1)';
+    // Refresh after short delay
+    setTimeout(() => loadActivePolls(), 500);
+  } catch (e) { alert('投票失敗: ' + e.message); }
+}
+
+// ── Student Anonymous Questions ──
+async function loadStudentQuestions() {
+  const container = document.getElementById('questionFeed');
+  const courseId = getStudentCourseId();
+  try {
+    const res = await fetch(`/interaction/questions?course_id=${courseId}&include_resolved=true`);
+    if (!res.ok) throw new Error('載入失敗');
+    const questions = await res.json();
+    if (questions.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px">還沒有人提問，來當第一個吧！</div>';
+      return;
+    }
+    container.innerHTML = questions.map(q => {
+      const timeStr = new Date(q.created_at * 1000).toLocaleString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+      return `<div style="display:flex;gap:10px;padding:10px;border-bottom:1px solid var(--border);${q.resolved ? 'opacity:0.5;' : ''}">
+        <button onclick="upvoteQuestion('${q.question_id}', this)" style="display:flex;flex-direction:column;align-items:center;gap:1px;border:1px solid var(--border);background:var(--surface);border-radius:6px;padding:6px 8px;cursor:pointer;transition:all .15s;flex-shrink:0" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+          <span style="font-size:12px">👍</span>
+          <span style="font-size:12px;font-weight:700;color:var(--primary)">${q.upvote_count}</span>
+        </button>
+        <div style="flex:1">
+          <div style="font-size:13px;line-height:1.5">${q.text}</div>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:3px">${timeStr}${q.resolved ? ' · ✅ 已解答' : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = `<div style="text-align:center;padding:16px;color:var(--red);font-size:12px">❌ ${e.message}</div>`;
+  }
+}
+
+async function postAnonQuestion() {
+  const input = document.getElementById('anonQuestionInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const s = STUDENTS[currentStudent];
+  try {
+    const res = await fetch('/interaction/questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ course_id: getStudentCourseId(), text, student_id: s.moodle })
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || '送出失敗');
+    input.value = '';
+    await loadStudentQuestions();
+  } catch (e) { alert('送出失敗: ' + e.message); }
+}
+
+async function upvoteQuestion(questionId, btn) {
+  const s = STUDENTS[currentStudent];
+  try {
+    const res = await fetch(`/interaction/questions/${questionId}/upvote`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student_id: s.moodle })
+    });
+    if (!res.ok) throw new Error('操作失敗');
+    const data = await res.json();
+    btn.querySelector('span:last-child').textContent = data.upvote_count;
+    btn.style.borderColor = 'var(--primary)';
+    btn.style.background = 'rgba(99,102,241,0.08)';
+  } catch (e) { console.error('upvote error:', e); }
+}
+
+// ── Student Danmaku ──
+async function loadStudentDanmaku() {
+  const container = document.getElementById('danmakuStream');
+  const courseId = getStudentCourseId();
+  try {
+    const res = await fetch(`/interaction/danmaku?course_id=${courseId}&limit=50`);
+    if (!res.ok) throw new Error('載入失敗');
+    const msgs = await res.json();
+    if (msgs.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:16px;color:var(--text-dim);font-size:12px;width:100%">尚無彈幕，發一條試試！</div>';
+      return;
+    }
+    const colors = ['#6366f1', '#22d3ee', '#fbbf24', '#34d399', '#f87171', '#818cf8', '#fb7185'];
+    container.innerHTML = msgs.map((m, i) => {
+      const c = colors[i % colors.length];
+      return `<span style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;color:${c};border:1px solid ${c}44;background:${c}08;white-space:nowrap">${m.text}</span>`;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = `<div style="text-align:center;padding:16px;color:var(--red);font-size:12px;width:100%">❌ ${e.message}</div>`;
+  }
+}
+
+async function sendDanmaku() {
+  const input = document.getElementById('danmakuInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const s = STUDENTS[currentStudent];
+  try {
+    const res = await fetch('/interaction/danmaku', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ course_id: getStudentCourseId(), text, student_id: s.moodle })
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || '發送失敗');
+    input.value = '';
+    await loadStudentDanmaku();
+  } catch (e) { alert('發送失敗: ' + e.message); }
+}
+
+// Enter key support for interaction inputs
+document.getElementById('anonQuestionInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') postAnonQuestion(); });
+document.getElementById('danmakuInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendDanmaku(); });
+
+// Auto-show poll tab by default
+setTimeout(() => showInteractionTab('poll'), 100);
 
 // =====================================================================
 // LIVE QUIZ PARTICIPATION
