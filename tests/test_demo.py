@@ -70,6 +70,36 @@ class TestDemoReset:
         finally:
             app_module.settings.memory_db_path = original_path
 
+    async def test_demo_reset_seeds_grades(self, tmp_path) -> None:
+        """POST /demo/reset also seeds grade data for ds101."""
+        import eduinsight.app as app_module
+
+        db_path = str(tmp_path / "demo_grades.db")
+        app_module._memory = Memory(db_path)
+        app_module._assistant = LearningAssistant(app_module._memory)
+
+        original_path = app_module.settings.memory_db_path
+        app_module.settings.memory_db_path = db_path
+        try:
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                await client.post("/demo/reset")
+                # Check ds101 has categories
+                resp = await client.get("/grades/ds101/categories")
+                assert resp.status_code == 200
+                cats = resp.json()
+                assert len(cats) == 3
+                # Check class overview has 5 students
+                resp2 = await client.get("/grades/ds101/overview")
+                assert resp2.status_code == 200
+                overview = resp2.json()
+                assert overview["total_students"] == 5
+                assert overview["mean"] > 0
+                # Check rankings
+                assert len(overview["rankings"]) == 5
+        finally:
+            app_module.settings.memory_db_path = original_path
+
     async def test_demo_page_served(self) -> None:
         """GET /demo serves the walkthrough page."""
         mem = Memory()

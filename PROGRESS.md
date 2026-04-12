@@ -519,7 +519,23 @@ Lite-Mem 是套件依賴，不可修改其原始碼。教育只是 Lite-Mem 的�
 - [x] Renamed old Moodle grades proxy: /grades/ → /moodle/grades/ (route conflict fix)
 - [x] 42 new tests (358 total), ruff clean
 
+## Teacher Dashboard: Grade Management UI (2026-04-12)
+- [x] Teacher dashboard: 成績管理 UI
+  - Sidebar nav: 📝 成績管理 section
+  - **評分項目設定**: course selector, dynamic category rows (name + weight%), save/load categories
+  - Weight validation (must sum to 100%)
+  - **成績登錄**: student ID, category dropdown (auto-populated), item name, score/total input
+  - **成績分布**: Chart.js bar chart (A/B/C/D/F bands), stats cards (mean, std_dev, range)
+  - **排名表**: medal icons for top 3, grade letter coloring, weighted total display
+  - **成績記錄**: full score records table with delete action per entry
+  - Refresh button, course change auto-reload
+- [x] Demo grade data seeding (demo_grades.py)
+  - ds101 course: 3 categories (作業 30%, 期中考 30%, 期末考 40%)
+  - 5 students × 4 scores each (HW1-3 + midterm), realistic performance spread
+  - /demo/reset now seeds grades alongside memories and conversations
+- [x] 1 new test (359 total), ruff clean
+
 ## Current State
-Phase: ROADMAP Phase 2 — 成績管理完成
-Done: Grade management (weighted scoring, distribution, rankings), 358 tests passing
-Next step: 教師儀表板成績管理 UI（成績輸入、分布圖表、排名表）
+Phase: ROADMAP Phase 2 — 成績管理 UI 完成
+Done: Grade management UI (category setup, score input, distribution chart, rankings), 359 tests passing
+Next step: 學生端成績檢視 UI 或 ROADMAP Phase 3 規劃

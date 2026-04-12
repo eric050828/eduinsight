@@ -31,8 +31,8 @@ from .analytics import (
 from .assistant import LearningAssistant
 from .attendance import AttendanceManager, GPSLocation
 from .config import settings
-from .grades import GradeManager
 from .documents import parse_document
+from .grades import GradeManager
 from .interaction import InteractionManager
 from .live_quiz import (
     QuizSessionManager,
@@ -1247,6 +1247,11 @@ async def demo_reset() -> DemoResetResponse:
             "Demo seed: %d facts seeded but only %d survived (Lite-Mem dedup)",
             total_seeded, actual_total,
         )
+
+    # Seed demo grade data
+    from .demo_grades import seed_demo_grades
+
+    seed_demo_grades(_grades)
 
     return DemoResetResponse(
         status="seeded",
