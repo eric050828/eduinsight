@@ -41,3 +41,6 @@ Thumbs.db
 *-snapshot.md
 demo-walkthrough/
 demo-trial/
+
+# Simulation materials (generated locally, not committed)
+_sim_materials/

@@ -77,6 +77,22 @@ class TestAnalyzeStudent:
         # weak_topics should contain at least the struggles that survived dedup
         assert len(result.weak_topics) >= 1
 
+    def test_natural_language_struggle_extracted(self) -> None:
+        """LLM-extracted facts without 'Struggling with' prefix should still be detected."""
+        mem = Memory()
+        mem.add("moodle:1", "搞不懂「進步性」怎麼判斷")
+        mem.add("moodle:1", "I'm confused by SWOT external vs internal factors")
+        mem.add("moodle:1", "為什麼 STP 流程的順序不能換？")
+
+        result = analyze_student(mem, 1)
+        topics = [s.topic for s in result.struggles]
+        # CJK quoted term: 進步性
+        assert "進步性" in topics, f"Expected 進步性 in {topics}"
+        # English jargon: SWOT
+        assert "SWOT" in topics, f"Expected SWOT in {topics}"
+        # Question topic without struggle word counts as engagement, not struggle
+        assert "STP" in result.question_topics
+
     def test_question_topics_counted(self) -> None:
         mem = Memory()
         mem.add("moodle:1", "[Math] Q: What is calculus?")

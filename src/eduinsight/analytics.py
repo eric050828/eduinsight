@@ -41,6 +41,65 @@ _PREFERENCE_RE = re.compile(r"^Learning preference:\s*(.+)$")
 _QUESTION_RE = re.compile(r"^\[([^\]]+)\]\s*Q:\s*(.+)$")
 _WEEK_NOISE_RE = re.compile(r"^W\d+")
 
+# ----- Natural-language struggle detection (for LLM-extracted facts) -----
+# Chinese & English struggle indicators. Matched as substrings, case-insensitive.
+_STRUGGLE_INDICATORS = (
+    "搞不懂", "不懂", "不太懂", "不會", "搞混", "混淆", "卡關", "卡住", "看不懂",
+    "聽不懂", "不知道", "不確定", "弄不清", "搞不清", "分不出",
+    "confused", "don't understand", "doesn't understand", "do not understand",
+    "struggling", "stuck", "unclear", "not sure", "can't tell", "cannot tell",
+)
+
+# Q/A turn prefixes used by record_interaction()
+_QA_RE = re.compile(r"^(?:Q|A|Question|Answer)\s*[:：]\s*(.+)$", re.IGNORECASE)
+
+# Proper-noun / jargon extraction patterns used to derive a topic for natural facts.
+#   - 大寫縮寫 (SWOT, STP, APA, BST, JOIN, DP)
+#   - 中文「」或『』包裹詞彙
+#   - 「XX 是什麼」「為什麼 XX」「XX 怎麼判斷」中的 XX
+_ABBR_RE = re.compile(r"\b([A-Z]{2,}(?:[\-/][A-Z]{2,})?)\b")
+_QUOTE_TOPIC_RE = re.compile(r"[「『]([^」』]{1,15})[」』]")
+_ZH_QUERY_RE = re.compile(
+    r"(?:什麼是|為什麼|怎麼|如何|何為)([一-鿿 A-Za-z0-9]{2,15}?)(?:[？?，,。！!\s]|$)"
+)
+
+
+def _extract_natural_topic(fact: str) -> str | None:
+    """Best-effort topic extraction from free-form facts (LLM-extracted or chat messages).
+
+    Returns the most salient term, or None when nothing clean stands out.
+    """
+    body = fact.strip()
+    # Strip Q:/A: prefix if any
+    m = _QA_RE.match(body)
+    if m:
+        body = m.group(1).strip()
+
+    # 1. Quoted CJK keyword wins (e.g. 「進步性」)
+    m = _QUOTE_TOPIC_RE.search(body)
+    if m:
+        return m.group(1).strip()
+
+    # 2. ALL-CAPS abbreviations / jargon (SWOT, STP, JOIN, APA, BST...)
+    abbrs = [a for a in _ABBR_RE.findall(body) if a not in {"AI", "API", "OK", "PDF", "CPU", "GPU"}]
+    if abbrs:
+        return abbrs[0]
+
+    # 3. Chinese question patterns: 什麼是 X / 為什麼 X / X 怎麼判斷
+    m = _ZH_QUERY_RE.search(body)
+    if m:
+        cand = m.group(1).strip()
+        if 2 <= len(cand) <= 20:
+            return cand
+
+    return None
+
+
+def _is_natural_struggle(fact: str) -> bool:
+    """Detect if a free-form fact text expresses a struggle/confusion."""
+    low = fact.lower()
+    return any(ind.lower() in low for ind in _STRUGGLE_INDICATORS)
+
 
 @dataclass
 class Struggle:
@@ -91,7 +150,7 @@ def analyze_student(memory: Memory, moodle_user_id: int) -> StudentAnalytics:
     question_topics: Counter[str] = Counter()
 
     for fact in facts:
-        # Check for struggle pattern
+        # Check for struggle pattern (legacy "Struggling with X:" prefix)
         m = _STRUGGLE_RE.match(fact)
         if m:
             topic = m.group(1).strip()
@@ -106,7 +165,7 @@ def analyze_student(memory: Memory, moodle_user_id: int) -> StudentAnalytics:
             result.preferences.append(m.group(1).strip())
             continue
 
-        # Check for question with topic tag
+        # Check for question with topic tag (legacy "[Topic] Q: ..." form)
         m = _QUESTION_RE.match(fact)
         if m:
             question_topics[m.group(1).strip()] += 1
@@ -116,6 +175,16 @@ def analyze_student(memory: Memory, moodle_user_id: int) -> StudentAnalytics:
         m = _TOPIC_RE.match(fact)
         if m:
             question_topics[m.group(1).strip()] += 1
+            continue
+
+        # ---- Natural-language fallback (LLM-extracted or raw Q/A facts) ----
+        natural_topic = _extract_natural_topic(fact)
+        if natural_topic:
+            if _is_natural_struggle(fact):
+                result.struggles.append(Struggle(topic=natural_topic, details=fact[:120]))
+                struggle_topics[natural_topic] += 1
+            else:
+                question_topics[natural_topic] += 1
 
     # Sort weak topics by struggle frequency (most struggled first)
     result.weak_topics = [t for t, _ in struggle_topics.most_common()]
