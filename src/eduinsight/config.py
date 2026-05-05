@@ -28,7 +28,27 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
 
+    # CORS — comma-separated origins, e.g. "http://localhost:3000,https://edu-insight-two.vercel.app"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    # Auth mode: "jwt" (standalone Version A) | "lti" (Moodle Version B) | "both"
+    auth_mode: str = "both"
+
+    # JWT secret (Version A only). Generate via: openssl rand -hex 32
+    jwt_secret: str = "dev-only-secret-change-me-in-production"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
+
+    # Internal user database for standalone mode (separate from memory_db)
+    auth_db_path: str = "eduinsight_auth.db"
+
+    # Frontend URL — used by LTI launch to redirect users into the Next.js app
+    frontend_url: str = "http://localhost:3000"
+
     model_config = {"env_prefix": "EDUINSIGHT_", "env_file": ".env"}
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
 
 settings = Settings()

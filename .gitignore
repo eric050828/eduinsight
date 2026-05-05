@@ -13,6 +13,10 @@ wheels/
 .env
 *.env.local
 
+# Local dev logs
+.uvicorn.log
+.uvicorn.err
+
 # IDE
 .idea/
 .vscode/

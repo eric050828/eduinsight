@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from litemem import Memory
@@ -31,6 +32,9 @@ from .analytics import (
 )
 from .assistant import LearningAssistant
 from .attendance import AttendanceManager, GPSLocation
+from .auth import init_db as init_auth_db
+from .auth import router as auth_router
+from .auth import seed_demo_users
 from .classroom_assistant import ClassroomAssistant
 from .config import settings
 from .documents import parse_document
@@ -93,6 +97,11 @@ def get_moodle_client() -> MoodleClient:
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     global _memory, _assistant, _llm, _lectures, _rag, _quiz
     logger.info("Starting EduInsight with memory DB: %s", settings.memory_db_path)
+
+    # Initialize auth DB (separate from memory DB)
+    init_auth_db()
+    seeded = seed_demo_users()
+    logger.info("Auth DB ready: seeded users = %s", seeded)
     embedder = settings.memory_embedder or None  # "" means disabled
     _memory = Memory(settings.memory_db_path, embedder=embedder)
 
@@ -143,6 +152,14 @@ app = FastAPI(
     description="AI learning assistant for Moodle LMS",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -2584,5 +2601,6 @@ async def get_office_hour_student_summary(student_id: int) -> dict[str, Any]:
 
 # LTI 1.3 integration
 app.include_router(lti_router)
+app.include_router(auth_router)
 
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")

@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import time
+import urllib.parse
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
@@ -28,6 +29,15 @@ from pylti1p3.redirect import Redirect
 from pylti1p3.request import Request as LTIRequest
 from pylti1p3.session import SessionService
 from pylti1p3.tool_config import ToolConfDict
+
+from .auth import (
+    RegisterRequest,
+    _row_to_user,
+    create_access_token,
+    create_user,
+    get_user_by_username,
+)
+from .config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -346,7 +356,6 @@ async def lti_launch(request: Request) -> Response:
         )
 
         # Build query params with LTI context
-        import urllib.parse
         params = {
             "lti": "1",
             "user_id": str(user_id),
@@ -361,9 +370,45 @@ async def lti_launch(request: Request) -> Response:
         if instructor:
             params["role"] = "instructor"
 
-        # Redirect based on role: instructors → teacher dashboard, students → chat
-        base_path = "/teacher" if instructor else "/"
-        redirect_url = f"{base_path}?{urllib.parse.urlencode(params)}"
+        # Bridge LTI identity to a JWT EduInsight session ----------------
+        # 1. Find or create local user matching the moodle_user_id.
+        moodle_id = int(user_id) if str(user_id).isdigit() else 0
+        username = f"lti_{moodle_id}" if moodle_id else f"lti_user_{launch_id[:8]}"
+        existing = get_user_by_username(username)
+        if existing:
+            local_user = _row_to_user(existing)
+        else:
+            random_pw = hashlib.sha256(f"{username}-{time.time()}".encode()).hexdigest()
+            local_user = create_user(
+                RegisterRequest(
+                    username=username,
+                    password=random_pw,
+                    display_name=user_name or username,
+                    role="teacher" if instructor else "student",
+                    moodle_user_id=moodle_id or None,
+                )
+            )
+        token = create_access_token(local_user)
+
+        # 2. Decide where to send the browser. If FRONTEND_URL is set,
+        #    drop into the Next.js /lti/return handler with token + context.
+        target_path = "/lti/return"
+        params["token"] = token
+        params["role"] = "instructor" if instructor else "learner"
+        params["username"] = local_user.username
+
+        if settings.frontend_url:
+            redirect_url = (
+                settings.frontend_url.rstrip("/")
+                + target_path
+                + "?"
+                + urllib.parse.urlencode(params)
+            )
+        else:
+            # Fallback: vanilla HTML demo UI
+            base_path = "/teacher" if instructor else "/"
+            redirect_url = f"{base_path}?{urllib.parse.urlencode(params)}"
+
         response = RedirectResponse(url=redirect_url, status_code=302)
         return response
 
