@@ -15,25 +15,25 @@ from eduinsight.rag import CourseRAG, _parse_tagged_text
 
 class TestParseTaggedText:
     def test_standard_format(self):
-        source, page, text = _parse_tagged_text("[lecture.pdf p.5] Binary search explanation")
+        source, page, _h, _a, text = _parse_tagged_text("[lecture.pdf p.5] Binary search explanation")
         assert source == "lecture.pdf"
         assert page == 5
         assert text == "Binary search explanation"
 
     def test_unknown_page(self):
-        source, page, text = _parse_tagged_text("[notes.pdf p.?] Some content")
+        source, page, _h, _a, text = _parse_tagged_text("[notes.pdf p.?] Some content")
         assert source == "notes.pdf"
         assert page is None
         assert text == "Some content"
 
     def test_no_tag(self):
-        source, page, text = _parse_tagged_text("Plain text without tag")
+        source, page, _h, _a, text = _parse_tagged_text("Plain text without tag")
         assert source == ""
         assert page is None
         assert text == "Plain text without tag"
 
     def test_multiline_content(self):
-        source, page, text = _parse_tagged_text("[doc.pdf p.1] Line one\nLine two")
+        source, page, _h, _a, text = _parse_tagged_text("[doc.pdf p.1] Line one\nLine two")
         assert source == "doc.pdf"
         assert page == 1
         assert "Line one\nLine two" == text

@@ -44,3 +44,6 @@ demo-trial/
 
 # Simulation materials (generated locally, not committed)
 _sim_materials/
+
+# Cached materials markdown (regenerated on upload)
+_materials_md/

@@ -181,7 +181,8 @@ class TestChatWithRAG:
         data = resp.json()
         # Should have material references
         assert len(data["material_context"]) > 0
-        assert any("algo.pdf" in ref for ref in data["material_context"])
+        # material_context is now structured citations
+        assert any(c.get("filename") == "algo.pdf" for c in data["material_context"])
 
     def test_chat_with_empty_course(self, client):
         """Chat with course_id but no materials should still work."""

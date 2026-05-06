@@ -18,6 +18,7 @@ from typing import NamedTuple
 from litemem import Memory
 
 from eduinsight.config import settings
+from eduinsight import sessions as sessions_mod
 
 
 class Turn(NamedTuple):
@@ -249,14 +250,28 @@ def main() -> None:
             print(f"  fact for {moodle_id} skipped: {e}")
     print(f"Stored {fact_count} structured facts")
 
-    # 2. 寫入完整對話歷史（messages 表）
-    # 透過 internal _store (LiteMem 物件) 直接 SQL 操作以維持 backdated timestamp
+    # 2. 寫入完整對話歷史（messages 表 + chat_sessions metadata）
+    sessions_mod.init_sessions_table()
     store = mem._store  # noqa: SLF001
     msg_count = 0
+    sess_count = 0
     for i, t in enumerate(CONVERSATIONS):
         uid = f"moodle:{t.student}"
         ts = week_ts(t.week)
-        sid = f"sim-{t.student}-w{t.week}-{i}"
+        sid = f"sim-{t.course}-{t.student}-w{t.week}-{i}"
+        title = (t.question[:30] + "…") if len(t.question) > 30 else t.question
+
+        # session metadata so frontend sidebar lists it
+        with sessions_mod._db() as conn:  # noqa: SLF001
+            conn.execute(
+                "INSERT OR REPLACE INTO chat_sessions "
+                "(session_id, moodle_user_id, course_id, title, created_at, last_msg_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (sid, t.student, t.course, title, ts, ts + 60),
+            )
+            conn.commit()
+        sess_count += 1
+
         with store._lock:  # noqa: SLF001
             conn = store._get_conn()  # noqa: SLF001
             conn.execute(
@@ -271,7 +286,7 @@ def main() -> None:
             )
             conn.commit()
         msg_count += 2
-    print(f"Stored {msg_count} messages across {len(CONVERSATIONS)} conversations")
+    print(f"Stored {msg_count} messages across {sess_count} chat_sessions")
 
     # 3. 統計
     by_student: dict[int, int] = {}

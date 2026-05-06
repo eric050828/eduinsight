@@ -35,9 +35,10 @@ from .attendance import AttendanceManager, GPSLocation
 from .auth import init_db as init_auth_db
 from .auth import router as auth_router
 from .auth import seed_demo_users
+from . import sessions as sessions_mod
 from .classroom_assistant import ClassroomAssistant
 from .config import settings
-from .documents import parse_document
+from .documents import parse_document, to_markdown
 from .grades import GradeManager
 from .interaction import InteractionManager
 from .lectures import LectureManager
@@ -100,6 +101,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
 
     # Initialize auth DB (separate from memory DB)
     init_auth_db()
+    sessions_mod.init_sessions_table()
     seeded = seed_demo_users()
     logger.info("Auth DB ready: seeded users = %s", seeded)
     embedder = settings.memory_embedder or None  # "" means disabled
@@ -175,12 +177,24 @@ class ChatRequest(BaseModel):
     message: str
     topic: str = ""
     course_id: str = ""  # Optional: include RAG context from course materials
+    session_id: str = ""  # Optional: continue an existing session; empty = new
+
+
+class MaterialCitation(BaseModel):
+    """Structured citation pointing to a markdown section."""
+
+    id: str
+    filename: str
+    heading: str = ""
+    anchor_id: str = ""  # for scrollIntoView in frontend
+    text: str  # excerpt
 
 
 class ChatResponse(BaseModel):
     reply: str
     memory_context: list[str]
-    material_context: list[str] = []  # RAG references from course materials
+    material_context: list[MaterialCitation] = []  # structured citations
+    session_id: str = ""
 
 
 class RecordStruggleRequest(BaseModel):
@@ -233,52 +247,66 @@ async def chat(req: ChatRequest) -> ChatResponse:
     and includes them in the prompt context alongside student memories.
     """
     assistant = get_assistant()
-
     uid = f"moodle:{req.moodle_user_id}"
-    session_id = f"chat_{int(time.time() * 1000)}"
+
+    # Resolve session: reuse if valid+matching, else create
+    session_id = req.session_id
+    if session_id:
+        existing = sessions_mod.get_session(session_id)
+        if not existing or existing["moodle_user_id"] != req.moodle_user_id:
+            session_id = ""  # mismatch → new session
+    if not session_id:
+        course_for_session = req.course_id or "general"
+        title = req.message[:40] if req.message else "新對話"
+        new_sess = sessions_mod.create_session(req.moodle_user_id, course_for_session, title)
+        session_id = new_sess["session_id"]
 
     # RAG: retrieve relevant course materials if course_id provided
-    material_refs: list[str] = []
+    citations: list[MaterialCitation] = []
     rag_context = ""
     if req.course_id and _rag is not None:
         rag_results = _rag.search(req.course_id, req.message, top_k=5)
-        material_refs = [
-            f"[{r.source} p.{r.page}] {r.text}" if r.page else f"[{r.source}] {r.text}"
-            for r in rag_results
-        ]
+        for i, r in enumerate(rag_results, 1):
+            citations.append(MaterialCitation(
+                id=str(i),
+                filename=r.source,
+                heading=r.heading or (f"p.{r.page}" if r.page else ""),
+                anchor_id=r.anchor_id,
+                text=r.text[:300],
+            ))
         rag_context = _rag.get_context_for_prompt(req.course_id, req.message)
 
     if assistant._llm is not None:
-        # Full AI answer with memory + RAG context
         response = await assistant.answer(
             req.moodle_user_id, req.message, topic=req.topic,
             material_context=rag_context,
         )
-        # Store conversation messages for history retrieval
         _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
         _memory._store.store_message(
             uid, response.answer, session_id=session_id, role="assistant"
         )
+        sessions_mod.touch_session(session_id)
         return ChatResponse(
             reply=response.answer,
             memory_context=response.memory_context,
-            material_context=material_refs,
+            material_context=citations,
+            session_id=session_id,
         )
 
-    # Fallback: no LLM configured, return context only
     context_texts = assistant.get_student_context(req.moodle_user_id, req.message)
     assistant.record_question(req.moodle_user_id, req.message, topic=req.topic)
     fallback_reply = (
         "[No LLM configured] Memory context retrieved."
         " Set GEMINI_API_KEY to enable AI answers."
     )
-    # Store even fallback conversations for history
     _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
     _memory._store.store_message(uid, fallback_reply, session_id=session_id, role="assistant")
+    sessions_mod.touch_session(session_id)
     return ChatResponse(
         reply=fallback_reply,
         memory_context=context_texts,
-        material_context=material_refs,
+        material_context=citations,
+        session_id=session_id,
     )
 
 
@@ -408,18 +436,30 @@ async def teacher_summaries() -> dict[str, Any]:
 
 
 @app.get("/student/{moodle_user_id}/conversations")
-async def student_conversations(moodle_user_id: int, limit: int = 50) -> dict[str, Any]:
-    """Get past conversation history for a student from the messages table."""
+async def student_conversations(
+    moodle_user_id: int,
+    limit: int = 50,
+    course_id: str | None = None,
+) -> dict[str, Any]:
+    """Past chat history. If course_id is provided, only return that course's sessions."""
     uid = f"moodle:{moodle_user_id}"
     try:
         rows = _memory._store.get_messages(uid)
     except Exception:
         return {"moodle_user_id": moodle_user_id, "total_conversations": 0, "conversations": []}
 
+    # Build session_id → course_id lookup once
+    session_courses: dict[str, str] = {}
+    if course_id:
+        for s in sessions_mod.list_sessions(moodle_user_id, course_id):
+            session_courses[s["session_id"]] = s["course_id"]
+
     # Group by session
     sessions: dict[str, list[dict[str, Any]]] = {}
     for msg in rows:
         sid = msg.get("session_id", "")
+        if course_id and sid not in session_courses:
+            continue  # not part of the requested course
         if sid not in sessions:
             sessions[sid] = []
         sessions[sid].append({
@@ -456,6 +496,86 @@ async def student_conversations(moodle_user_id: int, limit: int = 50) -> dict[st
         "total_conversations": len(limited_sessions),
         "conversations": limited_sessions,
     }
+
+
+# ------------------------------------------------------------------
+# Per-course chat sessions (one agent per course, multiple sessions)
+# ------------------------------------------------------------------
+
+
+class SessionResponse(BaseModel):
+    session_id: str
+    moodle_user_id: int
+    course_id: str
+    title: str
+    created_at: float
+    last_msg_at: float
+
+
+@app.get("/student/{moodle_user_id}/courses/{course_id}/sessions")
+async def list_course_sessions(
+    moodle_user_id: int, course_id: str
+) -> list[SessionResponse]:
+    """List all sessions for one (student, course) pair, newest first."""
+    rows = sessions_mod.list_sessions(moodle_user_id, course_id)
+    return [SessionResponse(**r) for r in rows]
+
+
+class CreateSessionBody(BaseModel):
+    title: str = ""
+
+
+@app.post("/student/{moodle_user_id}/courses/{course_id}/sessions", response_model=SessionResponse)
+async def create_course_session(
+    moodle_user_id: int, course_id: str, body: CreateSessionBody
+) -> SessionResponse:
+    sess = sessions_mod.create_session(moodle_user_id, course_id, body.title)
+    return SessionResponse(**sess)
+
+
+@app.get("/sessions/{session_id}/messages")
+async def get_session_messages(session_id: str) -> dict[str, Any]:
+    """Return all messages of one session, oldest first."""
+    sess = sessions_mod.get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    uid = f"moodle:{sess['moodle_user_id']}"
+    try:
+        rows = _memory._store.get_messages(uid)
+    except Exception:
+        rows = []
+    msgs = [
+        {"role": m["role"], "content": m["content"], "created_at": m["created_at"]}
+        for m in rows
+        if m.get("session_id") == session_id
+    ]
+    msgs.sort(key=lambda m: m["created_at"])
+    return {"session": sess, "messages": msgs}
+
+
+class RenameSessionBody(BaseModel):
+    title: str
+
+
+@app.patch("/sessions/{session_id}", response_model=SessionResponse)
+async def rename_session_endpoint(
+    session_id: str, body: RenameSessionBody
+) -> SessionResponse:
+    sess = sessions_mod.get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    sessions_mod.rename_session(session_id, body.title)
+    sess = sessions_mod.get_session(session_id)
+    return SessionResponse(**sess)
+
+
+@app.delete("/sessions/{session_id}")
+async def delete_session_endpoint(session_id: str) -> dict[str, bool]:
+    sess = sessions_mod.get_session(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    sessions_mod.delete_session(session_id)
+    return {"deleted": True}
 
 
 # ------------------------------------------------------------------
@@ -636,12 +756,19 @@ async def upload_material(course_id: str, file: UploadFile) -> MaterialUploadRes
         tmp_path = tmp.name
 
     try:
-        doc = parse_document(tmp_path)
-        # Use the original filename instead of the temp path
-        doc.filename = file.filename
-        for chunk in doc.chunks:
+        # Markdown pipeline: convert → cache .md → index chunks with anchor
+        parsed = to_markdown(tmp_path)
+        parsed.filename = file.filename
+        for chunk in parsed.chunks:
             chunk.source = file.filename
-        chunks_indexed = _rag.index_document(course_id, doc)
+
+        # Save the markdown file alongside so /markdown endpoint can serve it
+        md_dir = Path("_materials_md") / course_id
+        md_dir.mkdir(parents=True, exist_ok=True)
+        md_path = md_dir / f"{file.filename}.md"
+        md_path.write_text(parsed.markdown, encoding="utf-8")
+
+        chunks_indexed = _rag.index_markdown(course_id, parsed)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:
@@ -652,8 +779,24 @@ async def upload_material(course_id: str, file: UploadFile) -> MaterialUploadRes
         filename=file.filename,
         course_id=course_id,
         chunks_indexed=chunks_indexed,
-        total_pages=doc.total_pages,
+        total_pages=parsed.total_pages,
     )
+
+
+@app.get("/courses/{course_id}/materials/{filename}/markdown")
+async def get_material_markdown(course_id: str, filename: str) -> dict[str, str]:
+    """Return the cached markdown body for a previously-uploaded file.
+
+    The frontend uses this to render the citation jump panel.
+    """
+    md_path = Path("_materials_md") / course_id / f"{filename}.md"
+    if not md_path.exists():
+        raise HTTPException(status_code=404, detail="Markdown not found for this material")
+    return {
+        "course_id": course_id,
+        "filename": filename,
+        "markdown": md_path.read_text(encoding="utf-8"),
+    }
 
 
 @app.get("/courses/{course_id}/materials", response_model=MaterialListResponse)

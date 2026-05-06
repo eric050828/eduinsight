@@ -20,6 +20,7 @@ dependencies = [
     "bcrypt>=4.2.0",
     "pyjwt>=2.10.0",
     "reportlab>=4.5.0",
+    "pymupdf4llm>=1.27.2.2",
 ]
 
 [project.optional-dependencies]

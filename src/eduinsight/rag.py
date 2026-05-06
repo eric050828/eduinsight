@@ -25,7 +25,7 @@ from dataclasses import dataclass
 
 from litemem import Memory
 
-from .documents import ParsedDocument
+from .documents import ParsedDocument, ParsedMarkdown
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +41,10 @@ class RAGResult:
 
     text: str
     source: str  # filename
-    page: int | None  # page/slide number
+    page: int | None  # page/slide number (legacy)
     score: float
+    heading: str = ""
+    anchor_id: str = ""
 
 
 class CourseRAG:
@@ -57,33 +59,36 @@ class CourseRAG:
         self._memory = memory
 
     def index_document(self, course_id: str, doc: ParsedDocument) -> int:
-        """Index a parsed document's chunks into Lite-Mem.
+        """Index a legacy ParsedDocument (no markdown anchors)."""
+        uid = _course_uid(course_id)
+        indexed = 0
+        for chunk in doc.chunks:
+            page_tag = f"p.{chunk.page}" if chunk.page else "p.?"
+            tagged_text = f"[{doc.filename} {page_tag}] {chunk.text}"
+            self._memory.add(uid, tagged_text, category="course_material")
+            indexed += 1
+        logger.info(
+            "Indexed %d chunks from %s into course %s (legacy mode)",
+            indexed, doc.filename, course_id,
+        )
+        return indexed
 
-        Each chunk is stored as a fact with:
-        - user_id: "course:{course_id}"
-        - category: "course_material"
-        - source tag in the text for retrieval metadata
+    def index_markdown(self, course_id: str, doc: ParsedMarkdown) -> int:
+        """Index a ParsedMarkdown's chunks with anchor metadata.
 
-        Args:
-            course_id: The course identifier (e.g. "CS101").
-            doc: A ParsedDocument from the documents module.
-
-        Returns:
-            Number of chunks indexed.
+        Tagged text format: ``[filename §heading|anchor_id] body``
+        — preserves heading + scroll anchor for citation jumping.
         """
         uid = _course_uid(course_id)
         indexed = 0
-
         for chunk in doc.chunks:
-            # Prefix with source metadata so we can extract it later
-            page_tag = f"p.{chunk.page}" if chunk.page else "p.?"
-            tagged_text = f"[{doc.filename} {page_tag}] {chunk.text}"
-
+            heading = chunk.heading or "正文"
+            anchor = chunk.anchor_id or "h-0"
+            tagged_text = f"[{doc.filename} §{heading}|{anchor}] {chunk.text}"
             self._memory.add(uid, tagged_text, category="course_material")
             indexed += 1
-
         logger.info(
-            "Indexed %d chunks from %s into course %s",
+            "Indexed %d markdown chunks from %s into course %s",
             indexed, doc.filename, course_id,
         )
         return indexed
@@ -113,24 +118,23 @@ class CourseRAG:
 
         rag_results: list[RAGResult] = []
         for r in results:
-            source, page, text = _parse_tagged_text(r.text)
+            source, page, heading, anchor, text = _parse_tagged_text(r.text)
             rag_results.append(
-                RAGResult(text=text, source=source, page=page, score=r.score)
+                RAGResult(
+                    text=text, source=source, page=page, score=r.score,
+                    heading=heading, anchor_id=anchor,
+                )
             )
 
         return rag_results
 
     def list_documents(self, course_id: str) -> list[str]:
-        """List all indexed document filenames for a course.
-
-        Returns:
-            Sorted list of unique filenames.
-        """
+        """List all indexed document filenames for a course."""
         uid = _course_uid(course_id)
         all_facts = self._memory.list(uid, category="course_material")
         filenames: set[str] = set()
         for fact in all_facts:
-            source, _, _ = _parse_tagged_text(fact)
+            source, _, _, _, _ = _parse_tagged_text(fact)
             if source:
                 filenames.add(source)
         return sorted(filenames)
@@ -149,11 +153,9 @@ class CourseRAG:
         all_facts = self._memory.list(uid, category="course_material")
         removed = 0
         for fact in all_facts:
-            source, _, _ = _parse_tagged_text(fact)
+            source, _, _, _, _ = _parse_tagged_text(fact)
             if source == filename:
                 self._memory.forget(uid)
-                # Re-add all facts except the ones from this document
-                # (Lite-Mem forget clears all, so we need to re-index others)
                 break
 
         # More efficient approach: get all, filter, forget all, re-add
@@ -199,23 +201,27 @@ class CourseRAG:
         return "\n".join(lines)
 
 
-def _parse_tagged_text(tagged: str) -> tuple[str, int | None, str]:
-    """Parse a tagged fact text back into (source, page, text).
+def _parse_tagged_text(
+    tagged: str,
+) -> tuple[str, int | None, str, str, str]:
+    """Parse a tagged fact text into (source, page, heading, anchor_id, text).
 
-    Format: "[filename p.N] actual text content"
-
-    Returns:
-        Tuple of (filename, page_number, text_content).
-        If parsing fails, returns ("", None, original_text).
+    Supports two formats:
+        "[filename §heading|anchor_id] body"   # markdown pipeline
+        "[filename p.N] body"                   # legacy PDF pipeline
     """
     import re
 
+    # New markdown format
+    m = re.match(r"^\[(.+?)\s+§(.+?)\|([\w\-]+)\]\s*(.*)$", tagged, re.DOTALL)
+    if m:
+        return m.group(1), None, m.group(2), m.group(3), m.group(4)
+
+    # Legacy page format
     m = re.match(r"^\[(.+?)\s+p\.(\d+|\?)\]\s*(.*)$", tagged, re.DOTALL)
     if m:
-        source = m.group(1)
         page_str = m.group(2)
         page = int(page_str) if page_str != "?" else None
-        text = m.group(3)
-        return source, page, text
+        return m.group(1), page, "", "", m.group(3)
 
-    return "", None, tagged
+    return "", None, "", "", tagged
