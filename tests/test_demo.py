@@ -18,7 +18,7 @@ async def _make_client(mem: Memory) -> AsyncClient:
 
 
 class TestDemoReset:
-    async def test_demo_reset_seeds_data(self, tmp_path) -> None:
+    async def test_demo_reset_seeds_data(self, tmp_path, auth_headers) -> None:
         """POST /demo/reset creates demo students in a fresh database."""
         import eduinsight.app as app_module
 
@@ -40,7 +40,7 @@ class TestDemoReset:
                 assert data["total_memories"] == 54
 
                 # Verify teacher dashboard shows the seeded students
-                resp2 = await client.get("/teacher/students")
+                resp2 = await client.get("/teacher/students", headers=auth_headers())
                 assert resp2.status_code == 200
                 dashboard = resp2.json()
                 assert dashboard["total_students"] == 5

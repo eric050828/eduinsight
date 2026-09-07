@@ -193,10 +193,15 @@ def analyze_student(memory: Memory, moodle_user_id: int) -> StudentAnalytics:
     return result
 
 
-def analyze_class(memory: Memory) -> ClassAnalytics:
+def analyze_class(
+    memory: Memory,
+    enrolled_ids: set[int] | None = None,
+) -> ClassAnalytics:
     """Extract learning patterns across all students.
 
     Identifies common struggles and topic distribution class-wide.
+    When `enrolled_ids` is provided, only those moodle_user_ids are aggregated
+    (used by teacher-side endpoints to scope analytics to one course).
     """
     stats = memory.detailed_stats()
 
@@ -209,6 +214,8 @@ def analyze_class(memory: Memory) -> ClassAnalytics:
             continue
 
         moodle_id = int(user_stat.user_id.removeprefix("moodle:"))
+        if enrolled_ids is not None and moodle_id not in enrolled_ids:
+            continue
         student = analyze_student(memory, moodle_id)
         result.students.append(student)
 

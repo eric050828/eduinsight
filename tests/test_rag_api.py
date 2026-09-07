@@ -86,7 +86,7 @@ class TestMaterialUpload:
     def test_upload_unsupported_format(self, client):
         resp = client.post(
             "/courses/CS101/materials",
-            files={"file": ("notes.txt", b"hello", "text/plain")},
+            files={"file": ("notes.exe", b"hello", "application/octet-stream")},
         )
         assert resp.status_code == 400
         assert "Unsupported" in resp.json()["detail"]

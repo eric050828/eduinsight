@@ -297,16 +297,31 @@ async def lti_bridge_dev(req: LTIBridgeRequest) -> TokenResponse:
 # ---------------------------------------------------------------- Seed
 
 
+# Demo teacher → owned course mapping. Used by teacher-side endpoints to
+# scope dashboard / summaries / analytics to one course per professor.
+TEACHER_COURSE_MAP: dict[str, str] = {
+    "teacher":         "ds101",   # 陳教授
+    "teacher_huang":   "mk201",   # 黃教授
+    "teacher_lin":     "chm301",  # 林教授
+    "teacher_wang":    "eng201",  # 王教授
+    "teacher_li":      "ipr101",  # 李教授
+}
+
+
 def seed_demo_users() -> dict[str, str]:
     """Create demo users matching demo_data.py student IDs (1001-1005). Idempotent."""
     init_db()
     demo = [
-        ("teacher", "teacher123", "陳老師", "teacher", None),
-        ("student1001", "student123", "A 陳同學", "student", 1001),
-        ("student1002", "student123", "B 林同學", "student", 1002),
-        ("student1003", "student123", "C 王同學", "student", 1003),
-        ("student1004", "student123", "D 李同學", "student", 1004),
-        ("student1005", "student123", "E 張同學", "student", 1005),
+        ("teacher",        "teacher123", "陳教授", "teacher", None),
+        ("teacher_huang",  "huang123",   "黃教授", "teacher", None),
+        ("teacher_lin",    "lin123",     "林教授", "teacher", None),
+        ("teacher_wang",   "wang123",    "王教授", "teacher", None),
+        ("teacher_li",     "li123",      "李教授", "teacher", None),
+        ("student1001",    "student123", "A 陳同學", "student", 1001),
+        ("student1002",    "student123", "B 林同學", "student", 1002),
+        ("student1003",    "student123", "C 王同學", "student", 1003),
+        ("student1004",    "student123", "D 李同學", "student", 1004),
+        ("student1005",    "student123", "E 張同學", "student", 1005),
     ]
     created: dict[str, str] = {}
     for username, password, name, role, moodle_id in demo:

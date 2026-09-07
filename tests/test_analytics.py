@@ -191,12 +191,12 @@ class TestStudentAnalyticsEndpoint:
 
 
 class TestClassAnalyticsEndpoint:
-    async def test_class_analytics(self) -> None:
+    async def test_class_analytics(self, auth_headers) -> None:
         mem = Memory()
         _seed_demo(mem)
 
         async with await _make_client(mem) as client:
-            resp = await client.get("/analytics/class")
+            resp = await client.get("/analytics/class", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
             assert data["total_students"] == 5
@@ -562,20 +562,20 @@ class TestGenerateClassSummaries:
 
 
 class TestSummariesAPI:
-    async def test_summaries_empty(self) -> None:
+    async def test_summaries_empty(self, auth_headers) -> None:
         mem = Memory()
         async with await _make_client(mem) as client:
-            resp = await client.get("/teacher/summaries")
+            resp = await client.get("/teacher/summaries", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
             assert data["count"] == 0
             assert data["summaries"] == []
 
-    async def test_summaries_with_data(self) -> None:
+    async def test_summaries_with_data(self, auth_headers) -> None:
         mem = Memory()
         _seed_demo(mem)
         async with await _make_client(mem) as client:
-            resp = await client.get("/teacher/summaries")
+            resp = await client.get("/teacher/summaries", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
             assert data["count"] == 5

@@ -405,15 +405,35 @@ def pptx_to_markdown(file_path: str | Path) -> str:
     return "\n".join(out)
 
 
+def text_to_markdown(file_path: str | Path) -> str:
+    """Plain text → markdown (each blank-line block becomes a paragraph;
+    a leading line that looks like a title becomes ## heading)."""
+    path = Path(file_path)
+    raw = path.read_text(encoding="utf-8")
+    lines = [ln.rstrip() for ln in raw.splitlines()]
+    out: list[str] = []
+    in_block = False
+    for ln in lines:
+        if not ln.strip():
+            if out and out[-1] != "":
+                out.append("")
+            in_block = False
+            continue
+        # Treat lines under 40 chars without trailing punctuation as headings
+        if not in_block and len(ln.strip()) <= 40 and not ln.rstrip().endswith((".", "。", "!", "?", "！", "？", "，", ",")):
+            out.append(f"## {ln.strip()}")
+            out.append("")
+        else:
+            out.append(ln)
+        in_block = True
+    return "\n".join(out)
+
+
 def to_markdown(file_path: str | Path) -> ParsedMarkdown:
     """Convert any supported file to Markdown + chunks for RAG.
 
-    Returns ParsedMarkdown with the full markdown body and pre-chunked
-    sections (each with an anchor_id pointing at the section heading).
-
-    If markdown conversion produces no chunks (e.g. very short PDF with
-    no headings), we fall back to legacy page-by-page text extraction
-    so RAG always has something to index.
+    Supports: .pdf, .pptx, .md, .markdown, .txt
+    Falls back to legacy text extraction for PDFs without headings.
     """
     path = Path(file_path)
     suffix = path.suffix.lower()
@@ -423,8 +443,14 @@ def to_markdown(file_path: str | Path) -> ParsedMarkdown:
         md = pdf_to_markdown(path)
     elif suffix == ".pptx":
         md = pptx_to_markdown(path)
+    elif suffix in (".md", ".markdown"):
+        md = path.read_text(encoding="utf-8")
+    elif suffix == ".txt":
+        md = text_to_markdown(path)
     else:
-        raise ValueError(f"Unsupported file type: {suffix}. Supported: .pdf, .pptx")
+        raise ValueError(
+            f"Unsupported file type: {suffix}. Supported: .pdf, .pptx, .md, .txt"
+        )
 
     chunks = split_markdown_by_headings(md, source=filename)
     pages = sum(1 for line in md.splitlines() if line.startswith("# ") or line.startswith("## "))

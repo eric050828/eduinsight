@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>BST Builder — EduInsight</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 16px;
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  input[type="number"] {
+    background: #1e293b;
+    border: 1px solid #475569;
+    color: #f1f5f9;
+    padding: 8px 12px;
+    border-radius: 6px;
+    width: 100px;
+    font-size: 14px;
+  }
+  button {
+    background: #6366f1;
+    color: #fff;
+    border: 0;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  button:hover { background: #818cf8; }
+  button.danger { background: #ef4444; }
+  button.danger:hover { background: #f87171; }
+  .stats {
+    color: #94a3b8;
+    font-size: 12px;
+    margin-left: auto;
+  }
+  .stats span { color: #fbbf24; font-weight: 700; }
+  svg { width: 100%; max-height: 320px; background: #1e293b; border-radius: 8px; }
+  .node circle { fill: #6366f1; stroke: #818cf8; stroke-width: 2; transition: all 0.3s; }
+  .node.flash circle { fill: #fbbf24; stroke: #fcd34d; }
+  .node text { fill: #fff; font-weight: 700; font-size: 13px; text-anchor: middle; dominant-baseline: central; }
+  .edge { stroke: #475569; stroke-width: 1.5; fill: none; }
+  .hint { color: #64748b; font-size: 11px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="controls">
+  <input id="val" type="number" placeholder="數字" value="">
+  <button onclick="add()">➕ 插入</button>
+  <button class="danger" onclick="reset()">🔄 重置</button>
+  <button onclick="randomFill()">🎲 隨機 7 個</button>
+  <div class="stats">節點：<span id="count">0</span> · 高度：<span id="height">0</span> · log₂n ≈ <span id="logn">0</span></div>
+</div>
+<svg id="canvas" viewBox="0 0 800 320"></svg>
+<div class="hint">提示：BST 規則 = 左子樹 &lt; 父 &lt; 右子樹。試試先插入 50, 30, 70, 20, 40，再插入 5（會繼續往左）。</div>
+<script>
+let root = null;
+
+function insert(node, val) {
+  if (!node) return { val, left: null, right: null };
+  if (val < node.val) node.left = insert(node.left, val);
+  else if (val > node.val) node.right = insert(node.right, val);
+  return node;
+}
+
+function height(node) {
+  if (!node) return 0;
+  return 1 + Math.max(height(node.left), height(node.right));
+}
+
+function countNodes(node) {
+  if (!node) return 0;
+  return 1 + countNodes(node.left) + countNodes(node.right);
+}
+
+function layout(node, x, y, dx) {
+  if (!node) return [];
+  const out = [{ val: node.val, x, y }];
+  if (node.left) {
+    const lx = x - dx, ly = y + 60;
+    out.push({ edge: true, x1: x, y1: y, x2: lx, y2: ly });
+    out.push(...layout(node.left, lx, ly, dx / 2));
+  }
+  if (node.right) {
+    const rx = x + dx, ry = y + 60;
+    out.push({ edge: true, x1: x, y1: y, x2: rx, y2: ry });
+    out.push(...layout(node.right, rx, ry, dx / 2));
+  }
+  return out;
+}
+
+function render(flashVal) {
+  const svg = document.getElementById('canvas');
+  svg.innerHTML = '';
+  const items = layout(root, 400, 30, 180);
+  items.forEach(it => {
+    if (it.edge) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', it.x1); line.setAttribute('y1', it.y1);
+      line.setAttribute('x2', it.x2); line.setAttribute('y2', it.y2);
+      line.setAttribute('class', 'edge');
+      svg.appendChild(line);
+    } else {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'node' + (it.val === flashVal ? ' flash' : ''));
+      g.setAttribute('transform', `translate(${it.x},${it.y})`);
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('r', 18);
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.textContent = it.val;
+      g.appendChild(c); g.appendChild(t);
+      svg.appendChild(g);
+    }
+  });
+  const n = countNodes(root);
+  const h = height(root);
+  document.getElementById('count').textContent = n;
+  document.getElementById('height').textContent = h;
+  document.getElementById('logn').textContent = n > 0 ? Math.ceil(Math.log2(n + 1)) : 0;
+}
+
+function add() {
+  const v = parseInt(document.getElementById('val').value, 10);
+  if (isNaN(v)) return;
+  root = insert(root, v);
+  document.getElementById('val').value = '';
+  render(v);
+  setTimeout(() => render(), 800);
+}
+
+function reset() {
+  root = null;
+  render();
+}
+
+function randomFill() {
+  reset();
+  const seen = new Set();
+  while (seen.size < 7) {
+    const v = Math.floor(Math.random() * 100);
+    if (!seen.has(v)) {
+      seen.add(v);
+      root = insert(root, v);
+    }
+  }
+  render();
+}
+
+document.getElementById('val').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') add();
+});
+
+randomFill();
+</script>
+</body>
+</html>

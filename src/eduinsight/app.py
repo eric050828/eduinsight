@@ -10,12 +10,11 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +22,7 @@ from litemem import Memory
 from litemem.portable import MemoryBundle
 from pydantic import BaseModel
 
+from . import sessions as sessions_mod
 from .analytics import (
     analyze_class,
     analyze_student,
@@ -32,13 +32,12 @@ from .analytics import (
 )
 from .assistant import LearningAssistant
 from .attendance import AttendanceManager, GPSLocation
+from .auth import TEACHER_COURSE_MAP, AuthUser, get_current_user, seed_demo_users
 from .auth import init_db as init_auth_db
 from .auth import router as auth_router
-from .auth import seed_demo_users
-from . import sessions as sessions_mod
 from .classroom_assistant import ClassroomAssistant
 from .config import settings
-from .documents import parse_document, to_markdown
+from .documents import to_markdown
 from .grades import GradeManager
 from .interaction import InteractionManager
 from .lectures import LectureManager
@@ -361,19 +360,93 @@ async def get_grades(course_id: int, moodle_user_id: int) -> list[dict[str, Any]
 # ------------------------------------------------------------------
 
 
+def _students_in_course(course_id: str) -> set[int]:
+    """Return moodle_user_ids of students who have chat sessions in this course."""
+    with sessions_mod._db() as conn:  # noqa: SLF001
+        cur = conn.execute(
+            "SELECT DISTINCT moodle_user_id FROM chat_sessions WHERE course_id = ?",
+            (course_id,),
+        )
+        return {row["moodle_user_id"] for row in cur.fetchall()}
+
+
+def _courses_of_student(moodle_user_id: int) -> set[str]:
+    """Return course_ids the student has chat sessions in."""
+    with sessions_mod._db() as conn:  # noqa: SLF001
+        cur = conn.execute(
+            "SELECT DISTINCT course_id FROM chat_sessions WHERE moodle_user_id = ?",
+            (moodle_user_id,),
+        )
+        return {row["course_id"] for row in cur.fetchall()}
+
+
+def _resolve_course_scope(user: AuthUser, course_id: str | None) -> str | None:
+    """Enforce course-level data isolation for class-wide endpoints.
+
+    - Demo teacher listed in TEACHER_COURSE_MAP: may only query the course they own.
+      A missing course_id is coerced to that course; a different one raises 403.
+    - Student: must name a course they are enrolled in (has chat sessions), else 403.
+    - Admin / teacher not in the map (e.g. LTI-provisioned): unrestricted.
+    Returns the effective course_id (None = unrestricted).
+    """
+    if user.role == "student":
+        if not course_id:
+            raise HTTPException(status_code=403, detail="Students must specify course_id")
+        enrolled = _courses_of_student(user.moodle_user_id) if user.moodle_user_id else set()
+        if course_id not in enrolled:
+            raise HTTPException(status_code=403, detail=f"Not enrolled in course {course_id}")
+        return course_id
+    owned = TEACHER_COURSE_MAP.get(user.username)
+    if owned is None:
+        return course_id  # admin or unmapped teacher: unrestricted
+    if course_id and course_id != owned:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Teacher {user.username} may only access course {owned}",
+        )
+    return owned
+
+
+def _check_student_access(user: AuthUser, moodle_user_id: int) -> None:
+    """Per-student endpoints: students see only themselves; mapped teachers only their class."""
+    if user.role == "student":
+        if user.moodle_user_id != moodle_user_id:
+            raise HTTPException(status_code=403, detail="Students may only view their own data")
+        return
+    owned = TEACHER_COURSE_MAP.get(user.username)
+    if owned is not None and moodle_user_id not in _students_in_course(owned):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Student {moodle_user_id} is not enrolled in {owned}",
+        )
+
+
 @app.get("/teacher/students", response_model=TeacherDashboardResponse)
-async def teacher_students() -> TeacherDashboardResponse:
-    """List all students with memory stats for the teacher dashboard."""
+async def teacher_students(
+    course_id: str | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> TeacherDashboardResponse:
+    course_id = _resolve_course_scope(user, course_id)
+    """List students with memory stats for the teacher dashboard.
+
+    When `course_id` is provided, only students enrolled in that course
+    (i.e. who have chat sessions in it) are returned.
+    """
     assistant = get_assistant()
     mem = assistant.memory
+
+    enrolled: set[int] | None = None
+    if course_id:
+        enrolled = _students_in_course(course_id)
 
     stats = mem.detailed_stats()
     students: list[StudentSummary] = []
     for u in stats.users:
-        # Only include moodle-namespaced users
         if not u.user_id.startswith("moodle:"):
             continue
         moodle_id = int(u.user_id.removeprefix("moodle:"))
+        if enrolled is not None and moodle_id not in enrolled:
+            continue
         students.append(
             StudentSummary(
                 moodle_user_id=moodle_id,
@@ -391,9 +464,28 @@ async def teacher_students() -> TeacherDashboardResponse:
     )
 
 
+@app.get("/teacher/me/course")
+async def teacher_my_course(username: str) -> dict[str, str | None]:
+    """Return the course_id owned by this demo teacher (or null for admin/unmapped).
+
+    The teacher_username is taken from a query param so the frontend can call
+    this without the auth token plumbing — fine for the demo. In a real
+    deployment we'd resolve this from the JWT subject.
+    """
+    from .auth import TEACHER_COURSE_MAP
+    return {
+        "username": username,
+        "course_id": TEACHER_COURSE_MAP.get(username),
+    }
+
+
 @app.get("/teacher/students/{moodle_user_id}/memories")
-async def teacher_student_memories(moodle_user_id: int) -> dict[str, Any]:
+async def teacher_student_memories(
+    moodle_user_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """Get all memories for a specific student (teacher view)."""
+    _check_student_access(user, moodle_user_id)
     assistant = get_assistant()
     memories = assistant.get_all_memories(moodle_user_id)
     return {
@@ -404,12 +496,16 @@ async def teacher_student_memories(moodle_user_id: int) -> dict[str, Any]:
 
 
 @app.get("/teacher/summaries")
-async def teacher_summaries() -> dict[str, Any]:
+async def teacher_summaries(
+    course_id: str | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """AI interaction summaries for all students (teacher view).
 
     Returns rule-based summaries generated from real analytics data —
     struggles, topics, risk factors, and trajectory patterns.
     """
+    course_id = _resolve_course_scope(user, course_id)
     mem = get_assistant().memory
     # Demo name map for known students
     name_map = {
@@ -418,9 +514,11 @@ async def teacher_summaries() -> dict[str, Any]:
         1003: "C 王同學",
         1004: "D 李同學",
         1005: "E 張同學",
-        2001: "林小明（學期模擬）",
     }
     summaries = generate_class_summaries(mem, name_map=name_map)
+    if course_id:
+        enrolled = _students_in_course(course_id)
+        summaries = [s for s in summaries if s.moodle_user_id in enrolled]
     return {
         "count": len(summaries),
         "summaries": [
@@ -519,6 +617,24 @@ async def list_course_sessions(
     """List all sessions for one (student, course) pair, newest first."""
     rows = sessions_mod.list_sessions(moodle_user_id, course_id)
     return [SessionResponse(**r) for r in rows]
+
+
+@app.get("/student/{moodle_user_id}/courses")
+async def list_student_courses(moodle_user_id: int) -> dict[str, Any]:
+    """Return distinct course_ids the student has chat history in.
+
+    Used by the AI Assistant page to render the per-student course list
+    in the left rail (instead of a hard-coded global catalog).
+    """
+    with sessions_mod._db() as conn:  # noqa: SLF001
+        cur = conn.execute(
+            "SELECT course_id, COUNT(*) AS sess_count, MAX(last_msg_at) AS last_active "
+            "FROM chat_sessions WHERE moodle_user_id = ? "
+            "GROUP BY course_id ORDER BY last_active DESC",
+            (moodle_user_id,),
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+    return {"moodle_user_id": moodle_user_id, "courses": rows}
 
 
 class CreateSessionBody(BaseModel):
@@ -688,10 +804,15 @@ async def get_student_risk(moodle_user_id: int) -> StudentRiskResponse:
 
 
 @app.get("/analytics/class", response_model=ClassAnalyticsResponse)
-async def get_class_analytics() -> ClassAnalyticsResponse:
+async def get_class_analytics(
+    course_id: str | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> ClassAnalyticsResponse:
     """Get class-wide learning analytics (common struggles, topic distribution)."""
+    course_id = _resolve_course_scope(user, course_id)
     assistant = get_assistant()
-    ca = analyze_class(assistant.memory)
+    enrolled = _students_in_course(course_id) if course_id else None
+    ca = analyze_class(assistant.memory, enrolled_ids=enrolled)
     return ClassAnalyticsResponse(
         total_students=ca.total_students,
         total_facts=ca.total_facts,
@@ -741,10 +862,10 @@ async def upload_material(course_id: str, file: UploadFile) -> MaterialUploadRes
         raise HTTPException(status_code=400, detail="No filename provided")
 
     suffix = Path(file.filename).suffix.lower()
-    if suffix not in (".pdf", ".pptx"):
+    if suffix not in (".pdf", ".pptx", ".md", ".markdown", ".txt"):
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type: {suffix}. Supported: .pdf, .pptx",
+            detail=f"Unsupported file type: {suffix}. Supported: .pdf, .pptx, .md, .txt",
         )
 
     # Save to a temp file for parsing
@@ -780,6 +901,66 @@ async def upload_material(course_id: str, file: UploadFile) -> MaterialUploadRes
         course_id=course_id,
         chunks_indexed=chunks_indexed,
         total_pages=parsed.total_pages,
+    )
+
+
+class YoutubeMaterialRequest(BaseModel):
+    url: str
+    title: str = ""
+
+
+@app.post("/courses/{course_id}/materials/youtube", response_model=MaterialUploadResponse)
+async def add_youtube_material(
+    course_id: str, req: YoutubeMaterialRequest
+) -> MaterialUploadResponse:
+    """Add a YouTube video as a course material.
+
+    Stores the embed iframe + a stub markdown body. The frontend
+    EvidenceCanvas renders the iframe inline so students can watch the
+    video in the right panel when an AI answer cites this material.
+    """
+    if _rag is None:
+        raise HTTPException(status_code=503, detail="RAG not initialized")
+
+    # Extract video id from common YouTube URL formats
+    import re
+
+    m = re.search(r"(?:v=|youtu\.be/|embed/)([\w\-]{8,15})", req.url)
+    if not m:
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+    vid = m.group(1)
+    title = req.title or f"YouTube — {vid}"
+    filename = f"{title}.youtube.md"
+
+    md = (
+        f"# {title}\n\n"
+        f"**來源**：[YouTube]({req.url})\n\n"
+        f'<iframe width="100%" height="380" '
+        f'src="https://www.youtube.com/embed/{vid}" '
+        f'title="{title}" frameborder="0" '
+        f'allow="accelerometer; autoplay; clipboard-write; encrypted-media; '
+        f'gyroscope; picture-in-picture" allowfullscreen></iframe>\n\n'
+        f"## 本片重點\n\n"
+        f"老師指定的補充教學影片。學生可以邊看影片邊在左側 chat panel 提問，"
+        f"AI 助理會以此影片作為知識來源回答。\n"
+    )
+
+    md_dir = Path("_materials_md") / course_id
+    md_dir.mkdir(parents=True, exist_ok=True)
+    (md_dir / f"{filename}.md").write_text(md, encoding="utf-8")
+
+    # Index a single chunk so RAG can hit it; one chunk per topic heading.
+    from .documents import ParsedMarkdown, split_markdown_by_headings
+
+    chunks = split_markdown_by_headings(md, source=filename)
+    parsed = ParsedMarkdown(filename=filename, markdown=md, total_pages=1, chunks=chunks)
+    n = _rag.index_markdown(course_id, parsed)
+    return MaterialUploadResponse(
+        status="indexed",
+        filename=filename,
+        course_id=course_id,
+        chunks_indexed=n,
+        total_pages=1,
     )
 
 

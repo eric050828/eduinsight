@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>Ideal Gas Law — EduInsight</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 16px;
+  }
+  .formula {
+    text-align: center;
+    font-size: 28px;
+    font-weight: 800;
+    color: #fbbf24;
+    margin-bottom: 12px;
+    letter-spacing: 0.05em;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .control {
+    background: #1e293b;
+    border-radius: 8px;
+    padding: 10px 14px;
+    border-left: 4px solid #6366f1;
+  }
+  .control.solve { border-left-color: #fbbf24; background: #422006; }
+  .label-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .label { color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+  .value { color: #fff; font-weight: 800; font-size: 16px; }
+  input[type="range"] { width: 100%; }
+  .visual {
+    background: #1e293b;
+    border-radius: 8px;
+    padding: 14px;
+    text-align: center;
+  }
+  .balloon {
+    display: inline-block;
+    background: linear-gradient(135deg, #818cf8, #6366f1);
+    border-radius: 50%;
+    transition: all 0.3s;
+    box-shadow: 0 4px 30px rgba(99, 102, 241, 0.4);
+  }
+  select {
+    background: #1e293b;
+    border: 1px solid #475569;
+    color: #f1f5f9;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  .solve-for { color: #fbbf24; font-size: 11px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="formula">PV = nRT</div>
+
+<div class="solve-for">
+  解算對象：
+  <select id="solveFor" onchange="render()">
+    <option value="P">壓力 P</option>
+    <option value="V" selected>體積 V</option>
+    <option value="T">溫度 T</option>
+    <option value="n">莫耳數 n</option>
+  </select>
+</div>
+
+<div class="grid">
+  <div class="control" id="ctrl-P">
+    <div class="label-row">
+      <span class="label">P 壓力 (atm)</span>
+      <span class="value"><span id="val-P">1.0</span></span>
+    </div>
+    <input type="range" id="P" min="0.1" max="10" step="0.1" value="1.0" oninput="render()">
+  </div>
+  <div class="control" id="ctrl-V">
+    <div class="label-row">
+      <span class="label">V 體積 (L)</span>
+      <span class="value"><span id="val-V">22.4</span></span>
+    </div>
+    <input type="range" id="V" min="0.5" max="50" step="0.5" value="22.4" oninput="render()">
+  </div>
+  <div class="control" id="ctrl-T">
+    <div class="label-row">
+      <span class="label">T 溫度 (K)</span>
+      <span class="value"><span id="val-T">273</span></span>
+    </div>
+    <input type="range" id="T" min="100" max="600" step="10" value="273" oninput="render()">
+  </div>
+  <div class="control" id="ctrl-n">
+    <div class="label-row">
+      <span class="label">n 莫耳數 (mol)</span>
+      <span class="value"><span id="val-n">1.0</span></span>
+    </div>
+    <input type="range" id="n" min="0.1" max="5" step="0.1" value="1.0" oninput="render()">
+  </div>
+</div>
+
+<div class="visual">
+  <div id="balloon" class="balloon" style="width:80px;height:80px"></div>
+  <div style="margin-top:10px;color:#94a3b8;font-size:12px">氣球大小 ∝ V，顏色冷暖 ∝ T</div>
+</div>
+
+<script>
+const R = 0.0821; // L·atm·K⁻¹·mol⁻¹
+
+function render() {
+  const target = document.getElementById('solveFor').value;
+  let P = parseFloat(document.getElementById('P').value);
+  let V = parseFloat(document.getElementById('V').value);
+  let T = parseFloat(document.getElementById('T').value);
+  let n = parseFloat(document.getElementById('n').value);
+
+  // Solve for the chosen variable
+  ['P','V','T','n'].forEach(k => {
+    document.getElementById('ctrl-' + k).classList.remove('solve');
+  });
+  document.getElementById('ctrl-' + target).classList.add('solve');
+
+  if (target === 'P') P = (n * R * T) / V;
+  else if (target === 'V') V = (n * R * T) / P;
+  else if (target === 'T') T = (P * V) / (n * R);
+  else if (target === 'n') n = (P * V) / (R * T);
+
+  document.getElementById('val-P').textContent = P.toFixed(2);
+  document.getElementById('val-V').textContent = V.toFixed(2);
+  document.getElementById('val-T').textContent = T.toFixed(0);
+  document.getElementById('val-n').textContent = n.toFixed(2);
+
+  // Disable the slider being solved for
+  ['P','V','T','n'].forEach(k => {
+    document.getElementById(k).disabled = (k === target);
+  });
+
+  // Visual: balloon size ∝ V, color ∝ T
+  const balloon = document.getElementById('balloon');
+  const size = Math.min(160, 30 + V * 3);
+  balloon.style.width = size + 'px';
+  balloon.style.height = size + 'px';
+  // Cool blue (low T) → warm red (high T)
+  const tNorm = Math.max(0, Math.min(1, (T - 100) / 500));
+  const r = Math.floor(99 + tNorm * (255 - 99));
+  const b = Math.floor(241 - tNorm * (241 - 50));
+  balloon.style.background = `linear-gradient(135deg, rgb(${r}, 102, ${b}), rgb(${Math.floor(r*0.8)}, 80, ${Math.floor(b*0.7)}))`;
+}
+
+render();
+</script>
+</body>
+</html>

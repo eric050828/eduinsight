@@ -18,17 +18,17 @@ async def _make_client(mem: Memory) -> AsyncClient:
 
 
 class TestTeacherStudents:
-    async def test_empty_dashboard(self) -> None:
+    async def test_empty_dashboard(self, auth_headers) -> None:
         mem = Memory()
         async with await _make_client(mem) as client:
-            resp = await client.get("/teacher/students")
+            resp = await client.get("/teacher/students", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
             assert data["total_students"] == 0
             assert data["total_facts"] == 0
             assert data["students"] == []
 
-    async def test_students_listed(self) -> None:
+    async def test_students_listed(self, auth_headers) -> None:
         mem = Memory()
         assistant = LearningAssistant(mem)
         assistant.record_question(1, "What is OOP?")
@@ -36,7 +36,7 @@ class TestTeacherStudents:
         assistant.record_struggle(2, "pointers", details="segfault when dereferencing")
 
         async with await _make_client(mem) as client:
-            resp = await client.get("/teacher/students")
+            resp = await client.get("/teacher/students", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
             assert data["total_students"] == 2
@@ -49,7 +49,7 @@ class TestTeacherStudents:
             student2 = next(s for s in data["students"] if s["moodle_user_id"] == 2)
             assert student2["fact_count"] >= 2
 
-    async def test_non_moodle_users_excluded(self) -> None:
+    async def test_non_moodle_users_excluded(self, auth_headers) -> None:
         """Users without 'moodle:' prefix should not appear."""
         mem = Memory()
         # Add a non-moodle user directly via Lite-Mem
@@ -59,31 +59,31 @@ class TestTeacherStudents:
         assistant.record_question(1, "What is OOP?")
 
         async with await _make_client(mem) as client:
-            resp = await client.get("/teacher/students")
+            resp = await client.get("/teacher/students", headers=auth_headers())
             data = resp.json()
             assert data["total_students"] == 1
             assert data["students"][0]["moodle_user_id"] == 1
 
 
 class TestTeacherStudentMemories:
-    async def test_get_memories(self) -> None:
+    async def test_get_memories(self, auth_headers) -> None:
         mem = Memory()
         assistant = LearningAssistant(mem)
         assistant.record_question(1, "What is a linked list?")
         assistant.record_struggle(1, "pointers")
 
         async with await _make_client(mem) as client:
-            resp = await client.get("/teacher/students/1/memories")
+            resp = await client.get("/teacher/students/1/memories", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
             assert data["moodle_user_id"] == 1
             assert data["count"] >= 2
             assert len(data["memories"]) == data["count"]
 
-    async def test_empty_memories(self) -> None:
+    async def test_empty_memories(self, auth_headers) -> None:
         mem = Memory()
         async with await _make_client(mem) as client:
-            resp = await client.get("/teacher/students/999/memories")
+            resp = await client.get("/teacher/students/999/memories", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
             assert data["count"] == 0
