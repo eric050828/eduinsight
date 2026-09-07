@@ -370,11 +370,11 @@ graph TD
 
 # (course_id, video_id, title)
 YOUTUBE_MATERIALS: list[tuple[str, str, str]] = [
-    ("ds101", "Hoiv7Kx7iNI", "Quicksort 視覺化"),
-    ("mk201", "FBOExmRXLQc", "STP 行銷策略"),
+    ("ds101", "Hoixgm4-P4M", "Quicksort 視覺化"),
+    ("mk201", "iGOw39GWDaI", "STP 行銷策略"),
     ("chm301", "ZsY4WcQOrfk", "熵 Entropy explained"),
-    ("eng201", "GRZiZ_BUbX0", "How to Write a Thesis Statement"),
-    ("ipr101", "ETIKnXkfhVI", "Patent Basics in 5 Minutes"),
+    ("eng201", "DFp1uGTXo4Q", "How to Write a Thesis Statement"),
+    ("ipr101", "l1Z3g7Hb01M", "Patent Basics in 5 Minutes"),
 ]
 
 

@@ -307,7 +307,7 @@ RICH_CONVERSATIONS: list[Turn] = [
     Turn(12, "mk201", 1002,
          "可以給我看一下老師指定的 STP 教學影片嗎？我想看完再寫期中報告",
          "影片內嵌在這裡，邊看邊做筆記：\n\n"
-         '<iframe width="100%" height="320" src="https://www.youtube.com/embed/FBOExmRXLQc" '
+         '<iframe width="100%" height="320" src="https://www.youtube.com/embed/iGOw39GWDaI" '
          'title="STP Marketing Strategy" frameborder="0" allowfullscreen></iframe>\n\n'
          "**重點 takeaway**：\n"
          "1. **Segmentation** — 用人口/心理/行為切市場\n"
@@ -395,7 +395,7 @@ RICH_CONVERSATIONS: list[Turn] = [
     Turn(12, "eng201", 1004,
          "老師發了 YouTube 影片要我看，但我看不太懂，能總結重點嗎？",
          "影片重點整理（thesis statement formula）：\n\n"
-         '<iframe width="100%" height="280" src="https://www.youtube.com/embed/GRZiZ_BUbX0" '
+         '<iframe width="100%" height="280" src="https://www.youtube.com/embed/DFp1uGTXo4Q" '
          'title="How to Write a Thesis Statement" frameborder="0" allowfullscreen></iframe>\n\n'
          "**核心公式**：\n\n"
          "> Topic + Position + Reasons = Thesis\n\n"
@@ -477,7 +477,7 @@ RICH_CONVERSATIONS: list[Turn] = [
     Turn(13, "ipr101", 1005,
          "我想看老師指定的專利入門影片",
          "好，影片直接嵌進來：\n\n"
-         '<iframe width="100%" height="320" src="https://www.youtube.com/embed/ETIKnXkfhVI" '
+         '<iframe width="100%" height="320" src="https://www.youtube.com/embed/l1Z3g7Hb01M" '
          'title="Patent Basics" frameborder="0" allowfullscreen></iframe>\n\n'
          "**5 分鐘 takeaway**：\n"
          "- 專利保護**技術方案**，不保護「想法」本身\n"
