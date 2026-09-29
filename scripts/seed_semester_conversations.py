@@ -813,7 +813,7 @@ def main() -> None:
     fact_count = 0
     for moodle_id, text in FACT_SEEDS:
         try:
-            mem.add(f"moodle:{moodle_id}", text)
+            mem.add(f"moodle:{moodle_id}", text, extract=False)
             fact_count += 1
         except Exception as e:  # noqa: BLE001
             print(f"  fact for {moodle_id} skipped: {e}")

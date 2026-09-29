@@ -323,12 +323,12 @@ class TestStudentSummary:
 
     def test_summary_with_facts(self, mgr, mem):
         uid = "moodle:2001"
-        mem.add(uid, "Struggling with: recursion", category="struggling")
-        mem.add(uid, "[Trees] Binary tree traversal", category="general")
+        mem.add(uid, "Struggling with: recursion", category="struggling", extract=False)
+        mem.add(uid, "[Trees] Binary tree traversal", category="general", extract=False)
         mem.add(
             uid, "Learning preference: visual diagrams",
             category="preference",
-        )
+         extract=False)
 
         summary = mgr.get_student_summary(2001)
         assert summary.total_facts == 3
@@ -358,8 +358,8 @@ class TestStudentSummary:
 
     def test_summary_text_format(self, mgr, mem):
         uid = "moodle:2001"
-        mem.add(uid, "Struggling with DP: 表格法不理解", category="struggling")
-        mem.add(uid, "Struggling with graphs: DFS 搞不清", category="struggling")
+        mem.add(uid, "Struggling with DP: 表格法不理解", category="struggling", extract=False)
+        mem.add(uid, "Struggling with graphs: DFS 搞不清", category="struggling", extract=False)
 
         summary = mgr.get_student_summary(2001)
         assert "困難項目" in summary.summary_text

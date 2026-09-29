@@ -284,7 +284,7 @@ class OfficeHourManager:
         if notes and self._memory:
             uid = f"moodle:{booking.student_id}"
             fact = f"[Office Hour] 已當面解決：{notes}"
-            self._memory.add(uid, fact, category="general")
+            self._memory.add(uid, fact, category="general", extract=False)
 
         return booking
 

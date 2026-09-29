@@ -44,7 +44,7 @@ def seed_database(db_path: str, *, reset: bool = False) -> dict[str, int]:
 
     for user_id, facts in DEMO_STUDENTS.items():
         for fact_text, category in facts:
-            mem.add(user_id, fact_text, category=category)
+            mem.add(user_id, fact_text, category=category, extract=False)
         # Verify actual stored count
         actual = len(mem.list(user_id))
         result[user_id] = actual

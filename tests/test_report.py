@@ -67,18 +67,18 @@ def gen(
 def _seed_students(memory: Memory) -> None:
     """Seed 3 students with different profiles."""
     # Student 1001: active learner
-    memory.add("moodle:1001", "[Python] Q: What is a list?")
-    memory.add("moodle:1001", "[Python] Q: How to use for loop?")
-    memory.add("moodle:1001", "Struggling with recursion: stack overflow concept")
-    memory.add("moodle:1001", "Learning preference: visual diagrams")
+    memory.add("moodle:1001", "[Python] Q: What is a list?", extract=False)
+    memory.add("moodle:1001", "[Python] Q: How to use for loop?", extract=False)
+    memory.add("moodle:1001", "Struggling with recursion: stack overflow concept", extract=False)
+    memory.add("moodle:1001", "Learning preference: visual diagrams", extract=False)
 
     # Student 1002: struggling
-    memory.add("moodle:1002", "Struggling with linked list: pointer confusion")
-    memory.add("moodle:1002", "Struggling with tree traversal: inorder vs preorder")
-    memory.add("moodle:1002", "[Data Structures] Q: What is a stack?")
+    memory.add("moodle:1002", "Struggling with linked list: pointer confusion", extract=False)
+    memory.add("moodle:1002", "Struggling with tree traversal: inorder vs preorder", extract=False)
+    memory.add("moodle:1002", "[Data Structures] Q: What is a stack?", extract=False)
 
     # Student 1003: minimal activity
-    memory.add("moodle:1003", "[SQL] Q: What is SELECT?")
+    memory.add("moodle:1003", "[SQL] Q: What is SELECT?", extract=False)
 
 
 def _seed_grades(grades: GradeManager) -> None:
@@ -237,7 +237,7 @@ class TestWeeklyReport:
 
     def test_high_risk_students(self, gen: ReportGenerator, memory: Memory):
         # Create one student with zero activity to guarantee high risk
-        memory.add("moodle:9999", "[Test] Q: placeholder")
+        memory.add("moodle:9999", "[Test] Q: placeholder", extract=False)
         memory.forget("moodle:9999")
         # Actually, a student with 0 facts won't appear in class analytics.
         # Instead test with the seeded data

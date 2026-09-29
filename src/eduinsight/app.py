@@ -1776,7 +1776,7 @@ async def demo_reset() -> DemoResetResponse:
     total_seeded = 0
     for user_id, facts in DEMO_STUDENTS.items():
         for fact_text, category in facts:
-            _memory.add(user_id, fact_text, category=category)
+            _memory.add(user_id, fact_text, category=category, extract=False)
         total_seeded += len(facts)
 
     # Backdate student 1004's facts to 3 weeks ago to create a "high risk" profile
@@ -1872,7 +1872,7 @@ async def demo_semester() -> SemesterDemoResponse:
     for week_data in SEMESTER_WEEKS:
         week_base_ts = semester_start + (week_data.week - 1) * week_seconds
         for i, (fact_text, category) in enumerate(week_data.facts):
-            _memory.add(SEMESTER_STUDENT_ID, fact_text, category=category)
+            _memory.add(SEMESTER_STUDENT_ID, fact_text, category=category, extract=False)
             total_seeded += 1
 
             # Backdate the timestamp via direct DB update

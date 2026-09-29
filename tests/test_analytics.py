@@ -32,7 +32,7 @@ def _seed_demo(mem: Memory) -> None:
     """Populate memory with demo student data."""
     for user_id, facts in DEMO_STUDENTS.items():
         for fact_text, category in facts:
-            mem.add(user_id, fact_text, category=category)
+            mem.add(user_id, fact_text, category=category, extract=False)
 
 
 # ------------------------------------------------------------------
@@ -54,8 +54,8 @@ class TestAnalyzeStudent:
         mem = Memory()
         # Lite-Mem may deduplicate similar "Struggling with:" facts,
         # so we use distinct topics to ensure both survive.
-        mem.add("moodle:1", "[OOP] Q: What is inheritance?")
-        mem.add("moodle:1", "Struggling with: recursion — can't trace base case")
+        mem.add("moodle:1", "[OOP] Q: What is inheritance?", extract=False)
+        mem.add("moodle:1", "Struggling with: recursion — can't trace base case", extract=False)
 
         result = analyze_student(mem, 1)
         assert len(result.struggles) >= 1
@@ -69,9 +69,13 @@ class TestAnalyzeStudent:
     def test_weak_topics_from_struggles(self) -> None:
         mem = Memory()
         # Use very different struggle topics to avoid Lite-Mem dedup
-        mem.add("moodle:1", "Struggling with: linear algebra — matrix multiplication")
-        mem.add("moodle:1", "[Math] Q: How do eigenvalues work?")
-        mem.add("moodle:1", "Struggling with: probability — Bayes theorem")
+        mem.add(
+            "moodle:1",
+            "Struggling with: linear algebra — matrix multiplication",
+            extract=False,
+        )
+        mem.add("moodle:1", "[Math] Q: How do eigenvalues work?", extract=False)
+        mem.add("moodle:1", "Struggling with: probability — Bayes theorem", extract=False)
 
         result = analyze_student(mem, 1)
         # weak_topics should contain at least the struggles that survived dedup
@@ -80,9 +84,9 @@ class TestAnalyzeStudent:
     def test_natural_language_struggle_extracted(self) -> None:
         """LLM-extracted facts without 'Struggling with' prefix should still be detected."""
         mem = Memory()
-        mem.add("moodle:1", "搞不懂「進步性」怎麼判斷")
-        mem.add("moodle:1", "I'm confused by SWOT external vs internal factors")
-        mem.add("moodle:1", "為什麼 STP 流程的順序不能換？")
+        mem.add("moodle:1", "搞不懂「進步性」怎麼判斷", extract=False)
+        mem.add("moodle:1", "I'm confused by SWOT external vs internal factors", extract=False)
+        mem.add("moodle:1", "為什麼 STP 流程的順序不能換？", extract=False)
 
         result = analyze_student(mem, 1)
         topics = [s.topic for s in result.struggles]
@@ -95,10 +99,10 @@ class TestAnalyzeStudent:
 
     def test_question_topics_counted(self) -> None:
         mem = Memory()
-        mem.add("moodle:1", "[Math] Q: What is calculus?")
-        mem.add("moodle:1", "[Math] Q: What is a derivative?")
-        mem.add("moodle:1", "[Physics] Q: What is force?")
-        mem.add("moodle:1", "[Math] A: Calculus is the study of change.")
+        mem.add("moodle:1", "[Math] Q: What is calculus?", extract=False)
+        mem.add("moodle:1", "[Math] Q: What is a derivative?", extract=False)
+        mem.add("moodle:1", "[Physics] Q: What is force?", extract=False)
+        mem.add("moodle:1", "[Math] A: Calculus is the study of change.", extract=False)
 
         result = analyze_student(mem, 1)
         assert result.question_topics["Math"] >= 2
@@ -107,7 +111,11 @@ class TestAnalyzeStudent:
     def test_preferences_extracted(self) -> None:
         mem = Memory()
         # Lite-Mem may merge similar preference facts; use one distinct preference
-        mem.add("moodle:1", "Learning preference: visual diagrams and step-by-step walkthroughs")
+        mem.add(
+            "moodle:1",
+            "Learning preference: visual diagrams and step-by-step walkthroughs",
+            extract=False,
+        )
 
         result = analyze_student(mem, 1)
         assert len(result.preferences) >= 1
@@ -153,8 +161,8 @@ class TestAnalyzeClass:
 
     def test_non_moodle_users_excluded(self) -> None:
         mem = Memory()
-        mem.add("slack:99", "Some fact")
-        mem.add("moodle:1", "Struggling with: math")
+        mem.add("slack:99", "Some fact", extract=False)
+        mem.add("moodle:1", "Struggling with: math", extract=False)
 
         result = analyze_class(mem)
         assert result.total_students == 1
@@ -221,9 +229,9 @@ class TestLearningTrajectory:
     def test_single_week(self) -> None:
         """All facts added at the same time should fall in one week."""
         mem = Memory()
-        mem.add("moodle:1", "[Math] Q: What is calculus?")
-        mem.add("moodle:1", "Struggling with: derivatives — chain rule")
-        mem.add("moodle:1", "Learning preference: visual diagrams")
+        mem.add("moodle:1", "[Math] Q: What is calculus?", extract=False)
+        mem.add("moodle:1", "Struggling with: derivatives — chain rule", extract=False)
+        mem.add("moodle:1", "Learning preference: visual diagrams", extract=False)
 
         traj = learning_trajectory(mem, 1)
         assert traj.total_weeks == 1
@@ -234,8 +242,8 @@ class TestLearningTrajectory:
 
     def test_struggles_tracked_in_trajectory(self) -> None:
         mem = Memory()
-        mem.add("moodle:1", "Struggling with: recursion — base case")
-        mem.add("moodle:1", "Struggling with: pointers — null dereference")
+        mem.add("moodle:1", "Struggling with: recursion — base case", extract=False)
+        mem.add("moodle:1", "Struggling with: pointers — null dereference", extract=False)
 
         traj = learning_trajectory(mem, 1)
         assert traj.total_weeks >= 1
@@ -247,8 +255,8 @@ class TestLearningTrajectory:
 
     def test_topics_tracked_in_trajectory(self) -> None:
         mem = Memory()
-        mem.add("moodle:1", "[Algorithms] Q: What is Big-O?")
-        mem.add("moodle:1", "[Database] Q: What is normalization?")
+        mem.add("moodle:1", "[Algorithms] Q: What is Big-O?", extract=False)
+        mem.add("moodle:1", "[Database] Q: What is normalization?", extract=False)
 
         traj = learning_trajectory(mem, 1)
         all_topics = []
@@ -259,8 +267,8 @@ class TestLearningTrajectory:
     def test_multi_week_via_db(self) -> None:
         """Manually adjust created_at to simulate multi-week data."""
         mem = Memory()
-        mem.add("moodle:5", "Struggling with: loops — off by one")
-        mem.add("moodle:5", "[Math] Q: What is integration?")
+        mem.add("moodle:5", "Struggling with: loops — off by one", extract=False)
+        mem.add("moodle:5", "[Math] Q: What is integration?", extract=False)
 
         # Shift one fact back by 2 weeks via direct DB access
         conn = mem._store._get_conn()
@@ -281,8 +289,8 @@ class TestLearningTrajectory:
     def test_cumulative_struggles_grow(self) -> None:
         """Cumulative struggle count should never decrease."""
         mem = Memory()
-        mem.add("moodle:6", "Struggling with: sorting — merge sort")
-        mem.add("moodle:6", "Struggling with: graphs — BFS vs DFS")
+        mem.add("moodle:6", "Struggling with: sorting — merge sort", extract=False)
+        mem.add("moodle:6", "Struggling with: graphs — BFS vs DFS", extract=False)
 
         # Shift first fact back 1 week
         conn = mem._store._get_conn()
@@ -354,8 +362,12 @@ class TestAssessRisk:
         mem = Memory()
         # Add plenty of facts (as sole student, they are the class average)
         for i in range(10):
-            mem.add("moodle:1", f"[Topic{i}] Fact about topic {i}: detailed info {i}")
-        mem.add("moodle:1", "Struggling with: one thing — minor issue")
+            mem.add(
+                "moodle:1",
+                f"[Topic{i}] Fact about topic {i}: detailed info {i}",
+                extract=False,
+            )
+        mem.add("moodle:1", "Struggling with: one thing — minor issue", extract=False)
 
         now = time.time()
         risk = assess_risk(mem, 1, now=now)
@@ -367,8 +379,8 @@ class TestAssessRisk:
     def test_inactive_student_is_high_risk(self) -> None:
         """A student who hasn't been active for 3+ weeks should be high risk."""
         mem = Memory()
-        mem.add("moodle:10", "[DS] Linked list basics: nodes and pointers")
-        mem.add("moodle:10", "Struggling with: everything — very confused")
+        mem.add("moodle:10", "[DS] Linked list basics: nodes and pointers", extract=False)
+        mem.add("moodle:10", "Struggling with: everything — very confused", extract=False)
 
         # Backdate all facts to 30 days ago
         conn = mem._store._get_conn()
@@ -391,7 +403,7 @@ class TestAssessRisk:
         mem = Memory()
         # Add older facts (4 weeks ago)
         for i in range(8):
-            mem.add("moodle:20", f"[Algo] Algorithm topic {i}: explanation {i}")
+            mem.add("moodle:20", f"[Algo] Algorithm topic {i}: explanation {i}", extract=False)
 
         # Backdate all to 4 weeks ago
         conn = mem._store._get_conn()
@@ -403,7 +415,7 @@ class TestAssessRisk:
         conn.commit()
 
         # Add one recent fact (within last week)
-        mem.add("moodle:20", "[Algo] Recent question about sorting: quicksort")
+        mem.add("moodle:20", "[Algo] Recent question about sorting: quicksort", extract=False)
 
         risk = assess_risk(mem, 20)
         # Should detect declining trend (activity drop factor present)
@@ -413,10 +425,10 @@ class TestAssessRisk:
     def test_high_struggle_ratio_flagged(self) -> None:
         """A student with many struggles relative to total facts should be flagged."""
         mem = Memory()
-        mem.add("moodle:30", "[DS] One general fact: arrays store elements")
-        mem.add("moodle:30", "Struggling with: recursion — can't trace calls")
-        mem.add("moodle:30", "Struggling with: pointers — null dereference")
-        mem.add("moodle:30", "Struggling with: trees — traversal order")
+        mem.add("moodle:30", "[DS] One general fact: arrays store elements", extract=False)
+        mem.add("moodle:30", "Struggling with: recursion — can't trace calls", extract=False)
+        mem.add("moodle:30", "Struggling with: pointers — null dereference", extract=False)
+        mem.add("moodle:30", "Struggling with: trees — traversal order", extract=False)
 
         risk = assess_risk(mem, 30)
         # 3 struggles / 4 facts = 75% struggle ratio
@@ -428,10 +440,10 @@ class TestAssessRisk:
         mem = Memory()
         # Student 1: many facts
         for i in range(20):
-            mem.add("moodle:41", f"[Topic{i}] Student 1 fact {i}: detailed info")
+            mem.add("moodle:41", f"[Topic{i}] Student 1 fact {i}: detailed info", extract=False)
         # Student 2: few facts
         for i in range(3):
-            mem.add("moodle:42", f"[Topic{i}] Student 2 fact {i}: minimal info")
+            mem.add("moodle:42", f"[Topic{i}] Student 2 fact {i}: minimal info", extract=False)
 
         risk_low = assess_risk(mem, 41)
         risk_high = assess_risk(mem, 42)
@@ -493,10 +505,10 @@ class TestGenerateStudentSummary:
 
     def test_summary_with_struggles(self) -> None:
         mem = Memory()
-        mem.add("moodle:1", "Struggling with recursion: base case confusion")
-        mem.add("moodle:1", "Struggling with pointers: null dereference")
-        mem.add("moodle:1", "[OOP] Q: What is inheritance?")
-        mem.add("moodle:1", "Learning preference: visual diagrams")
+        mem.add("moodle:1", "Struggling with recursion: base case confusion", extract=False)
+        mem.add("moodle:1", "Struggling with pointers: null dereference", extract=False)
+        mem.add("moodle:1", "[OOP] Q: What is inheritance?", extract=False)
+        mem.add("moodle:1", "Learning preference: visual diagrams", extract=False)
 
         s = generate_student_summary(mem, 1, display_name="A 同學", now=time.time())
         assert s.name == "A 同學"
@@ -506,16 +518,16 @@ class TestGenerateStudentSummary:
 
     def test_summary_with_no_struggles(self) -> None:
         mem = Memory()
-        mem.add("moodle:2", "[Python] Q: How to use list comprehension?")
-        mem.add("moodle:2", "[Python] Q: What is a generator?")
-        mem.add("moodle:2", "Learning preference: code examples")
+        mem.add("moodle:2", "[Python] Q: How to use list comprehension?", extract=False)
+        mem.add("moodle:2", "[Python] Q: What is a generator?", extract=False)
+        mem.add("moodle:2", "Learning preference: code examples", extract=False)
 
         s = generate_student_summary(mem, 2, now=time.time())
         assert "未記錄明顯困難" in s.text
 
     def test_default_name(self) -> None:
         mem = Memory()
-        mem.add("moodle:42", "[Math] Q: integral")
+        mem.add("moodle:42", "[Math] Q: integral", extract=False)
         s = generate_student_summary(mem, 42, now=time.time())
         assert s.name == "moodle:42"
 

@@ -244,7 +244,7 @@ def main():
 
     # Insert all facts
     for user_id, text, category, weeks_ago, offset_hours in SEED_DATA:
-        mem.add(user_id, text, category=category)
+        mem.add(user_id, text, category=category, extract=False)
 
     # Close litemem to release DB lock
     del mem

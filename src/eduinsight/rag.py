@@ -65,7 +65,7 @@ class CourseRAG:
         for chunk in doc.chunks:
             page_tag = f"p.{chunk.page}" if chunk.page else "p.?"
             tagged_text = f"[{doc.filename} {page_tag}] {chunk.text}"
-            self._memory.add(uid, tagged_text, category="course_material")
+            self._memory.add(uid, tagged_text, category="course_material", extract=False)
             indexed += 1
         logger.info(
             "Indexed %d chunks from %s into course %s (legacy mode)",
@@ -85,7 +85,7 @@ class CourseRAG:
             heading = chunk.heading or "正文"
             anchor = chunk.anchor_id or "h-0"
             tagged_text = f"[{doc.filename} §{heading}|{anchor}] {chunk.text}"
-            self._memory.add(uid, tagged_text, category="course_material")
+            self._memory.add(uid, tagged_text, category="course_material", extract=False)
             indexed += 1
         logger.info(
             "Indexed %d markdown chunks from %s into course %s",
@@ -164,7 +164,7 @@ class CourseRAG:
             removed = len(all_facts) - len(remaining)
             self._memory.forget(uid)
             for fact in remaining:
-                self._memory.add(uid, fact, category="course_material")
+                self._memory.add(uid, fact, category="course_material", extract=False)
             logger.info("Removed %d chunks of %s from course %s", removed, filename, course_id)
 
         return removed

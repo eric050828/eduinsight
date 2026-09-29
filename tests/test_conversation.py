@@ -40,7 +40,7 @@ class TestAnswer:
     async def test_answer_with_mock_llm(self) -> None:
         mem = Memory()
         # Pre-populate some memory
-        mem.add("moodle:42", "Student asked: What is a variable?")
+        mem.add("moodle:42", "Student asked: What is a variable?", extract=False)
 
         mock_llm = AsyncMock()
         mock_llm.chat = AsyncMock(return_value="OOP is a programming paradigm based on objects.")
@@ -84,8 +84,10 @@ class TestAnswer:
     async def test_answer_uses_memory_context(self) -> None:
         mem = Memory()
         # Student previously struggled with recursion
-        mem.add("moodle:10", "Struggling with: recursion — keeps getting stack overflow")
-        mem.add("moodle:10", "Learning preference: prefers visual diagrams")
+        mem.add(
+            "moodle:10",
+            "Struggling with: recursion — keeps getting stack overflow", extract=False)
+        mem.add("moodle:10", "Learning preference: prefers visual diagrams", extract=False)
 
         captured_prompt = None
 

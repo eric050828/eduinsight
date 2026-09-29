@@ -155,7 +155,7 @@ class LearningAssistant:
         content = f"Student asked: {question}"
         if topic:
             content = f"[{topic}] {content}"
-        self._memory.add(uid, content)
+        self._memory.add(uid, content, extract=False)
         logger.debug("Recorded question for user %s: %s", uid, question[:80])
 
     def record_struggle(self, moodle_user_id: int, topic: str, details: str = "") -> None:
@@ -170,7 +170,7 @@ class LearningAssistant:
         content = f"Struggling with: {topic}"
         if details:
             content += f" — {details}"
-        self._memory.add(uid, content)
+        self._memory.add(uid, content, extract=False)
         logger.debug("Recorded struggle for user %s: %s", uid, topic)
 
     def record_preference(self, moodle_user_id: int, preference: str) -> None:
@@ -181,7 +181,7 @@ class LearningAssistant:
             preference: Description of the preference (e.g. "prefers visual explanations").
         """
         uid = _student_uid(moodle_user_id)
-        self._memory.add(uid, f"Learning preference: {preference}")
+        self._memory.add(uid, f"Learning preference: {preference}", extract=False)
         logger.debug("Recorded preference for user %s: %s", uid, preference[:80])
 
     def get_student_context(
@@ -352,10 +352,10 @@ class LearningAssistant:
         """
         uid = _student_uid(moodle_user_id)
         prefix = f"[{topic}] " if topic else ""
-        self._memory.add(uid, f"{prefix}Q: {question}")
+        self._memory.add(uid, f"{prefix}Q: {question}", extract=False)
         # Store a truncated version of the answer to avoid bloating memory
         answer_summary = answer[:500] + "..." if len(answer) > 500 else answer
-        self._memory.add(uid, f"{prefix}A: {answer_summary}")
+        self._memory.add(uid, f"{prefix}A: {answer_summary}", extract=False)
 
     # ------------------------------------------------------------------
     # Analytics helpers (Phase 3 prep)

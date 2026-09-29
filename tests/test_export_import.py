@@ -35,8 +35,8 @@ class TestExportStudent:
     async def test_export_student_with_memories(self) -> None:
         """Exporting a student returns their memories as a MemoryBundle."""
         mem = Memory(":memory:")
-        mem.add("moodle:101", "Struggling with recursion", category="struggling")
-        mem.add("moodle:101", "Prefers visual explanations", category="preference")
+        mem.add("moodle:101", "Struggling with recursion", category="struggling", extract=False)
+        mem.add("moodle:101", "Prefers visual explanations", category="preference", extract=False)
 
         async with await _make_client(mem) as client:
             resp = await client.get("/export/student/101")
@@ -66,9 +66,9 @@ class TestExportAll:
     async def test_export_all_multiple_students(self) -> None:
         """Exporting all returns bundles for each moodle student."""
         mem = Memory(":memory:")
-        mem.add("moodle:201", "Fact A")
-        mem.add("moodle:202", "Fact B")
-        mem.add("moodle:202", "Fact C")
+        mem.add("moodle:201", "Fact A", extract=False)
+        mem.add("moodle:202", "Fact B", extract=False)
+        mem.add("moodle:202", "Fact C", extract=False)
 
         async with await _make_client(mem) as client:
             resp = await client.get("/export/all")
@@ -81,8 +81,8 @@ class TestExportAll:
     async def test_export_all_skips_non_moodle_users(self) -> None:
         """Non-moodle users are excluded from export."""
         mem = Memory(":memory:")
-        mem.add("moodle:301", "Student fact")
-        mem.add("internal:system", "System fact")
+        mem.add("moodle:301", "Student fact", extract=False)
+        mem.add("internal:system", "System fact", extract=False)
 
         async with await _make_client(mem) as client:
             resp = await client.get("/export/all")
@@ -169,8 +169,8 @@ class TestImport:
     async def test_roundtrip_export_import(self) -> None:
         """Export then import produces identical memories."""
         mem = Memory(":memory:")
-        mem.add("moodle:501", "Fact one", category="general")
-        mem.add("moodle:501", "Fact two", category="struggling")
+        mem.add("moodle:501", "Fact one", category="general", extract=False)
+        mem.add("moodle:501", "Fact two", category="struggling", extract=False)
 
         async with await _make_client(mem) as client:
             # Export

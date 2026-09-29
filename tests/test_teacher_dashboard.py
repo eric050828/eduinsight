@@ -53,7 +53,7 @@ class TestTeacherStudents:
         """Users without 'moodle:' prefix should not appear."""
         mem = Memory()
         # Add a non-moodle user directly via Lite-Mem
-        mem.add("slack:123", "some fact")
+        mem.add("slack:123", "some fact", extract=False)
         # Add a moodle user via assistant
         assistant = LearningAssistant(mem)
         assistant.record_question(1, "What is OOP?")
