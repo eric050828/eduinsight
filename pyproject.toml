@@ -33,7 +33,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-lite-mem = { path = "../memory-bench" }
+lite-mem = { git = "https://github.com/eric050828/lite-mem", branch = "main" }
 
 [build-system]
 requires = ["hatchling"]

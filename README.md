@@ -5,7 +5,7 @@ AI 學習助教平台 — 兩種部署模式：
 - **Version A — Standalone**：自帶 JWT 登入，不依賴 Moodle，適合 demo / 校外場景
 - **Version B — Moodle LTI 1.3**：嵌入 Moodle 課程作為 External Tool，由 Moodle 負責認證
 
-兩個版本共用同一份 codebase 和 [Lite-Mem](../memory-bench) 記憶核心；切換靠環境變數。
+兩個版本共用同一份 codebase 和 [Lite-Mem](https://github.com/eric050828/lite-mem) 記憶核心；切換靠環境變數。
 
 ## 架構
 
@@ -31,7 +31,7 @@ FastAPI Backend (this repo)
    └─ /office-hours/* .... Office Hour 預約
    │
    ▼
-Lite-Mem (../memory-bench) — 記憶核心，唯讀依賴
+Lite-Mem (github.com/eric050828/lite-mem) — 記憶核心，唯讀依賴
 ```
 
 ## 快速開始

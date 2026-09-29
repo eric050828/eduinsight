@@ -348,7 +348,7 @@ requires-dist = [
     { name = "bcrypt", specifier = ">=4.2.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.28.0" },
-    { name = "lite-mem", directory = "../memory-bench" },
+    { name = "lite-mem", git = "https://github.com/eric050828/lite-mem?branch=main" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pydantic", specifier = ">=2.7.0" },
@@ -532,39 +532,12 @@ wheels = [
 [[package]]
 name = "lite-mem"
 version = "0.4.0"
-source = { directory = "../memory-bench" }
+source = { git = "https://github.com/eric050828/lite-mem?branch=main#7b50eb2e1defa951eec8486a5ee51cdb0072c34e" }
 dependencies = [
     { name = "cryptography" },
     { name = "pydantic" },
     { name = "rank-bm25" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "anyio", marker = "extra == 'benchmark'", specifier = ">=4.4.0" },
-    { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.108.0" },
-    { name = "cryptography", specifier = ">=46.0.6" },
-    { name = "datasets", marker = "extra == 'benchmark'", specifier = ">=2.20.0" },
-    { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.135.2" },
-    { name = "httpx", marker = "extra == 'benchmark'", specifier = ">=0.28.1" },
-    { name = "httpx", marker = "extra == 'server'", specifier = ">=0.28.1" },
-    { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.29.0" },
-    { name = "langchain-core", marker = "extra == 'langchain'", specifier = ">=1.2.22" },
-    { name = "lite-mem", extras = ["langchain", "crewai", "benchmark", "dev", "server", "mcp"], marker = "extra == 'all'" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
-    { name = "openai", marker = "extra == 'benchmark'", specifier = ">=1.50.0" },
-    { name = "psutil", marker = "extra == 'benchmark'", specifier = ">=7.2.2" },
-    { name = "pydantic", specifier = ">=2.7.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23.0" },
-    { name = "pytest-benchmark", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "rank-bm25", specifier = ">=0.2.2" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4.0" },
-    { name = "sentence-transformers", marker = "extra == 'benchmark'", specifier = ">=3.0.0" },
-    { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.42.0" },
-]
-provides-extras = ["langchain", "crewai", "benchmark", "dev", "all", "server", "mcp"]
 
 [[package]]
 name = "lxml"
