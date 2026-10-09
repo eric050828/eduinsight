@@ -9,8 +9,10 @@ legacy/orphan messages without a course mapping are deliberately excluded.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import re
+import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -68,6 +70,19 @@ class Cluster(BaseModel):
     suggested_intervention: str
 
 
+# Lite-Mem 共用同一條 SQLite 連線；診斷頁會同時送出多個請求（在執行緒池並行），
+# 並行讀取會造成 cursor 競爭（偶發 IndexError → 500），因此所有碰記憶庫的處理函式一律序列化。
+_MEMORY_LOCK = threading.RLock()
+
+
+def _serialized(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with _MEMORY_LOCK:
+            return func(*args, **kwargs)
+    return wrapper
+
+
 def get_memory() -> Memory:
     """Reuse the initialized application memory (also after /demo/reset).
 
@@ -98,6 +113,7 @@ class _Evidence:
     identities: set[str]
 
 
+@_serialized
 def _evidence(
     course_id: str = Depends(_authorized_course), memory: Memory = Depends(get_memory),
 ) -> _Evidence:
@@ -178,6 +194,7 @@ def _mentions_topic(text: str, topic: str) -> bool:
 
 
 @router.get("/{course_id}/overview", response_model=Overview)
+@_serialized
 def overview(evidence: _Evidence = Depends(_evidence)) -> Overview:
     """Mastery = 100 * (1 - struggle_fact_count / total_facts), rounded to 2 dp.
 
@@ -214,6 +231,7 @@ def overview(evidence: _Evidence = Depends(_evidence)) -> Overview:
 
 
 @router.get("/{course_id}/hard-topics", response_model=list[HardTopic])
+@_serialized
 def hard_topics(evidence: _Evidence = Depends(_evidence)) -> list[HardTopic]:
     """Return distinct struggling learners, up to 3 excerpts and 3 RAG locations."""
     rag = CourseRAG(evidence.memory)
@@ -245,6 +263,7 @@ def hard_topics(evidence: _Evidence = Depends(_evidence)) -> list[HardTopic]:
 
 
 @router.get("/{course_id}/clusters", response_model=list[Cluster])
+@_serialized
 def clusters(evidence: _Evidence = Depends(_evidence)) -> list[Cluster]:
     """Overlapping topic groups; a student can need multiple interventions."""
     result = []
