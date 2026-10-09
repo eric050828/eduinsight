@@ -1,5 +1,7 @@
 """Authentication, role and ownership checks across the entire route inventory."""
 
+from eduinsight.courses import enroll
+
 import re
 
 import pytest
@@ -80,6 +82,7 @@ async def test_student_cannot_access_another_students_data(client, auth_headers)
 
 
 async def test_chat_session_ownership_for_reads_writes_and_chat(client, auth_headers):
+    enroll("ds101", 1002, source="test")
     victim = sessions.create_session(1002, "ds101", "Private")
     sid = victim["session_id"]
     headers = auth_headers("student1001")
@@ -112,7 +115,9 @@ async def test_student_blocked_from_all_teacher_routes(client, auth_headers):
 
 
 async def test_teacher_allowed_and_scoped(client, auth_headers):
+    enroll("ds101", 1002, source="test")
     sessions.create_session(1002, "ds101", "Class")
+    enroll("mk201", 1002, source="test")
     session = sessions.create_session(1002, "mk201", "Other class")
     headers = auth_headers("teacher")
     for path in (
@@ -143,6 +148,7 @@ async def test_student_score_and_booking_lists_are_filtered(client, auth_headers
     gm = app_module._grades
     gm.set_categories("ds101", [{"name": "Quiz", "weight": 100}])
     for student_id in (1001, 1002):
+        enroll("ds101", student_id, source="test")
         gm.record_score("ds101", student_id=student_id, category="Quiz", item="Q1", score=8, total=10)
         slot = app_module._office_hours.create_slot(
             "ds101", teacher_id=1, start_time=100 + student_id, end_time=200 + student_id,

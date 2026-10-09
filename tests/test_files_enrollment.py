@@ -1,5 +1,7 @@
 """Attachment storage and enrollment use real JWTs, never the production app."""
 
+from eduinsight.courses import enroll
+
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -25,6 +27,7 @@ async def client(auth_headers, monkeypatch):
             )
         )
     for student_id in (1001, 1002):
+        enroll("ds101", student_id, source="test")
         sessions.create_session(student_id, "ds101")
     app = FastAPI()
     for router in (
@@ -379,7 +382,7 @@ async def test_submission_state_and_text_preservation(client, auth_headers):
 
 async def test_request_approve_immediately_enrolls(client, auth_headers):
     headers = auth_headers("outsider")
-    assert (await client.get("/courses", headers=headers)).json() == []
+    assert [c["id"] for c in (await client.get("/courses", headers=headers)).json()] == ["general"]
     assert (await client.get("/courses/ds101/info", headers=headers)).status_code == 403
     request = await apply(client, auth_headers)
     assert request["student_id"] == 2001 and request["status"] == "pending"
@@ -396,7 +399,7 @@ async def test_request_approve_immediately_enrolls(client, auth_headers):
     assert approved.status_code == 200, approved.text
     assert approved.json()["status"] == "approved"
     assert [course["id"] for course in (await client.get("/courses", headers=headers)).json()] == [
-        "ds101"
+        "general", "ds101"
     ]
     assert (await client.get("/courses/ds101/info", headers=headers)).status_code == 200
     assignment_id = await make_assignment(client, auth_headers)

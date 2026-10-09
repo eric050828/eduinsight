@@ -24,7 +24,7 @@ from litemem import Memory
 
 from . import assignments, sessions
 from .analytics import _extract_natural_topic, _is_natural_struggle
-from .auth import TEACHER_COURSE_MAP, AuthUser, get_current_user, require_role
+from .auth import AuthUser, get_current_user, require_role
 from .courses import _check_course_access
 from .grades import GradeManager
 
@@ -57,20 +57,17 @@ def _now() -> datetime:
 def _student_sessions(user: AuthUser, student_id: int) -> list[dict]:
     if user.role == "student" and user.moodle_user_id != student_id:
         raise HTTPException(403, "Students may only view their own data")
-    owned = None
-    if user.role == "teacher":
-        owned = TEACHER_COURSE_MAP.get(user.username)
-        if owned is None:
-            raise HTTPException(403, "Teacher has no assigned course")
+    from .courses import _visible_course_ids, is_enrolled
+    visible = _visible_course_ids(user)
+    if user.role == "teacher" and not any(is_enrolled(cid, student_id) for cid in visible):
+        raise HTTPException(403, "Student is not enrolled in your courses")
     with sessions._db() as conn:
         rows = conn.execute(
             "SELECT * FROM chat_sessions WHERE moodle_user_id = ? ORDER BY session_id",
             (student_id,),
         ).fetchall()
-    result = [dict(row) for row in rows if owned is None or row["course_id"] == owned]
-    if owned is not None and not result:
-        raise HTTPException(403, "Student is not enrolled in your course")
-    return result
+    return [dict(row) for row in rows if user.role == "admin" or
+            (row["course_id"] in visible and is_enrolled(row["course_id"], student_id))]
 
 
 def _messages(memory: Memory, student_id: int, allowed: list[dict], *, scoped: bool) -> list[dict]:
@@ -350,13 +347,14 @@ async def student_overview(
 ) -> dict:
     _check_course_access(user, course_id)
     rows = [row for row in _student_sessions(user, moodle_user_id) if row["course_id"] == course_id]
-    if not rows:
+    from .courses import is_enrolled
+    if not is_enrolled(course_id, moodle_user_id):
         raise HTTPException(403, "Student is not enrolled in this course")
     with sessions._db() as conn:
         enrolled = {
             row[0]
             for row in conn.execute(
-                "SELECT DISTINCT moodle_user_id FROM chat_sessions WHERE course_id = ?",
+                "SELECT DISTINCT moodle_user_id FROM course_enrollments WHERE course_id = ?",
                 (course_id,),
             )
         }

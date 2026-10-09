@@ -1,6 +1,6 @@
 """Course-isolated class analytics and transcripts derived from existing stores.
 
-Enrollment is defined by chat_sessions, as in courses.py. Knowledge facts have
+Enrollment is defined by course_enrollments, as in courses.py. Knowledge facts have
 student ownership only; radar responses explicitly disclose that scope. Hours
 are estimates using analytics_extra's activity spans, never invented durations.
 """
@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from . import analytics_extra as extra
 from . import assignments, sessions
 from .analytics_extra import _activity_spans, _knowledge, _messages, _timestamp
-from .auth import TEACHER_COURSE_MAP, AuthUser, get_current_user, require_role
+from .auth import AuthUser, get_current_user, require_role
 from .courses import COURSE_CATALOG
 
 router = APIRouter(tags=["class-analytics"])
@@ -43,34 +43,26 @@ def _course_catalog() -> dict[str, str]:
 
 
 def _own_course_ids(user: AuthUser) -> set[str]:
-    with sessions._db() as conn:
-        enrolled = {row[0] for row in conn.execute(
-            "SELECT DISTINCT course_id FROM chat_sessions WHERE moodle_user_id = ?",
-            (user.moodle_user_id,),
-        )}
-    return enrolled & set(_course_catalog())
+    from .courses import _visible_course_ids
+    return _visible_course_ids(user)
 
 
 def _check_course_access(user: AuthUser, course_id: str) -> None:
-    # Analytics teachers remain scoped by TEACHER_COURSE_MAP even if the editable
-    # catalog assigns additional courses. Authorization performs only reads.
-    if user.role == "teacher" and TEACHER_COURSE_MAP.get(user.username) != course_id:
-        raise HTTPException(403, "Teacher course access denied")
-    if course_id not in _course_catalog():
-        raise HTTPException(404, "Course not found")
-    if user.role == "student" and course_id not in _own_course_ids(user):
-        raise HTTPException(403, "Course access denied")
+    from .courses import _check_course_access as check
+    check(user, course_id)
 
 
 def _course_sessions(course_id: str) -> list[dict]:
     with sessions._db() as conn:
+        enrolled = set(_enrolled(course_id))
         return [dict(row) for row in conn.execute(
             "SELECT * FROM chat_sessions WHERE course_id = ? ORDER BY session_id", (course_id,),
-        )]
+        ) if row["moodle_user_id"] in enrolled]
 
 
 def _enrolled(course_id: str) -> list[int]:
-    return sorted({row["moodle_user_id"] for row in _course_sessions(course_id)})
+    from .courses import list_enrolled
+    return sorted(list_enrolled(course_id))
 
 
 def _student_access(user: AuthUser, course_id: str, student_id: int) -> None:

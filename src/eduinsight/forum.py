@@ -21,44 +21,19 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .auth import AuthUser, TEACHER_COURSE_MAP, get_current_user
 from .config import settings
-from .courses import COURSE_CATALOG
 from .notifications import create_notification
 
 router = APIRouter(tags=["forum"])
 
 
 def _visible_course_ids(user: AuthUser) -> set[str]:
-    # Read enrollment directly: the catalog helper may initialize/write tables,
-    # which would deadlock when called inside a forum write transaction.
-    if user.role == "teacher":
-        owned = TEACHER_COURSE_MAP.get(user.username)
-        return {owned} if owned else set()
-    conn = sqlite3.connect(settings.auth_db_path, timeout=30)
-    try:
-        if user.role == "admin":
-            ids = set(COURSE_CATALOG)
-            if conn.execute("SELECT 1 FROM sqlite_master WHERE name='course_catalog'").fetchone():
-                ids.update(row[0] for row in conn.execute("SELECT id FROM course_catalog"))
-            return ids
-        if user.moodle_user_id is None:
-            return set()
-        if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='chat_sessions'").fetchone():
-            return set()
-        return {row[0] for row in conn.execute(
-            "SELECT DISTINCT course_id FROM chat_sessions WHERE moodle_user_id=?",
-            (user.moodle_user_id,))}
-    finally:
-        conn.close()
+    from .courses import _visible_course_ids as visible
+    return visible(user)
 
 
 def _check_course_access(user: AuthUser, course_id: str) -> None:
-    # Preserve the explicit forum policy even if catalog teacher assignments
-    # change: teachers are scoped strictly by TEACHER_COURSE_MAP.
-    if user.role == "admin":
-        if course_id not in _visible_course_ids(user):
-            raise HTTPException(404, "Course not found")
-    elif course_id not in _visible_course_ids(user):
-        raise HTTPException(403, "Course access denied")
+    from .courses import _check_course_access as check
+    check(user, course_id)
 
 
 class PostBody(BaseModel):

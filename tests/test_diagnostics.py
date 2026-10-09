@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from eduinsight.courses import enroll
+
 import time
 
 import pytest
@@ -64,6 +66,7 @@ def _index(memory, course_id, filename, markdown):
 def evidence(diagnostic_app, auth_headers):
     memory = app_module._memory
     for student_id in (1001, 1002):
+        enroll("ds101", student_id, source="test")
         session = sessions.create_session(student_id, "ds101")
         memory.add(f"moodle:{student_id}", "[SQL] Understands SELECT", extract=False)
         memory.add(
@@ -81,11 +84,13 @@ def evidence(diagnostic_app, auth_headers):
     )
     _message(memory, 1001, session["session_id"], "JOIN assistant-only answer", "assistant")
     # Same learner's messages in other courses or unmapped sessions stay private.
+    enroll("mk201", 1001, source="test")
     other = sessions.create_session(1001, "mk201")
     _message(memory, 1001, other["session_id"], "JOIN private other-course question")
     _message(memory, 1001, "unmapped", "JOIN private orphan question")
     # A forged student/session association must not expose another user's text.
     _message(memory, 1003, session["session_id"], "JOIN forged-owner question")
+    enroll("mk201", 1003, source="test")
     sessions.create_session(1003, "mk201")
     memory.add("moodle:1003", "Struggling with SECRET: private topic", extract=False)
     _index(memory, "mk201", "private.md", "## JOIN\nJOIN private material")
@@ -224,6 +229,7 @@ async def test_clusters_have_unique_members_and_stable_ids(client, auth_headers,
 
 
 async def test_empty_sessions_do_not_count_as_active(client, auth_headers):
+    enroll("ds101", 1001, source="test")
     sessions.create_session(1001, "ds101")
     response = await client.get("/diagnostics/ds101/overview", headers=auth_headers("teacher"))
     assert response.status_code == 200
@@ -237,8 +243,11 @@ async def test_empty_sessions_do_not_count_as_active(client, auth_headers):
 
 async def test_active_learners_include_course_messages_but_not_other_course(client, auth_headers):
     memory = app_module._memory
+    enroll("ds101", 1001, source="test")
     current = sessions.create_session(1001, "ds101")
+    enroll("ds101", 1002, source="test")
     sessions.create_session(1002, "ds101")
+    enroll("mk201", 1002, source="test")
     other = sessions.create_session(1002, "mk201")
     memory.add("moodle:1002", "[SQL] Old SELECT knowledge", extract=False)
     conn = memory._store._get_conn()

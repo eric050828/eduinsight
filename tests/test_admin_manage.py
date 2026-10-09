@@ -1,5 +1,7 @@
 """Real JWT management, disabled accounts, catalog, structure and preferences."""
 
+from eduinsight.courses import enroll
+
 import json
 import sqlite3
 from types import SimpleNamespace
@@ -21,7 +23,8 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def client(auth_headers):
+def client(auth_headers, monkeypatch):
+    monkeypatch.setattr(settings, "login_throttle_enabled", False)
     app = FastAPI()
     for module in (auth, courses, admin_manage, course_structure, preferences, platform_admin):
         app.include_router(module.router)
@@ -183,7 +186,7 @@ def test_disable_blocks_login_and_existing_token_and_reenable(client, auth_heade
     assert client.get("/auth/me", headers=token).status_code == 401
     assert client.get("/me/preferences", headers=token).status_code == 401
     client.patch(f"/admin/users/{user_id}", json={"active": True}, headers=headers)
-    assert client.get("/auth/me", headers=token).status_code == 200
+    assert client.get("/auth/me", headers=token).status_code == 401
     assert (
         client.post(
             "/auth/login", json={"username": "student1001", "password": "student123"}
@@ -192,12 +195,13 @@ def test_disable_blocks_login_and_existing_token_and_reenable(client, auth_heade
     )
 
 
-def test_disabled_lti_bridge_identity_is_rejected(client, auth_headers):
+def test_disabled_lti_bridge_identity_is_rejected(client, auth_headers, monkeypatch):
+    monkeypatch.setattr(auth.settings, "enable_lti_bridge", True)
     bridge = client.post("/auth/lti-bridge", json={"moodle_user_id": 5555}).json()
     client.patch(
         f"/admin/users/{bridge['user']['id']}", json={"active": False}, headers=auth_headers()
     )
-    assert client.post("/auth/lti-bridge", json={"moodle_user_id": 5555}).status_code == 401
+    assert client.post("/auth/lti-bridge", json={"moodle_user_id": 5555}).status_code == 409
     assert (
         client.get(
             "/auth/me",
@@ -209,7 +213,7 @@ def test_disabled_lti_bridge_identity_is_rejected(client, auth_headers):
     )
 
 
-def test_role_change_uses_current_db_role_for_existing_token(client, auth_headers):
+def test_role_change_revokes_existing_token(client, auth_headers):
     user = auth.create_user(
         auth.RegisterRequest(
             username="other-admin", password="pass123", display_name="Admin", role="admin"
@@ -218,7 +222,7 @@ def test_role_change_uses_current_db_role_for_existing_token(client, auth_header
     token = {"Authorization": f"Bearer {auth.create_access_token(user)}"}
     assert client.get("/admin/users", headers=token).status_code == 200
     client.patch(f"/admin/users/{user.id}", json={"role": "student"}, headers=auth_headers())
-    assert client.get("/admin/users", headers=token).status_code == 403
+    assert client.get("/admin/users", headers=token).status_code == 401
 
 
 @pytest.mark.parametrize("body", [{"active": False}, {"role": "student"}, {"role": "teacher"}])
@@ -351,6 +355,7 @@ def test_catalog_create_update_archive_persistence_and_assignment(client, auth_h
         client.get("/courses/new-course/info", headers=auth_headers("student1001")).status_code
         == 403
     )
+    enroll("new-course", 1001, source="test")
     sessions.create_session(1001, "new-course")
     assert (
         client.get("/courses/new-course/info", headers=auth_headers("student1001")).status_code
@@ -474,6 +479,7 @@ def test_participants_have_auth_and_moodle_ids_no_secrets(client, auth_headers, 
         ),
     )
     try:
+        enroll("ds101", 1001, source="test")
         sessions.create_session(1001, "ds101")
         result = client.get("/courses/ds101/participants", headers=auth_headers()).json()
         by_name = {p["username"]: p for p in result}
@@ -527,6 +533,7 @@ def test_structure_editing_persistence_cascade_and_audit(client, auth_headers, d
     assert updated.json()["type"] == "video"
     sections = client.get("/course-structure/ds101", headers=headers).json()["sections"]
     assert sections[0]["week"] == 2 and sections[0]["activities"][0]["title"] == "Video"
+    enroll("ds101", 1001, source="test")
     sessions.create_session(1001, "ds101")
     assert (
         client.put(

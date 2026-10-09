@@ -1,17 +1,4 @@
-"""Course applications and seven-day invitations, created lazily in the auth DB.
-
-Enrollment is a chat_sessions row, matching courses._visible_course_ids and
-demo_data.seed_demo_course_sessions. Approval/acceptance and that minimal row
-are committed together; no course_enrollments fallback or courses.py edits are
-needed. The initial empty session is visible in the student's conversation list.
-Email invitations resolve the existing profiles.email field, plus users.email
-if the auth owner adds it. Usernames (including email-shaped ones) also work.
-Existing recipients are bound to their auth user ID when invited.
-
-Call seed_demo_enrollment() after auth and demo course-session seeds. It creates
-two requests for unenrolled demo students in catalog course py101, preserving
-their eventual approval, rejection or cancellation on subsequent seed calls.
-"""
+"""Course applications and invitations grant authoritative enrollment atomically."""
 
 from __future__ import annotations
 
@@ -24,7 +11,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from . import auth, courses, sessions
+from . import auth, courses
 from .auth import AuthUser, get_current_user, require_role
 from .notifications import create_notification
 
@@ -67,7 +54,7 @@ CREATE INDEX IF NOT EXISTS ix_invitations_course ON course_invitations(course_id
 
 @contextmanager
 def _db(*, write: bool = False):
-    sessions.init_sessions_table()
+    courses.init_enrollments()
     with auth._db() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.executescript(_SCHEMA)
@@ -122,32 +109,18 @@ def _student(user: AuthUser) -> int:
 
 
 def _enrolled(conn, course_id: str, student_id: int) -> bool:
-    return (
-        conn.execute(
-            "SELECT 1 FROM chat_sessions WHERE course_id = ? AND moodle_user_id = ? LIMIT 1",
-            (course_id, student_id),
-        ).fetchone()
-        is not None
-    )
+    return courses.is_enrolled(course_id, student_id, conn=conn)
 
 
 def _enroll(conn, course_id: str, student_id: int) -> None:
-    """Called inside BEGIN IMMEDIATE, so retries cannot create duplicate sessions."""
-    if not _enrolled(conn, course_id, student_id):
+    courses.enroll(course_id, student_id, source="approval_or_invitation", conn=conn)
+    # Preserve the initial conversation UX; only course_enrollments grants access.
+    if not conn.execute("SELECT 1 FROM chat_sessions WHERE course_id=? AND moodle_user_id=?",
+                        (course_id, student_id)).fetchone():
         now = time.time()
-        conn.execute(
-            "INSERT INTO chat_sessions "
-            "(session_id, moodle_user_id, course_id, title, created_at, last_msg_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                f"chat-enrollment-{uuid.uuid4().hex}",
-                student_id,
-                course_id,
-                "Course learning session",
-                now,
-                now,
-            ),
-        )
+        conn.execute("INSERT INTO chat_sessions VALUES (?, ?, ?, ?, ?, ?)",
+                     (f"chat-enrollment-{uuid.uuid4().hex}", student_id, course_id,
+                      "Course learning session", now, now))
 
 
 def _recipient(conn, recipient: str):

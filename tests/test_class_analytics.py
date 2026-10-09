@@ -49,6 +49,8 @@ def seed_session(sid="own", student=1001, course="ds101", start=None, end=None):
         conn.execute("INSERT INTO chat_sessions VALUES (?, ?, ?, 'Test', ?, ?)",
                      (sid, student, course, start, end))
         conn.commit()
+    from eduinsight.courses import enroll
+    enroll(course, student, source="test")
     return sid
 
 
@@ -152,19 +154,19 @@ async def test_real_course_activity_and_golden_slots(client, auth_headers):
     assert len(golden["slots"]) == 2  # Empty slots never advertised as productive.
 
 
-async def test_editable_catalog_cannot_widen_teacher_analytics_scope(client, auth_headers):
+async def test_editable_catalog_assignments_control_teacher_analytics_scope(client, auth_headers):
     with sessions._db() as conn:
-        conn.executescript("CREATE TABLE course_catalog "
-                           "(id TEXT PRIMARY KEY, name TEXT, teacher_username TEXT)")
-        conn.execute("INSERT INTO course_catalog VALUES ('new-course', 'New course', 'teacher')")
-        conn.execute("INSERT INTO course_catalog VALUES ('ds101', 'Renamed', 'teacher_huang')")
+        conn.execute("INSERT INTO course_catalog (id, name, teacher_username) "
+                     "VALUES ('new-course', 'New course', 'teacher')")
+        conn.execute("UPDATE course_catalog SET name='Renamed', teacher_username='teacher_huang' "
+                     "WHERE id='ds101'")
         conn.commit()
     seed_session(course="new-course")
     path = "/class-analytics/new-course/weekly-hours"
-    assert (await client.get(path, headers=auth_headers("teacher"))).status_code == 403
+    assert (await client.get(path, headers=auth_headers("teacher"))).status_code == 200
     assert (await client.get(path, headers=auth_headers())).status_code == 200
-    assert (await client.get(CLASS_PATHS[0], headers=auth_headers("teacher_huang"))).status_code == 403
-    assert (await client.get(CLASS_PATHS[0], headers=auth_headers("teacher"))).status_code == 200
+    assert (await client.get(CLASS_PATHS[0], headers=auth_headers("teacher_huang"))).status_code == 200
+    assert (await client.get(CLASS_PATHS[0], headers=auth_headers("teacher"))).status_code == 403
     assert (await client.get("/me/courses/new-course/transcript.pdf",
                              headers=auth_headers("student1001"))).status_code == 200
 

@@ -55,6 +55,8 @@ def seed_session(sid="own", student=1001, course="ds101", start=None, end=None):
             (sid, student, course, "Test", start, end),
         )
         conn.commit()
+    from eduinsight.courses import enroll
+    enroll(course, student, source="test")
     return sid
 
 

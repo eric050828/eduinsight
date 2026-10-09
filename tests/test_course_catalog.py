@@ -1,5 +1,7 @@
 """Course catalog authorization, enrollment, and public participant fields."""
 
+from eduinsight.courses import enroll
+
 from types import SimpleNamespace
 
 import pytest
@@ -50,12 +52,15 @@ async def test_student_sees_only_enrolled_courses(client, auth_headers):
     # Demo reset enrolls all five students in every mapped teacher's course.
     with sessions._db() as conn:
         conn.execute(
-            "DELETE FROM chat_sessions WHERE moodle_user_id = ? AND course_id != ?",
+            "DELETE FROM course_enrollments WHERE moodle_user_id = ? AND course_id != ?",
             (1001, "ds101"),
         )
         conn.commit()
+    enroll("general", 1001, source="test")
     sessions.create_session(1001, "general")
+    enroll("py101", 1002, source="test")
     sessions.create_session(1002, "py101")
+    enroll("outside-catalog", 1001, source="test")
     sessions.create_session(1001, "outside-catalog")
     response = await client.get("/courses", headers=auth_headers("student1001"))
     assert response.status_code == 200
@@ -65,13 +70,13 @@ async def test_student_sees_only_enrolled_courses(client, auth_headers):
     assert entries["general"]["enrolled_count"] == 1
 
 
-async def test_student_without_enrollment_sees_empty_catalog(client, auth_headers):
+async def test_student_without_enrollment_sees_general_only(client, auth_headers):
     auth.create_user(auth.RegisterRequest(
         username="new_student", password="test123", display_name="新同學",
         role="student", moodle_user_id=2001,
     ))
     headers = auth_headers("new_student")
-    assert (await client.get("/courses", headers=headers)).json() == []
+    assert [c["id"] for c in (await client.get("/courses", headers=headers)).json()] == ["general"]
     for suffix in ("info", "participants"):
         assert (await client.get(f"/courses/ds101/{suffix}", headers=headers)).status_code == 403
 
@@ -127,6 +132,7 @@ async def test_admin_sees_complete_catalog_and_seeded_teacher_names(client, auth
 
 @pytest.mark.parametrize("course_id", ["general", "py101", "db101"])
 async def test_unassigned_courses_have_null_teacher(client, auth_headers, course_id):
+    enroll(course_id, 1001, source="test")
     sessions.create_session(1001, course_id)
     for username in ("admin", "student1001"):
         headers = auth_headers(username)

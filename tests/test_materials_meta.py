@@ -1,5 +1,7 @@
 """Material metadata, background indexing and persisted chat citations."""
 
+from eduinsight.courses import enroll
+
 import asyncio
 import json
 import threading
@@ -275,6 +277,7 @@ async def test_chat_persists_exact_citations_and_mentions(client, monkeypatch, w
 
 
 async def test_legacy_messages_have_null_citations(client):
+    enroll("CS101", 1001, source="test")
     sess = sessions.create_session(1001, "CS101", "Legacy")
     app_module._memory._store.store_message(
         "moodle:1001", "Old answer", session_id=sess["session_id"], role="assistant",
@@ -287,6 +290,7 @@ async def test_legacy_messages_have_null_citations(client):
 async def test_selected_material_belongs_to_effective_session_course(client):
     await upload(client)
     await upload(client, "foreign.md", course="CS202")
+    enroll("CS101", 1001, source="test")
     sess = sessions.create_session(1001, "CS101", "Chat")
     base = {"moodle_user_id": 1001, "message": "binary search", "session_id": sess["session_id"]}
     good = await client.post("/chat", json={**base, "material_filenames": ["notes.md"]})
@@ -326,6 +330,7 @@ async def test_filtered_search_finds_selected_file_beyond_top_five(client):
 
 
 async def test_status_authentication_and_teacher_scope_unchanged(client, auth_headers):
+    enroll("CS101", 1001, source="test")
     await upload(client)
     assert (await client.get("/courses/CS101/materials/notes.md/status", headers={
         "Authorization": "Bearer invalid",

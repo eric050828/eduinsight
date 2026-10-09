@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from eduinsight.courses import enroll
+
 import sqlite3
 import sys
 import time
@@ -29,7 +31,9 @@ def client(auth_headers):
 @pytest.fixture
 def seeded(client):
     for student_id in (1001, 1002):
+        enroll("ds101", student_id, source="test")
         sessions.create_session(student_id, "ds101")
+    enroll("mk201", 1001, source="test")
     sessions.create_session(1001, "mk201")
     assignments.seed_demo_assignments()
     course_structure.seed_demo_course_structure()
@@ -68,6 +72,8 @@ def test_platform_stats_counts_roles_sessions_activity_and_submissions(client, a
             ("inactive", 1001, "chm301", "Old", now - 31 * 86400, now - 31 * 86400),
         ])
         conn.commit()
+    for sid, cid in [(1001, "ds101"), (1002, "ds101"), (1001, "mk201"), (1001, "chm301")]:
+        enroll(cid, sid, source="test")
     assignments.seed_demo_assignments()
     with assignments._db() as conn:
         assignment_count = conn.execute("SELECT COUNT(*) FROM assignments").fetchone()[0]
@@ -288,6 +294,7 @@ def test_teacher_and_admin_progress_include_zero_progress_enrolled_students(
 
 
 def test_unseeded_course_has_empty_structure_and_zero_progress(client, auth_headers):
+    enroll("ds101", 1001, source="test")
     sessions.create_session(1001, "ds101")
     headers = auth_headers("student1001")
     assert client.get("/course-structure/ds101", headers=headers).json() == {
@@ -340,7 +347,7 @@ def test_star_list_filters_courses_no_longer_enrolled(client, auth_headers, seed
     client.put("/me/starred-courses/ds101", headers=headers)
     with sessions._db() as conn:
         conn.execute(
-            "DELETE FROM chat_sessions WHERE moodle_user_id = 1001 AND course_id = 'ds101'"
+            "DELETE FROM course_enrollments WHERE moodle_user_id = 1001 AND course_id = 'ds101'"
         )
         conn.commit()
     assert client.get("/me/starred-courses", headers=headers).json() == {"courses": []}

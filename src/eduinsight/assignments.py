@@ -355,7 +355,7 @@ def grade_submission(
     with _db(write=True) as conn:
         assignment = _assignment(conn, assignment_id, user)
         enrolled = conn.execute(
-            "SELECT 1 FROM chat_sessions WHERE course_id = ? AND moodle_user_id = ? LIMIT 1",
+            "SELECT 1 FROM course_enrollments WHERE course_id = ? AND moodle_user_id = ? LIMIT 1",
             (assignment["course_id"], student_id),
         ).fetchone()
         if enrolled is None:
@@ -404,7 +404,7 @@ def seed_demo_assignments() -> dict[str, int]:
                 ).rowcount
                 for student_id in range(1001, 1006):
                     enrolled = conn.execute(
-                        "SELECT 1 FROM chat_sessions WHERE course_id = ? AND moodle_user_id = ? "
+                        "SELECT 1 FROM course_enrollments WHERE course_id = ? AND moodle_user_id = ? "
                         "LIMIT 1",
                         (course_id, student_id),
                     ).fetchone()

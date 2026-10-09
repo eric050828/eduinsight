@@ -1,6 +1,6 @@
 """Teacher diagnostics from stored learning evidence, without LLM calls.
 
-Enrollment is inferred from chat_sessions, as in the existing dashboards.
+Enrollment is read from course_enrollments, as in the existing dashboards.
 Lite-Mem student facts have no course metadata: estimates aggregate facts for
 the course's enrolled students, rather than claiming course-specific grades.
 Question excerpts require both the correct student and a session in the course;
@@ -16,13 +16,13 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from litemem import Memory
 from pydantic import BaseModel, Field
 
 from . import sessions
 from .analytics import StudentAnalytics, analyze_student, assess_risk
-from .auth import TEACHER_COURSE_MAP, AuthUser, require_role
+from .auth import AuthUser, require_role
 from .rag import CourseRAG
 
 router = APIRouter(prefix="/diagnostics", tags=["diagnostics"])
@@ -82,9 +82,9 @@ def get_memory() -> Memory:
 def _authorized_course(
     course_id: str, user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> str:
-    # This router requires a mapped teacher; only admins have unrestricted scope.
-    if user.role == "teacher" and TEACHER_COURSE_MAP.get(user.username) != course_id:
-        raise HTTPException(403, "Course is outside your teaching scope")
+    from .courses import _check_course_access
+    if user.role != "admin":
+        _check_course_access(user, course_id)
     return course_id
 
 
@@ -109,9 +109,11 @@ def _evidence(
         users = conn.execute(
             "SELECT moodle_user_id, username, display_name, role FROM users ORDER BY id",
         ).fetchall()
-    session_ids: dict[int, set[str]] = defaultdict(set)
+    from .courses import list_enrolled
+    session_ids: dict[int, set[str]] = {sid: set() for sid in list_enrolled(course_id)}
     for row in rows:
-        session_ids[row["moodle_user_id"]].add(row["session_id"])
+        if row["moodle_user_id"] in session_ids:
+            session_ids[row["moodle_user_id"]].add(row["session_id"])
     names = {
         row["moodle_user_id"]: row["display_name"] for row in users
         if row["role"] == "student" and row["moodle_user_id"] in session_ids

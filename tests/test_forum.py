@@ -1,5 +1,7 @@
 """Forum tests use real auth JWTs with the shared isolated-database fixtures."""
 
+from eduinsight.courses import enroll
+
 import io
 import zipfile
 
@@ -20,7 +22,9 @@ def client(auth_headers):
     app.include_router(forum.router)
     app.include_router(notifications.router)
     for student_id in (1001, 1002):
+        enroll("ds101", student_id, source="test")
         sessions.create_session(student_id, "ds101")
+    enroll("mk201", 1003, source="test")
     sessions.create_session(1003, "mk201")
     with TestClient(app) as test_client:
         yield test_client
@@ -88,7 +92,7 @@ def test_enrollment_uses_moodle_id_and_admin_access(client, auth_headers):
     assert client.get("/courses/mk201/forum/threads", headers=auth_headers()).status_code == 200
     assert client.get("/courses/unknown/forum/threads", headers=auth_headers()).status_code == 404
     with sessions._db() as conn:
-        conn.execute("DELETE FROM chat_sessions WHERE moodle_user_id=1001")
+        conn.execute("DELETE FROM course_enrollments WHERE moodle_user_id=1001")
         conn.commit()
     assert client.get("/courses/ds101/forum/threads", headers=auth_headers("student1001")).status_code == 403
 
@@ -137,7 +141,7 @@ def test_stale_subscriptions_do_not_leak(client, auth_headers):
     item = thread(client, auth_headers)
     client.put(f"/forum/threads/{item['id']}/subscription", headers=other)
     with sessions._db() as conn:
-        conn.execute("DELETE FROM chat_sessions WHERE moodle_user_id=1002")
+        conn.execute("DELETE FROM course_enrollments WHERE moodle_user_id=1002")
         conn.commit()
     thread(client, auth_headers)
     client.post(f"/forum/threads/{item['id']}/posts", headers=auth_headers("student1001"),

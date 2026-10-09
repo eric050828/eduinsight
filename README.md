@@ -76,6 +76,8 @@ bun run dev
 
 ### Demo 帳號
 
+安全注意：僅 development 且 demo 啟用時會建立這些帳號；production 使用全新 auth DB，請依 DEPLOY.md 建立管理員。
+
 | 帳號 | 密碼 | 角色 | moodle_user_id |
 |---|---|---|---|
 | teacher | teacher123 | teacher | — |
@@ -129,24 +131,24 @@ EDUINSIGHT_AUTH_MODE=jwt
        ▼  POST /lti/launch (id_token JWT)
    後端 ── 驗證 JWT ── 解 LTI claims ── 自動建 lti_<moodle_id> 帳號
        │
-       ▼  redirect to ${FRONTEND_URL}/lti/return?token=<jwt>&role=...
-   Next.js /lti/return
+       ▼  redirect to ${FRONTEND_URL}/lti/return?code=<single-use-code>&role=...
+   LTI return handler（目前前端未使用 LTI，整合時需實作此步）
        │
-       ▼  存 token 到 localStorage → /admin（教師）或 /dashboard（學生）
+       ▼  POST /lti/exchange {"code":"..."} → JWT；移除 URL code → 進入對應角色頁面
 ```
 
 ### 本機驗證 LTI flow（不用 Moodle）
 
-開發時可直接呼叫 dev-only bridge 模擬 LTI launch：
+開發時須設定 `EDUINSIGHT_ENV=development`、啟用 demo 與 `EDUINSIGHT_ENABLE_LTI_BRIDGE=true`。Bridge 僅能建立全新身分，拒絕既有帳號與 admin；回傳的 JWT 只透過 Authorization header 使用，禁止放入 URL：
 
 ```bash
 TOKEN=$(curl -s -X POST http://127.0.0.1:8000/auth/lti-bridge \
   -H "Content-Type: application/json" \
-  -d '{"moodle_user_id":1003,"display_name":"C 王同學","role":"student"}' \
+  -d '{"moodle_user_id":7777,"display_name":"LTI test","role":"student"}' \
   | jq -r .access_token)
 
-# 模擬 Moodle 把使用者導到前端的 LTI return 頁
-open "http://localhost:3000/lti/return?token=$TOKEN&role=learner&user_id=1003"
+# 驗證新帳號；重複呼叫 bridge 會回 409，需使用正常登入流程
+curl -s http://127.0.0.1:8000/auth/me -H "Authorization: Bearer $TOKEN"
 ```
 
 ## 主要 API
@@ -192,3 +194,26 @@ open "http://localhost:3000/lti/return?token=$TOKEN&role=learner&user_id=1003"
 uv run pytest          # 529+ tests
 uv run ruff check .    # lint
 ```
+
+## Production security notes
+
+Follow the production checklist in [DEPLOY.md](DEPLOY.md) before deployment. Set
+`EDUINSIGHT_ENV=production` and a random `EDUINSIGHT_JWT_SECRET` of at least 32 characters;
+unsafe defaults fail startup. Docker defaults to production; `.env.example` is for
+development and overrides that default when used as an env file. Production disables
+demo account seeding and the development LTI bridge. Use a clean persistent auth DB and
+provision the initial admin through the trusted command in DEPLOY.md.
+
+Public registration accepts only username, password and display_name, creates students,
+and assigns unique Moodle IDs. New production databases default to closed registration;
+existing `allow_self_register` settings persist, so check `/admin/settings` on upgrades.
+Passwords use UTF-8 byte limits: 8..72 in production, 4..72 in development. Password resets,
+role changes and account disabling revoke existing tokens. Old JWTs without a token
+version require a fresh login. Duplicate legacy Moodle IDs stop migration until an
+administrator reconciles the identities.
+
+Keep `EDUINSIGHT_LOGIN_THROTTLE_ENABLED=true`, use HTTPS and exact CORS origins, and deploy
+one worker while login throttles and LTI stores remain process-local. The development
+bridge requires explicit `EDUINSIGHT_ENABLE_LTI_BRIDGE=true` and refuses admin roles and
+existing accounts. LTI uses a 60-second single-use code exchanged via `POST /lti/exchange`;
+JWTs are never included in redirect URLs. The current frontend does not use LTI.

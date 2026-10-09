@@ -175,3 +175,83 @@ Both commit messages should end with:
 
 - `GET /public/settings` is intentionally public. It returns only `site_name` and `maintenance_banner`; every other platform setting is admin-only (`/admin/settings`).
 - Routes added later (messaging, forum, submission files, enrollment, class analytics, achievements, admin management, preferences) all require login and follow the same ownership rules; see their tests for the exact 401/403 coverage.
+
+## Security hardening
+
+Completed on `feat/platform-apis`. This section supersedes the historical statements above
+about public teacher registration, caller-selected Moodle identities, bridge identity reuse,
+and demo seeding in production. No branch switching, staging, commit, push, or server launch
+was performed; port 8000 was not used. Another agent edited the shared tree in parallel.
+This agent did not edit `app.py` or the other agent's implementation files.
+
+| Finding | Changes and regression coverage |
+| --- | --- |
+| Deployment mode and demo accounts | Built on the existing config diff. `EDUINSIGHT_ENV` defaults to development and accepts only development/production. Production rejects the default, empty, short (<32 characters), and placeholder JWT secrets at settings construction and through `validate_production_settings()`. `demo_enabled()` permits demos only in development, with an explicit false override; true never bypasses production. Docker defaults to production. `seed_demo_users()` exits before any seed writes when demos are disabled. Tests cover all environment/override combinations and secret validation. |
+| Unauthenticated development LTI bridge | Disabled unless demos are enabled AND `EDUINSIGHT_ENABLE_LTI_BRIDGE=true`. Admin is rejected; any existing username or Moodle ID yields 409 without a token, including disabled accounts and accounts with a different username. Creation races are also stopped by database constraints. Tests cover opt-in, production rejection, roles, identity reuse, and normal bearer use for a new account. |
+| Public registration and identity collisions | A separate public request model forbids all extra fields, including role and moodle_user_id (422). Trusted backend `RegisterRequest` remains available to admin provisioning. Public accounts are always students. Identity allocation considers all roles and executes in the same immediate transaction as insertion. A partial UNIQUE index protects every non-NULL Moodle ID. Legacy migrations are serialized, idempotent, and preserve accounts; duplicate legacy identities abort before migration changes, with a reconciliation error. Auth initialization inserts the environment-specific `platform_settings.allow_self_register` default before preferences seeding can insert development defaults, preserving explicit settings. Registration enforces the stored flag. Passwords use 8..72 UTF-8 bytes in production, 4..72 in development, with HTTP/Pydantic 422 instead of uncaught bcrypt length errors. Tests include concurrent identity allocation, migration preservation/failure, admin settings, byte boundaries, login and reset validation. |
+| JWT validation and revocation | HS256 is pinned; exp, iat, sub, iss and ver are required. Subjects must be positive ASCII integer strings within SQLite's ID range. Bad claims/types/algorithms/issuers/expiry return 401. `users.token_version` is migrated safely and embedded in new tokens; authentication compares it to the database. Old tokens without ver are rejected. `bump_token_version()` is called from admin management on password reset, role changes and disabling, using exactly three added call-site lines. Re-enabling does not restore old tokens. Login and LTI exchange verify the expected version again at issuance, preventing reset races from minting a new valid version. Tests cover each revocation and a reset during bcrypt verification. |
+| Login abuse and event loop blocking | Username and actual client IP have independent buckets, with five failures starting a 30-second exponential lockout capped at 900 seconds. Locked attempts return 429 and Retry-After; success clears the two buckets. A lock protects the 10,000-entry store, whose entries expire after 30 minutes. `EDUINSIGHT_LOGIN_THROTTLE_ENABLED` permits isolated tests to disable it. Bcrypt verification runs through the thread pool; unknown users verify a dummy hash. New-account hashing in async routes also runs in the thread pool; synchronous admin endpoints already execute there. Tests cover username/IP isolation, backoff/cap, reset, TTL/capacity, the switch, dummy verification and worker-thread execution. |
+| LTI reflected HTML, URL tokens and unbounded state | Errors return generic HTML; JS redirects use HTTP 302 without interpolating URLs into script HTML, and unsafe schemes are rejected. Verified launches redirect with a random 60-second exchange code; `POST /lti/exchange` consumes it atomically once and checks account activity/version before minting a token. All LTI routes, including validation errors, set Cache-Control: no-store; launch redirects additionally set Referrer-Policy: no-referrer. Session IDs use secrets.token_urlsafe(32); unknown/expired client cookies are replaced, and only unexpired server-issued sessions can resume. HTTPS session cookies are Secure and HttpOnly. Session/launch stores expire after one hour; session, launch and exchange stores each cap at 1,000 entries. Tests cover reflected payloads, actual OIDC login/session persistence, single-use/expiry/account checks, atomic consumption, cookies, TTL and capacity. |
+| Deployment documentation | `.env.example`, `DEPLOY.md` and README security notes cover strong secrets, clean persistent databases, admin bootstrap, closed registration, revocation, UTF-8 password limits, HTTPS/CORS, throttling and single-worker state. README's unsafe token-in-URL walkthrough was corrected. The current frontend does not use LTI; a future integration must POST the code and remove it from browser history. |
+
+### Files touched by this agent
+
+- `src/eduinsight/auth.py`, `src/eduinsight/config.py`, `src/eduinsight/lti.py`.
+- `src/eduinsight/admin_manage.py`: exactly three added lines calling token-version bumps.
+- `.env.example`, `DEPLOY.md`, `Dockerfile`, `README.md` (security notes/examples only), and this report.
+- New `tests/test_security_auth.py` (95 tests); minimal assumption updates in
+  `tests/test_auth.py` and `tests/test_admin_manage.py`. Shared-tree changes to other files
+  and enrollment-related changes in existing tests belong to the parallel agent.
+
+### New environment variables
+
+| Variable | Default / behavior |
+| --- | --- |
+| `EDUINSIGHT_ENV` | `development`; Docker defaults to `production`. |
+| `EDUINSIGHT_DEMO_MODE` | Unset derives from environment; false disables development demos, production always disables them. |
+| `EDUINSIGHT_ENABLE_LTI_BRIDGE` | false; explicit development demo opt-in only. |
+| `EDUINSIGHT_LOGIN_THROTTLE_ENABLED` | true; false is intended for isolated tests. |
+
+`allow_self_register` is a database platform setting, not a new environment variable.
+Production JWT signing still uses `EDUINSIGHT_JWT_SECRET`.
+
+### app.py integration required from the other agent
+
+1. At the beginning of lifespan, before DB initialization or any seed writes, call
+   `.config.validate_production_settings()`; propagate any validation error.
+2. Keep normal auth/session/enrollment DB initialization enabled in production. Gate
+   every demo seed behind `.config.demo_enabled()` (startup notifications, structure,
+   audit/catalog demo setup, and all demo reset/semester seed calls). The auth user seed
+   has its own internal gate as well.
+3. Gate demo reset/semester operations and demo HTML entry routes with demo_enabled(),
+   returning 404 when disabled while retaining their authorization dependencies.
+4. Retain `app.include_router(lti_router)`; it already includes POST /lti/exchange.
+   No new app-level exchange router or auth-mode wiring is needed for these fixes.
+
+The parallel agent's current `app.py` diff already contains startup validation, the
+startup demo gate, demo-route gates, and the existing LTI router inclusion. This agent
+only inspected that integration; it did not edit `app.py`.
+
+### Verification
+
+Requested PowerShell command, with the exact temporary environment/cache and frozen lockfile:
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:TEMP 'be-venv'
+$env:UV_CACHE_DIR = Join-Path $env:TEMP 'be-uv-cache'
+uv run --python 3.12 --frozen pytest -q tests/test_security_auth.py tests/test_auth_isolation.py tests/test_admin_manage.py
+```
+
+Final result: **410 passed in 34.75s**, including all **95** new security regressions.
+The first run had **402 passed and one failure** in
+`tests/test_auth_isolation.py::test_student_score_and_booking_lists_are_filtered`, caused
+by the parallel enrollment work enforcing course enrollment; its owner subsequently
+updated the enrollment assumptions, and the final requested run passed without exclusions.
+Supplemental standalone auth/LTI coverage: **28 passed**. An expanded run before the
+last reset-race regression had **437 passed** across all five modules.
+Ruff passed for auth.py, config.py, lti.py and test_security_auth.py. Git diff whitespace
+checks passed for this agent's touched files.
+
+Production upgrades must inspect existing demo accounts and registration settings;
+hardening does not silently delete existing users or override saved admin settings.
+Process-local throttling and LTI state require a single worker until shared stores are added.

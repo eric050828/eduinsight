@@ -10,7 +10,14 @@ Lite-Mem (memory_db_path) is NOT touched — this module owns its own DB.
 
 from __future__ import annotations
 
+import json
+import math
+import re
+import secrets
 import sqlite3
+import threading
+import time
+from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,11 +25,12 @@ from typing import Any, Literal
 
 import bcrypt
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+from starlette.concurrency import run_in_threadpool
 
-from .config import settings
+from .config import demo_enabled, settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _bearer = HTTPBearer(auto_error=False)
@@ -43,10 +51,31 @@ class AuthUser(BaseModel):
 
 class LoginRequest(BaseModel):
     username: str = Field(min_length=2, max_length=64)
-    password: str = Field(min_length=4, max_length=128)
+    password: str = Field(min_length=1, max_length=72, repr=False)
+
+    @field_validator("password")
+    @classmethod
+    def password_bytes(cls, value: str) -> str:
+        if not 1 <= len(value.encode("utf-8")) <= 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes")
+        return value
+
+
+class PublicRegisterRequest(LoginRequest):
+    model_config = ConfigDict(extra="forbid")
+    display_name: str = Field(min_length=1, max_length=64)
+
+    @field_validator("password")
+    @classmethod
+    def registration_password(cls, value: str) -> str:
+        minimum = 8 if settings.env == "production" else 4
+        if not minimum <= len(value.encode("utf-8")) <= 72:
+            raise ValueError(f"Password must be {minimum}..72 UTF-8 bytes")
+        return value
 
 
 class RegisterRequest(LoginRequest):
+    """Trusted backend provisioning only; never used as a public request body."""
     display_name: str = Field(min_length=1, max_length=64)
     role: Role = "student"
     moodle_user_id: int | None = None
@@ -79,15 +108,37 @@ def _db():
 
 
 def _ensure_active_column(conn: sqlite3.Connection) -> None:
-    """Upgrade old user tables lazily; serialize concurrent migration attempts."""
+    """Upgrade legacy schemas atomically without reassigning account identities."""
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
-    if columns and "active" not in columns:
+    index = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='ux_users_moodle'"
+    ).fetchone()
+    if columns and (not {"active", "token_version"} <= columns or not index):
         conn.execute("BEGIN IMMEDIATE")
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+        duplicate = conn.execute(
+            "SELECT moodle_user_id FROM users WHERE moodle_user_id IS NOT NULL "
+            "GROUP BY moodle_user_id HAVING COUNT(*) > 1 LIMIT 1"
+        ).fetchone()
+        if duplicate:
+            conn.rollback()
+            raise RuntimeError(
+                "Duplicate users.moodle_user_id; reconcile identities before startup"
+            )
         if "active" not in columns:
             conn.execute("ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1 "
                          "CHECK(active IN (0, 1))")
+        if "token_version" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_moodle "
+                     "ON users(moodle_user_id) WHERE moodle_user_id IS NOT NULL")
         conn.commit()
+    # Insert before preferences' development defaults, preserving explicit admin settings.
+    conn.execute("CREATE TABLE IF NOT EXISTS platform_settings "
+                 "(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute("INSERT OR IGNORE INTO platform_settings (key, value) VALUES (?, ?)",
+                 ("allow_self_register", json.dumps(settings.env == "development")))
+    conn.commit()
 
 
 def init_db() -> None:
@@ -102,6 +153,7 @@ def init_db() -> None:
                 role            TEXT NOT NULL CHECK(role IN ('student','teacher','admin')),
                 moodle_user_id  INTEGER,
                 active          INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+                token_version   INTEGER NOT NULL DEFAULT 0,
                 created_at      REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS ix_users_username ON users(username);
@@ -109,12 +161,16 @@ def init_db() -> None:
             """
         )
         conn.commit()
+        _ensure_active_column(conn)
 
 
 # ---------------------------------------------------------------- Hashing
 
 
 def hash_password(plain: str) -> str:
+    minimum = 8 if settings.env == "production" else 4
+    if not minimum <= len(plain.encode("utf-8")) <= 72:
+        raise HTTPException(422, f"Password must be {minimum}..72 UTF-8 bytes")
     return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
@@ -128,7 +184,12 @@ def verify_password(plain: str, hashed: str) -> bool:
 # ---------------------------------------------------------------- Tokens
 
 
-def create_access_token(user: AuthUser) -> str:
+def create_access_token(user: AuthUser, *, expected_version: int | None = None) -> str:
+    row = get_user_by_id(user.id)
+    if row is None or not row.get("active", 1):
+        raise HTTPException(401, "User is unavailable")
+    if expected_version is not None and row["token_version"] != expected_version:
+        raise HTTPException(401, "Account credentials changed; log in again")
     payload: dict[str, Any] = {
         "sub": str(user.id),
         "username": user.username,
@@ -137,17 +198,38 @@ def create_access_token(user: AuthUser) -> str:
         "exp": datetime.now(UTC) + timedelta(minutes=settings.jwt_expire_minutes),
         "iat": datetime.now(UTC),
         "iss": "eduinsight",
+        "ver": row["token_version"],
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
 
 def decode_token(token: str) -> dict[str, Any]:
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"], issuer="eduinsight")
+        payload = jwt.decode(
+            token, settings.jwt_secret, algorithms=["HS256"], issuer="eduinsight",
+            options={"require": ["exp", "iat", "sub", "iss", "ver"]},
+        )
+        sub = payload["sub"]
+        if (not isinstance(sub, str) or not re.fullmatch(r"[1-9][0-9]{0,18}", sub)
+                or int(sub) > 2**63 - 1):
+            raise jwt.InvalidTokenError("Invalid subject")
+        if (not isinstance(payload["ver"], int) or isinstance(payload["ver"], bool)
+                or payload["ver"] < 0):
+            raise jwt.InvalidTokenError("Invalid token version")
+        return payload
     except jwt.ExpiredSignatureError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token expired") from e
-    except jwt.InvalidTokenError as e:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Invalid token: {e}") from e
+    except (jwt.InvalidTokenError, ValueError, TypeError, OverflowError) as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token") from e
+
+
+def bump_token_version(user_id: int) -> None:
+    """Revoke all previously issued tokens for an account."""
+    with _db() as conn:
+        if conn.execute("UPDATE users SET token_version = token_version + 1 WHERE id = ?",
+                        (user_id,)).rowcount == 0:
+            raise HTTPException(404, "User not found")
+        conn.commit()
 
 
 # ---------------------------------------------------------------- DB ops
@@ -212,31 +294,29 @@ def reset_user_password(user_id: int, password: str) -> None:
 
 
 def create_user(req: RegisterRequest) -> AuthUser:
-    if get_user_by_username(req.username):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Username already exists")
-
+    hashed = hash_password(req.password)
     moodle_id = req.moodle_user_id
-    # Auto-generate moodle_user_id for students if not provided (so chat/analytics keys exist)
-    if moodle_id is None and req.role == "student":
-        with _db() as conn:
-            row = conn.execute(
-                "SELECT COALESCE(MAX(moodle_user_id), 1000) AS m FROM users WHERE role='student'"
-            ).fetchone()
-            moodle_id = int(row["m"]) + 1
-
     with _db() as conn:
-        cur = conn.execute(
-            "INSERT INTO users (username, password_hash, display_name, role, "
-            "moodle_user_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                req.username,
-                hash_password(req.password),
-                req.display_name,
-                req.role,
-                moodle_id,
-                datetime.now(UTC).timestamp(),
-            ),
-        )
+        # Serialize allocation and insertion; all roles share the same identity namespace.
+        conn.execute("BEGIN IMMEDIATE")
+        if moodle_id is None and req.role == "student":
+            maximum = conn.execute("SELECT MAX(moodle_user_id) FROM users").fetchone()[0]
+            moodle_id = max(1000, maximum or 0) + 1
+        try:
+            cur = conn.execute(
+                "INSERT INTO users (username, password_hash, display_name, role, "
+                "moodle_user_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    req.username,
+                    hashed,
+                    req.display_name,
+                    req.role,
+                    moodle_id,
+                    datetime.now(UTC).timestamp(),
+                ),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(409, "Username or Moodle identity already exists") from exc
         conn.commit()
         new_id = cur.lastrowid
     assert new_id is not None
@@ -274,6 +354,8 @@ async def get_current_user(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
     if not row.get("active", 1):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User is disabled")
+    if payload["ver"] != row["token_version"]:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token revoked")
     return _row_to_user(row)
 
 
@@ -302,23 +384,86 @@ def require_role(*roles: Role):
 # ---------------------------------------------------------------- Routes
 
 
+_DUMMY_HASH = "$2b$12$l/MOpBPqNhpKl1M5zNd5BejRHcGNF9QPgluYnreL1nwULLK3/hLXG"
+_THROTTLE_TTL = 1800
+_THROTTLE_MAX = 10000
+_login_failures: OrderedDict[tuple[str, str], tuple[int, float, float]] = OrderedDict()
+_throttle_lock = threading.Lock()
+
+
+def _prune_login_failures(now: float) -> None:
+    for key, (_, _, expires) in list(_login_failures.items()):
+        if expires <= now:
+            _login_failures.pop(key, None)
+    while len(_login_failures) > _THROTTLE_MAX:
+        _login_failures.popitem(last=False)
+
+
+def _locked_response(seconds: float) -> None:
+    if seconds > 0:
+        raise HTTPException(429, "Too many login attempts",
+                            headers={"Retry-After": str(max(1, math.ceil(seconds)))})
+
+
+def _check_login_throttle(keys: tuple[tuple[str, str], ...]) -> None:
+    if not settings.login_throttle_enabled:
+        return
+    now = time.monotonic()
+    with _throttle_lock:
+        _prune_login_failures(now)
+        remaining = max((_login_failures.get(key, (0, 0, 0))[1] - now for key in keys),
+                        default=0)
+    _locked_response(remaining)
+
+
+def _record_login_failure(keys: tuple[tuple[str, str], ...]) -> None:
+    if not settings.login_throttle_enabled:
+        return
+    now = time.monotonic()
+    delay = 0
+    with _throttle_lock:
+        _prune_login_failures(now)
+        for key in keys:
+            count = _login_failures.get(key, (0, 0, 0))[0] + 1
+            lockout = min(900, 30 * 2 ** min(count - 5, 5)) if count >= 5 else 0
+            _login_failures[key] = (count, now + lockout, now + _THROTTLE_TTL)
+            _login_failures.move_to_end(key)
+            delay = max(delay, lockout)
+        _prune_login_failures(now)
+    _locked_response(delay)
+
+
 @router.post("/register", response_model=TokenResponse)
-async def register(req: RegisterRequest) -> TokenResponse:
-    if req.role == "admin":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin must be created via seed script")
-    user = create_user(req)
+async def register(req: PublicRegisterRequest) -> TokenResponse:
+    with _db() as conn:
+        value = conn.execute("SELECT value FROM platform_settings WHERE key = ?",
+                             ("allow_self_register",)).fetchone()[0]
+    if value != "true":
+        raise HTTPException(403, "Self registration is disabled")
+    user = await run_in_threadpool(create_user, RegisterRequest(**req.model_dump()))
     return TokenResponse(access_token=create_access_token(user), user=user)
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(req: LoginRequest) -> TokenResponse:
+async def login(req: LoginRequest, request: Request) -> TokenResponse:
+    keys = (("username", req.username),
+            ("ip", request.client.host if request.client else "unknown"))
+    _check_login_throttle(keys)
     row = get_user_by_username(req.username)
-    if row is not None and not row.get("active", 1):
+    valid = await run_in_threadpool(
+        verify_password, req.password, row["password_hash"] if row else _DUMMY_HASH,
+    )
+    if not valid or row is None or not row.get("active", 1):
+        _record_login_failure(keys)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
-    if row is None or not verify_password(req.password, row["password_hash"]):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
+    if settings.login_throttle_enabled:
+        with _throttle_lock:
+            for key in keys:
+                _login_failures.pop(key, None)
     user = _row_to_user(row)
-    return TokenResponse(access_token=create_access_token(user), user=user)
+    return TokenResponse(
+        access_token=create_access_token(user, expected_version=row["token_version"]), user=user,
+    )
 
 
 @router.get("/me", response_model=AuthUser)
@@ -336,27 +481,30 @@ class LTIBridgeRequest(BaseModel):
 async def lti_bridge_dev(req: LTIBridgeRequest) -> TokenResponse:
     """Dev-only: simulate an LTI launch by issuing a JWT for an arbitrary moodle_user_id.
 
-    In production, this should be locked behind a shared secret or disabled.
-    Used by Playwright tests and local development to bypass the Moodle round-trip.
+    Explicit development opt-in only; existing identities can never be impersonated.
     """
+    if not demo_enabled() or not settings.enable_lti_bridge:
+        raise HTTPException(404, "LTI development bridge is disabled")
+    if req.role == "admin":
+        raise HTTPException(403, "Admin role is not allowed")
     username = f"lti_{req.moodle_user_id}"
-    existing = get_user_by_username(username)
-    if existing is not None and not existing.get("active", 1):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User is disabled")
+    with _db() as conn:
+        existing = conn.execute(
+            "SELECT id FROM users WHERE username = ? OR moodle_user_id = ?",
+            (username, req.moodle_user_id),
+        ).fetchone()
     if existing:
-        user = _row_to_user(existing)
-    else:
-        import secrets
-
-        user = create_user(
-            RegisterRequest(
-                username=username,
-                password=secrets.token_hex(16),
-                display_name=req.display_name or username,
-                role=req.role,
-                moodle_user_id=req.moodle_user_id,
-            )
-        )
+        raise HTTPException(409, "Account already exists; use authenticated login")
+    user = await run_in_threadpool(
+        create_user,
+        RegisterRequest(
+            username=username,
+            password=secrets.token_hex(16),
+            display_name=req.display_name or username,
+            role=req.role,
+            moodle_user_id=req.moodle_user_id,
+        ),
+    )
     return TokenResponse(access_token=create_access_token(user), user=user)
 
 
@@ -376,6 +524,8 @@ TEACHER_COURSE_MAP: dict[str, str] = {
 
 def seed_demo_users() -> dict[str, str]:
     """Create demo users matching demo_data.py student IDs (1001-1005). Idempotent."""
+    if not demo_enabled():
+        return {}
     init_db()
     demo = [
         ("teacher",        "teacher123", "陳教授", "teacher", None),

@@ -1,5 +1,7 @@
 """Real JWT authentication, course scoping and private direct-message behavior."""
 
+from eduinsight.courses import enroll
+
 from types import SimpleNamespace
 
 import pytest
@@ -12,7 +14,9 @@ from fastapi.testclient import TestClient
 def setup(auth_headers, monkeypatch):
     # conftest isolates SQLite and auth_headers creates users and genuine JWTs.
     for moodle_id in (1001, 1002, 1003):
+        enroll("ds101", moodle_id, source="test")
         sessions.create_session(moodle_id, "ds101")
+    enroll("mk201", 1004, source="test")
     sessions.create_session(1004, "mk201")
     users = {
         name: auth.get_user_by_username(name)["id"]
@@ -83,7 +87,9 @@ def test_contacts_scope_and_safe_fields(setup):
         assert all(contact["user_id"] == setup.ids[contact["username"]] for contact in contacts)
     # Multiple enrollment sessions must not duplicate classmates; a second
     # course adds that course's teacher and students, not unrelated accounts.
+    enroll("ds101", 1001, source="test")
     sessions.create_session(1001, "ds101", "another session")
+    enroll("mk201", 1001, source="test")
     sessions.create_session(1001, "mk201")
     contacts = setup.client.get(
         "/messages/contacts", headers=setup.headers("student1001"),
@@ -287,7 +293,7 @@ def test_peer_and_pagination_validation(setup):
 def test_existing_conversation_survives_enrollment_changes_but_cannot_send(setup):
     message = _send(setup, "student1001", "student1002")
     with sessions._db() as conn:
-        conn.execute("DELETE FROM chat_sessions WHERE moodle_user_id = 1001")
+        conn.execute("DELETE FROM course_enrollments WHERE moodle_user_id = 1001")
         conn.commit()
     path = f"/messages/conversations/{setup.ids['student1002']}"
     headers = setup.headers("student1001")
@@ -349,6 +355,7 @@ def test_seed_idempotent_and_preserves_read_deleted_state(setup):
     with messaging._db() as conn:
         after = [dict(row) for row in conn.execute("SELECT * FROM direct_messages ORDER BY id")]
     assert before == after
+    enroll("mk201", 1003, source="test")
     sessions.create_session(1003, "mk201")
     assert messaging.seed_demo_messages() == 1
     assert messaging.seed_demo_messages() == 0

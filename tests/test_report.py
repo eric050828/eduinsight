@@ -66,6 +66,9 @@ def gen(
 
 def _seed_students(memory: Memory) -> None:
     """Seed 3 students with different profiles."""
+    from eduinsight.courses import enroll
+    for sid in (1001, 1002, 1003):
+        enroll("ds101", sid, source="test")
     # Student 1001: active learner
     memory.add("moodle:1001", "[Python] Q: What is a list?", extract=False)
     memory.add("moodle:1001", "[Python] Q: How to use for loop?", extract=False)
@@ -183,8 +186,8 @@ class TestWeeklyReport:
     ):
         _seed_students(memory)
         session = attendance.create_session("ds101", teacher_id=9001)
-        attendance.checkin(session.session_id, student_id=1001)
-        attendance.checkin(session.session_id, student_id=1002)
+        attendance.checkin(session.session_id, student_id=1001, code=session.checkin_code)
+        attendance.checkin(session.session_id, student_id=1002, code=session.checkin_code)
         attendance.close_session(session.session_id)
         report = gen.weekly_report("ds101")
         assert report.total_sessions == 1
@@ -252,7 +255,7 @@ class TestWeeklyReport:
         _seed_students(memory)
         # Create attendance for a different course
         session = attendance.create_session("OTHER101", teacher_id=9001)
-        attendance.checkin(session.session_id, student_id=1001)
+        attendance.checkin(session.session_id, student_id=1001, code=session.checkin_code)
         attendance.close_session(session.session_id)
         report = gen.weekly_report("ds101")
         # ds101 should have 0 attendance sessions

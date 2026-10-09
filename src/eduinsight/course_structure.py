@@ -233,7 +233,7 @@ def course_progress(course_id: str, user: AuthUser = Depends(get_current_user)) 
                 student_id, total, counts.get(student_id, 0),
             )
         students = conn.execute(
-            "SELECT DISTINCT moodle_user_id FROM chat_sessions "
+            "SELECT DISTINCT moodle_user_id FROM course_enrollments "
             "WHERE course_id = ? ORDER BY moodle_user_id", (course_id,),
         ).fetchall()
     return {"course_id": course_id, "total": total, "students": [

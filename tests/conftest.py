@@ -20,6 +20,8 @@ def _isolate_databases(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "auth_db_path", str(tmp_path / "auth.db"))
     auth.init_db()
     sessions.init_sessions_table()
+    from eduinsight.courses import init_enrollments
+    init_enrollments()
 
 
 @pytest.fixture

@@ -33,9 +33,12 @@ DemoFact = tuple[str, str]
 def seed_demo_course_sessions(user_ids: Iterable[str]) -> None:
     """Enroll seeded students in every demo teacher's course, idempotently."""
     init_sessions_table()
+    from .courses import init_enrollments, enroll
+    init_enrollments()
     for user_id in user_ids:
         moodle_user_id = int(user_id.removeprefix("moodle:"))
         for course_id in set(TEACHER_COURSE_MAP.values()):
+            enroll(course_id, moodle_user_id, source="demo")
             if not list_sessions(moodle_user_id, course_id):
                 create_session(moodle_user_id, course_id, title="Demo learning session")
 

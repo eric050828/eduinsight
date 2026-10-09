@@ -133,7 +133,7 @@ def _course_members(course_id: str) -> list[Contact]:
         rows = conn.execute(
             "SELECT id, display_name, role, username, moodle_user_id FROM users u "
             "WHERE (role = 'teacher' AND username = ?) OR "
-            "(role = 'student' AND EXISTS (SELECT 1 FROM chat_sessions s "
+            "(role = 'student' AND EXISTS (SELECT 1 FROM course_enrollments s "
             "WHERE s.course_id = ? AND s.moodle_user_id = u.moodle_user_id)) "
             "ORDER BY username, id",
             (courses._teacher_username(course_id), course_id),  # noqa: SLF001

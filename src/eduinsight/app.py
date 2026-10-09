@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
 from . import sessions as sessions_mod
+from . import courses, config
 from .analytics import (
     analyze_class,
     analyze_student,
@@ -33,7 +34,7 @@ from .analytics import (
 )
 from .assistant import LearningAssistant
 from .attendance import AttendanceManager, GPSLocation
-from .auth import TEACHER_COURSE_MAP, AuthUser, get_current_user, require_role, seed_demo_users
+from .auth import AuthUser, get_current_user, require_role, seed_demo_users
 from .auth import init_db as init_auth_db
 from .auth import router as auth_router
 from .classroom_assistant import ClassroomAssistant
@@ -125,13 +126,20 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     logger.info("Starting EduInsight with memory DB: %s", settings.memory_db_path)
 
     # Initialize auth DB (separate from memory DB)
+    validator = getattr(config, "validate_production_settings", None)
+    if validator is not None:
+        validator()
+    elif getattr(settings, "env", "production") == "production":
+        raise RuntimeError("Production settings validator is unavailable")
     init_auth_db()
-    sessions_mod.init_sessions_table()
-    seeded = seed_demo_users()
-    seed_demo_notifications()
-    seed_demo_course_structure()
-    seed_demo_audit()
-    seed_demo_admin_data()
+    courses.init_enrollments()
+    seeded = []
+    if _demo_enabled():
+        seeded = seed_demo_users()
+        seed_demo_notifications()
+        seed_demo_course_structure()
+        seed_demo_audit()
+        seed_demo_admin_data()
     logger.info("Auth DB ready: seeded users = %s", seeded)
     embedder = settings.memory_embedder or None  # "" means disabled
     _memory = Memory(settings.memory_db_path, embedder=embedder)
@@ -293,7 +301,7 @@ async def chat(
             raise HTTPException(status_code=403, detail="Session belongs to another student")
         if req.course_id and existing["course_id"] != req.course_id:
             raise HTTPException(status_code=403, detail="Session belongs to another course")
-        if req.material_filenames is not None and not req.course_id:
+        if not req.course_id:
             req.course_id = existing["course_id"]
     if req.material_filenames is not None:
         if not req.course_id:
@@ -305,6 +313,7 @@ async def chat(
         known = {item["filename"] for item in items}
         if any(name not in known for name in req.material_filenames):
             raise HTTPException(status_code=400, detail="Material filename does not belong to this course")
+    _teacher_course_scope(user, req.course_id or "general")
     if not session_id:
         course_for_session = req.course_id or "general"
         title = req.message[:40] if req.message else "新對話"
@@ -435,71 +444,74 @@ async def get_grades(
 
 
 def _students_in_course(course_id: str) -> set[int]:
-    """Return moodle_user_ids of students who have chat sessions in this course."""
-    with sessions_mod._db() as conn:  # noqa: SLF001
-        cur = conn.execute(
-            "SELECT DISTINCT moodle_user_id FROM chat_sessions WHERE course_id = ?",
-            (course_id,),
-        )
-        return {row["moodle_user_id"] for row in cur.fetchall()}
+    return courses.list_enrolled(course_id)
 
 
 def _courses_of_student(moodle_user_id: int) -> set[str]:
-    """Return course_ids the student has chat sessions in."""
-    with sessions_mod._db() as conn:  # noqa: SLF001
-        cur = conn.execute(
-            "SELECT DISTINCT course_id FROM chat_sessions WHERE moodle_user_id = ?",
-            (moodle_user_id,),
-        )
-        return {row["course_id"] for row in cur.fetchall()}
+    with sessions_mod._db() as conn:
+        return {"general"} | {row[0] for row in conn.execute(
+            "SELECT course_id FROM course_enrollments WHERE moodle_user_id=?",
+            (moodle_user_id,))}
 
 
 def _resolve_course_scope(user: AuthUser, course_id: str | None) -> str | None:
-    """Enforce course-level data isolation for class-wide endpoints.
-
-    - Demo teacher listed in TEACHER_COURSE_MAP: may only query the course they own.
-      A missing course_id is coerced to that course; a different one raises 403.
-    - Student: must name a course they are enrolled in (has chat sessions), else 403.
-    - Admin / teacher not in the map (e.g. LTI-provisioned): unrestricted.
-    Returns the effective course_id (None = unrestricted).
-    """
-    if user.role == "student":
-        if not course_id:
-            raise HTTPException(status_code=403, detail="Students must specify course_id")
-        enrolled = _courses_of_student(user.moodle_user_id) if user.moodle_user_id else set()
-        if course_id not in enrolled:
-            raise HTTPException(status_code=403, detail=f"Not enrolled in course {course_id}")
+    """Class-wide data requires an explicit course or a single assigned course."""
+    if course_id:
+        _teacher_course_scope(user, course_id)
         return course_id
-    owned = TEACHER_COURSE_MAP.get(user.username) if user.role == "teacher" else None
-    if owned is None:
-        return course_id  # admin or unmapped teacher: unrestricted
-    if course_id and course_id != owned:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Teacher {user.username} may only access course {owned}",
-        )
-    return owned
+    if user.role == "admin":
+        return None
+    visible = courses._visible_course_ids(user)
+    if user.role == "teacher" and len(visible) == 1:
+        return next(iter(visible))
+    raise HTTPException(403, "Specify an authorized course_id")
 
 
 def _check_student_access(user: AuthUser, moodle_user_id: int) -> None:
-    """Per-student endpoints: students see only themselves; mapped teachers only their class."""
     if user.role == "student":
-        if user.moodle_user_id is None or user.moodle_user_id != moodle_user_id:
-            raise HTTPException(status_code=403, detail="Students may only view their own data")
-        return
-    owned = TEACHER_COURSE_MAP.get(user.username) if user.role == "teacher" else None
-    if owned is not None and moodle_user_id not in _students_in_course(owned):
-        raise HTTPException(
-            status_code=403,
-            detail=f"Student {moodle_user_id} is not enrolled in {owned}",
-        )
+        if user.moodle_user_id != moodle_user_id:
+            raise HTTPException(403, "Students may only view their own data")
+    elif user.role == "teacher":
+        if not any(courses.is_enrolled(cid, moodle_user_id)
+                   for cid in courses._visible_course_ids(user)):
+            raise HTTPException(403, "Student is not enrolled in your courses")
 
 
 def _teacher_course_scope(user: AuthUser, course_id: str | None) -> str | None:
-    """Scope shared course resources for mapped teachers; students may participate."""
-    if user.role == "teacher":
-        return _resolve_course_scope(user, course_id)
-    return course_id
+    """Authorize path/query/body/resource courses; unfiltered lists use filtering below."""
+    if user.role == "admin":
+        return course_id
+    visible = courses._visible_course_ids(user)
+    if user.role == "teacher" and not visible:
+        raise HTTPException(403, "Teacher has no assigned course")
+    if course_id:
+        if course_id not in visible:
+            raise HTTPException(403, "Course access denied")
+        return course_id
+    if user.role == "teacher" and len(visible) == 1:
+        return next(iter(visible))
+    return None
+
+
+def _filter_course_resources(user: AuthUser, rows: list) -> list:
+    if user.role == "admin":
+        return rows
+    visible = courses._visible_course_ids(user)
+    return [row for row in rows if
+            (row.get("course_id") if isinstance(row, dict) else row.course_id) in visible]
+
+
+def _demo_enabled() -> bool:
+    checker = getattr(config, "demo_enabled", None)
+    return bool(checker()) if checker else (
+        getattr(settings, "env", "production") == "development"
+        and getattr(settings, "demo_mode", None) is not False)
+
+
+def _require_demo_admin(user: AuthUser = Depends(require_role("admin"))) -> AuthUser:
+    if not _demo_enabled():
+        raise HTTPException(404, "Demo disabled")
+    return user
 
 
 def _check_resource_course(user: AuthUser, getter: Any, resource_id: str) -> None:
@@ -537,7 +549,7 @@ async def teacher_students(
     """List students with memory stats for the teacher dashboard.
 
     When `course_id` is provided, only students enrolled in that course
-    (i.e. who have chat sessions in it) are returned.
+    (using authoritative course enrollment) are returned.
     """
     assistant = get_assistant()
     mem = assistant.memory
@@ -579,7 +591,7 @@ async def teacher_my_course(
     """Resolve the teacher's course from the authenticated identity."""
     if username is not None and username != user.username:
         raise HTTPException(status_code=403, detail="Username does not match current user")
-    return {"username": user.username, "course_id": TEACHER_COURSE_MAP.get(user.username)}
+    return {"username": user.username, "course_id": _resolve_course_scope(user, None)}
 
 
 
@@ -655,15 +667,16 @@ async def student_conversations(
 
     # Build session_id → course_id lookup once
     session_courses: dict[str, str] = {}
-    if course_id:
-        for s in sessions_mod.list_sessions(moodle_user_id, course_id):
-            session_courses[s["session_id"]] = s["course_id"]
+    if course_id or user.role != "admin":
+        for cid in ([course_id] if course_id else courses._visible_course_ids(user)):
+            for s in sessions_mod.list_sessions(moodle_user_id, cid):
+                session_courses[s["session_id"]] = s["course_id"]
 
     # Group by session
     sessions: dict[str, list[dict[str, Any]]] = {}
     for msg in rows:
         sid = msg.get("session_id", "")
-        if course_id and sid not in session_courses:
+        if (course_id or user.role != "admin") and sid not in session_courses:
             continue  # not part of the requested course
         if sid not in sessions:
             sessions[sid] = []
@@ -751,7 +764,7 @@ async def list_student_courses(
     owned = _teacher_course_scope(user, None)
     if owned is not None:
         rows = [row for row in rows if row["course_id"] == owned]
-    return {"moodle_user_id": moodle_user_id, "courses": rows}
+    return {"moodle_user_id": moodle_user_id, "courses": _filter_course_resources(user, rows)}
 
 
 class CreateSessionBody(BaseModel):
@@ -1604,6 +1617,7 @@ async def list_quiz_sessions(
     """List quiz sessions, optionally filtered by course."""
     course_id = _teacher_course_scope(user, course_id)
     sessions = _quiz_manager.list_sessions(course_id)
+    sessions = _filter_course_resources(user, sessions)
     return [
         SessionInfoResponse(
             session_id=s.session_id,
@@ -1793,6 +1807,7 @@ async def list_polls(
     """List polls, optionally filtered by course."""
     course_id = _teacher_course_scope(user, course_id)
     polls = _interaction.list_polls(course_id)
+    polls = _filter_course_resources(user, polls)
     return [
         PollResponse(
             poll_id=p.poll_id,
@@ -2113,7 +2128,7 @@ class DemoResetResponse(BaseModel):
 
 @app.post("/demo/reset", response_model=DemoResetResponse)
 async def demo_reset(
-    user: AuthUser = Depends(require_role("teacher", "admin")),
+    user: AuthUser = Depends(_require_demo_admin),
 ) -> DemoResetResponse:
     """Reset the database and seed demo data.
 
@@ -2221,7 +2236,7 @@ class SemesterDemoResponse(BaseModel):
 
 @app.post("/demo/semester", response_model=SemesterDemoResponse)
 async def demo_semester(
-    user: AuthUser = Depends(require_role("teacher", "admin")),
+    user: AuthUser = Depends(_require_demo_admin),
 ) -> SemesterDemoResponse:
     """Seed a semester-long demo for student 2001 with time-spread data.
 
@@ -2322,7 +2337,7 @@ async def export_student(
 
 @app.get("/export/all", response_model=ExportAllResponse)
 async def export_all(
-    user: AuthUser = Depends(require_role("teacher", "admin")),
+    user: AuthUser = Depends(require_role("admin")),
 ) -> ExportAllResponse:
     """Export all students' memories as portable MemoryBundle JSONs."""
     assistant = get_assistant()
@@ -2351,7 +2366,7 @@ async def export_all(
 @app.post("/import", response_model=ImportResponse)
 async def import_memory(
     file: UploadFile,
-    user: AuthUser = Depends(require_role("teacher", "admin")),
+    user: AuthUser = Depends(require_role("admin")),
 ) -> ImportResponse:
     """Import a student's memory from a MemoryBundle JSON file.
 
@@ -2368,10 +2383,6 @@ async def import_memory(
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Invalid bundle JSON: {e}")
 
-    if user.role == "teacher" and user.username in TEACHER_COURSE_MAP:
-        if not bundle.user_id.startswith("moodle:") or not bundle.user_id[7:].isdigit():
-            raise HTTPException(status_code=403, detail="Bundle must belong to a course student")
-        _check_student_access(user, int(bundle.user_id[7:]))
     count = mem.import_bundle(bundle)
     return ImportResponse(
         status="imported",
@@ -2397,7 +2408,7 @@ class AttendanceSessionResponse(BaseModel):
     course_id: str
     title: str
     status: str
-    checkin_code: str
+    checkin_code: str | None = None
     created_at: float
     closed_at: float | None = None
     late_threshold_sec: int = 600
@@ -2428,13 +2439,13 @@ class AttendanceStatsResponse(BaseModel):
     student_ids: list[int]
 
 
-def _att_session_resp(s: Any) -> AttendanceSessionResponse:
+def _att_session_resp(s: Any, user: AuthUser) -> AttendanceSessionResponse:
     return AttendanceSessionResponse(
         session_id=s.session_id,
         course_id=s.course_id,
         title=s.title,
         status=s.status.value,
-        checkin_code=s.checkin_code,
+        checkin_code=s.checkin_code if user.role in {"teacher", "admin"} else None,
         created_at=s.created_at,
         closed_at=s.closed_at,
         late_threshold_sec=s.late_threshold_sec,
@@ -2460,7 +2471,7 @@ async def create_attendance_session(
         gps_location=gps,
         gps_radius_m=req.gps_radius_m,
     )
-    return _att_session_resp(session)
+    return _att_session_resp(session, user)
 
 
 @app.post("/attendance/sessions/{session_id}/close", response_model=AttendanceSessionResponse)
@@ -2476,10 +2487,11 @@ async def close_attendance_session(
         raise HTTPException(status_code=404, detail="Session not found")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return _att_session_resp(session)
+    return _att_session_resp(session, user)
 
 
-@app.get("/attendance/sessions/{session_id}", response_model=AttendanceSessionResponse)
+@app.get("/attendance/sessions/{session_id}", response_model=AttendanceSessionResponse,
+         response_model_exclude_none=True)
 async def get_attendance_session(
     session_id: str,
     user: AuthUser = Depends(get_current_user),
@@ -2490,18 +2502,19 @@ async def get_attendance_session(
         session = _attendance.get_session(session_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
-    return _att_session_resp(session)
+    return _att_session_resp(session, user)
 
 
 @app.get("/attendance/sessions")
 async def list_attendance_sessions(
     course_id: str | None = None,
     user: AuthUser = Depends(get_current_user),
-) -> list[AttendanceSessionResponse]:
-    """List attendance sessions."""
+) -> list[dict[str, Any]]:
+    """List attendance sessions, withholding codes from students."""
     course_id = _teacher_course_scope(user, course_id)
     sessions = _attendance.list_sessions(course_id)
-    return [_att_session_resp(s) for s in sessions]
+    sessions = _filter_course_resources(user, sessions)
+    return [_att_session_resp(s, user).model_dump(exclude_none=True) for s in sessions]
 
 
 @app.post("/attendance/sessions/{session_id}/checkin", response_model=CheckinResponse)
@@ -2512,6 +2525,9 @@ async def attendance_checkin(
     """Student checks in to an attendance session."""
     _check_student_access(user, req.student_id)
     _check_resource_course(user, _attendance.get_session, session_id)
+    session = _attendance.get_session(session_id)
+    if not courses.is_enrolled(session.course_id, req.student_id):
+        raise HTTPException(403, "Student is not enrolled in this course")
     gps = None
     if req.latitude is not None and req.longitude is not None:
         gps = GPSLocation(latitude=req.latitude, longitude=req.longitude)
@@ -2586,7 +2602,7 @@ async def get_student_attendance_history(
     """Get a student's attendance history."""
     _check_student_access(user, student_id)
     course_id = _teacher_course_scope(user, course_id)
-    return _attendance.student_history(student_id, course_id)
+    return _filter_course_resources(user, _attendance.student_history(student_id, course_id))
 
 
 @app.post("/attendance/checkin-by-code", response_model=CheckinResponse)
@@ -2602,6 +2618,8 @@ async def checkin_by_code(
     if not session:
         raise HTTPException(status_code=404, detail="No open session with this code")
     _teacher_course_scope(user, session.course_id)
+    if not courses.is_enrolled(session.course_id, req.student_id):
+        raise HTTPException(403, "Student is not enrolled in this course")
     gps = None
     if req.latitude is not None and req.longitude is not None:
         gps = GPSLocation(latitude=req.latitude, longitude=req.longitude)
@@ -2697,9 +2715,10 @@ class DeleteScoreRequest(BaseModel):
 @app.get("/grades/courses")
 async def list_grade_courses(user: AuthUser = Depends(get_current_user)) -> list[str]:
     """List all courses with grade categories configured."""
-    courses = _grades.list_courses()
-    owned = _teacher_course_scope(user, None)
-    return [c for c in courses if owned is None or c == owned]
+    course_ids = _grades.list_courses()
+    _teacher_course_scope(user, None)
+    visible = courses._visible_course_ids(user)
+    return [cid for cid in course_ids if user.role == "admin" or cid in visible]
 
 
 @app.post("/grades/{course_id}/categories", response_model=list[GradeCategoryResponse])
@@ -3069,6 +3088,8 @@ async def export_report_excel(
             max_len = 0
             col_letter = col[0].column_letter
             for cell in col:
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"
                 if cell.value:
                     max_len = max(max_len, len(str(cell.value)))
             ws_sheet.column_dimensions[col_letter].width = min(max_len + 4, 40)
@@ -3112,7 +3133,7 @@ async def teacher_dashboard(
 
 @app.get("/demo")
 async def demo_walkthrough(
-    user: AuthUser = Depends(require_role("teacher", "admin")),
+    user: AuthUser = Depends(_require_demo_admin),
 ) -> FileResponse:
     """Serve the demo walkthrough page."""
     return FileResponse(_STATIC_DIR / "demo.html")
@@ -3120,7 +3141,7 @@ async def demo_walkthrough(
 
 @app.get("/semester")
 async def semester_page(
-    user: AuthUser = Depends(require_role("teacher", "admin")),
+    user: AuthUser = Depends(_require_demo_admin),
 ) -> FileResponse:
     """Serve the semester demo timeline page."""
     return FileResponse(_STATIC_DIR / "semester.html")
@@ -3278,6 +3299,7 @@ async def list_office_hour_slots(
     course_id = _teacher_course_scope(user, course_id)
     slot_status = SlotStatus(status) if status else None
     slots = _office_hours.list_slots(course_id, status=slot_status)
+    slots = _filter_course_resources(user, slots)
     return [_slot_resp(s) for s in slots]
 
 
@@ -3356,7 +3378,7 @@ async def list_office_hour_bookings(
         teacher_id=tid,
         status=bk_status,
     )
-    return [_booking_resp(b) for b in bookings]
+    return [_booking_resp(b) for b in _filter_course_resources(user, bookings)]
 
 
 @app.get("/office-hours/bookings/{booking_id}", response_model=BookingResponse)

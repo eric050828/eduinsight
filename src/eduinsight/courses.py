@@ -1,8 +1,9 @@
-"""Authenticated course catalog backed by chat-session enrollment."""
+"""Course catalog and authoritative enrollment, with one-time legacy migration."""
 
 from __future__ import annotations
 
 from contextlib import contextmanager
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -45,11 +46,7 @@ class CourseParticipant(BaseModel):
 
 @contextmanager
 def _catalog_db():
-    """Seed once per row; never overwrite subsequent catalog edits.
-
-    DB teacher assignments apply to catalog/structure access. Legacy app.py
-    analytics and resource routes continue to use TEACHER_COURSE_MAP.
-    """
+    """Static assignments are seed data only; persisted assignments take precedence."""
     with sessions._db() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS course_catalog (
@@ -75,21 +72,63 @@ def catalog_entries() -> dict[str, dict]:
         return {row["id"]: dict(row) for row in conn.execute("SELECT * FROM course_catalog")}
 
 
-def _catalog_snapshot() -> dict[str, dict]:
-    """Read-only scope lookup, safe inside another module's write transaction.
+def init_enrollments() -> None:
+    """Backfill existing sessions exactly once, when the enrollment table is created.
 
-    Before the catalog is initialized, authorize the original static seeds.
-    Catalog HTTP reads and management initialize the persisted table separately.
+    Deployments must review legacy enrollments: old forged sessions cannot be
+    distinguished from legitimate enrollment without an external roster.
     """
+    sessions.init_sessions_table()
     with sessions._db() as conn:
-        exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
-                              "AND name = 'course_catalog'").fetchone()
-        if exists:
-            return {row["id"]: dict(row) for row in conn.execute("SELECT * FROM course_catalog")}
-    return {cid: {"id": cid, "name": name, "description": "", "archived": False,
-                  "teacher_username": next((username for username, owned
-                                            in TEACHER_COURSE_MAP.items() if owned == cid), None)}
-            for cid, name in COURSE_CATALOG.items()}
+        conn.execute("BEGIN IMMEDIATE")
+        exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='course_enrollments'").fetchone()
+        conn.execute("""CREATE TABLE IF NOT EXISTS course_enrollments (
+            course_id TEXT NOT NULL, moodle_user_id INTEGER NOT NULL,
+            role TEXT NOT NULL DEFAULT 'student', source TEXT NOT NULL,
+            created_at REAL NOT NULL, UNIQUE(course_id, moodle_user_id))""")
+        if not exists:
+            conn.execute("INSERT OR IGNORE INTO course_enrollments "
+                         "SELECT course_id, moodle_user_id, 'student', 'legacy_sessions', "
+                         "MIN(created_at) FROM chat_sessions GROUP BY course_id, moodle_user_id")
+        conn.commit()
+    catalog_entries()
+
+
+def is_enrolled(course_id: str, moodle_user_id: int | None, *, conn=None) -> bool:
+    if moodle_user_id is None:
+        return False
+    if course_id == "general":
+        return True
+    if conn is None:
+        with sessions._db() as db:
+            return is_enrolled(course_id, moodle_user_id, conn=db)
+    return conn.execute("SELECT 1 FROM course_enrollments WHERE course_id=? AND moodle_user_id=?",
+                        (course_id, moodle_user_id)).fetchone() is not None
+
+
+def enroll(course_id: str, moodle_user_id: int, role: str = "student",
+           source: str = "manual", *, conn=None) -> None:
+    if conn is None:
+        with sessions._db() as db:
+            enroll(course_id, moodle_user_id, role, source, conn=db)
+            db.commit()
+        return
+    conn.execute("INSERT OR IGNORE INTO course_enrollments "
+                 "(course_id, moodle_user_id, role, source, created_at) VALUES (?, ?, ?, ?, ?)",
+                 (course_id, moodle_user_id, role, source, time.time()))
+
+
+def list_enrolled(course_id: str) -> set[int]:
+    with sessions._db() as conn:
+        return {row[0] for row in conn.execute(
+            "SELECT moodle_user_id FROM course_enrollments WHERE course_id=? AND role='student'",
+            (course_id,))}
+
+
+def _catalog_snapshot() -> dict[str, dict]:
+    """Read-only lookup, including inside another module's write transaction."""
+    with sessions._db() as conn:
+        return {row["id"]: dict(row) for row in conn.execute("SELECT * FROM course_catalog")}
 
 
 def _visible_course_ids(user: AuthUser) -> set[str]:
@@ -102,10 +141,10 @@ def _visible_course_ids(user: AuthUser) -> set[str]:
         return set()
     with sessions._db() as conn:  # noqa: SLF001
         rows = conn.execute(
-            "SELECT DISTINCT course_id FROM chat_sessions WHERE moodle_user_id = ?",
+            "SELECT DISTINCT course_id FROM course_enrollments WHERE moodle_user_id = ?",
             (user.moodle_user_id,),
         ).fetchall()
-    return {row["course_id"] for row in rows}
+    return {"general"} | {row["course_id"] for row in rows}
 
 
 def _check_course_access(user: AuthUser, course_id: str) -> None:
@@ -129,7 +168,7 @@ def _course_info(course_id: str) -> CourseInfo:
             (teacher_username,),
         ).fetchone()
         count = conn.execute(
-            "SELECT COUNT(DISTINCT moodle_user_id) FROM chat_sessions WHERE course_id = ?",
+            "SELECT COUNT(DISTINCT moodle_user_id) FROM course_enrollments WHERE course_id = ?",
             (course_id,),
         ).fetchone()[0]
     return CourseInfo(
@@ -171,8 +210,8 @@ async def course_participants(
         students = conn.execute(
             "SELECT u.id, u.display_name, u.role, u.username, u.moodle_user_id, "
             "MAX(MAX(s.created_at, s.last_msg_at)) AS last_active "
-            "FROM users u JOIN chat_sessions s ON s.moodle_user_id = u.moodle_user_id "
-            "WHERE s.course_id = ? AND u.role = 'student' "
+            "FROM users u JOIN course_enrollments e ON e.moodle_user_id = u.moodle_user_id LEFT JOIN chat_sessions s ON s.moodle_user_id = e.moodle_user_id AND s.course_id = e.course_id "
+            "WHERE e.course_id = ? AND u.role = 'student' "
             "GROUP BY u.id ORDER BY u.username",
             (course_id,),
         ).fetchall()

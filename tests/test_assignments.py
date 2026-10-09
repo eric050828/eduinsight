@@ -1,5 +1,7 @@
 """Assignments use real JWT authentication and an isolated SQLite database."""
 
+from eduinsight.courses import enroll
+
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -17,6 +19,7 @@ async def client(auth_headers):
     app.include_router(auth.router)
     app.include_router(assignments.router)
     for student_id in range(1001, 1006):
+        enroll("ds101", student_id, source="test")
         sessions.create_session(student_id, "ds101")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
@@ -161,6 +164,7 @@ async def test_enrollment_and_identity(client, auth_headers):
         ("POST", f"/assignments/{assignment_id}/submission/withdraw", None),
     ):
         assert (await client.request(method, path, json=body, headers=headers)).status_code == 403
+    enroll("mk201", 1001, source="test")
     sessions.create_session(1001, "mk201")
     assert (await client.get(f"/assignments/{assignment_id}", headers=headers)).status_code == 200
     auth.create_user(
@@ -429,6 +433,7 @@ async def test_staff_cannot_impersonate_students(client, auth_headers):
 async def test_seed_idempotency_and_preserves_existing_work(client, auth_headers):
     for course_id in set(TEACHER_COURSE_MAP.values()) - {"ds101"}:
         for student_id in range(1001, 1006):
+            enroll(course_id, student_id, source="test")
             sessions.create_session(student_id, course_id)
     first = assignments.seed_demo_assignments()
     assert first == {

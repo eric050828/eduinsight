@@ -113,6 +113,8 @@ def patch_user(
     if user_id == user.id and (changes.get("active") is False or "role" in changes):
         raise HTTPException(403, "Cannot disable or demote yourself")
     result = auth.update_managed_user(user_id, changes)
+    if "role" in changes or changes.get("active") is False:
+        auth.bump_token_version(user_id)
     record_audit(user.username, "user.updated", str(user_id))
     return result
 
@@ -126,6 +128,7 @@ def reset_password(
     _existing_user(user_id)
     password = req.password or secrets.token_urlsafe(18)
     auth.reset_user_password(user_id, password)
+    auth.bump_token_version(user_id)
     record_audit(user.username, "user.password_reset", str(user_id))
     # Generated credentials are disclosed only in this response, never stored in plaintext.
     return (

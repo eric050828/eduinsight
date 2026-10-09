@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -25,6 +28,10 @@ class Settings(BaseSettings):
     memory_embedder: str = "auto"  # "auto", "stub", "gemini", or "" to disable
 
     # Server
+    env: Literal["development", "production"] = "development"
+    demo_mode: bool | None = None  # None derives from env; production always disables demos
+    enable_lti_bridge: bool = False
+    login_throttle_enabled: bool = True
     host: str = "127.0.0.1"
     port: int = 8000
 
@@ -49,6 +56,31 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def production_settings(self) -> Settings:
+        validate_production_settings(self)
+        return self
+
+
+def validate_production_settings(config: Settings | None = None) -> None:
+    """Fail before startup/DB writes when production signing credentials are unsafe."""
+    config = config if config is not None else settings
+    if config.env != "production":
+        return
+    secret = config.jwt_secret.strip()
+    placeholders = ("dev-only-secret", "change-me", "change_me", "changeme", "replace-with",
+                    "replace_with", "replace-me", "replace_me", "placeholder",
+                    "your-secret", "your_secret", "your_jwt_secret", "your-jwt-secret")
+    if len(secret) < 32 or any(value in secret.lower() for value in placeholders):
+        raise ValueError(
+            "Production requires a random EDUINSIGHT_JWT_SECRET of at least 32 characters"
+        )
+
+
+def demo_enabled() -> bool:
+    """Demo features are limited to development, with an optional explicit override."""
+    return settings.env == "development" and settings.demo_mode is not False
 
 
 settings = Settings()

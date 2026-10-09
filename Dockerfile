@@ -17,7 +17,8 @@ COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable \
     && mkdir -p /data
 
-ENV EDUINSIGHT_MEMORY_DB_PATH=/data/eduinsight.db \
+ENV EDUINSIGHT_ENV=production \
+    EDUINSIGHT_MEMORY_DB_PATH=/data/eduinsight.db \
     EDUINSIGHT_AUTH_DB_PATH=/data/eduinsight_auth.db
 
 EXPOSE 8000
