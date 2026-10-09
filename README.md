@@ -38,6 +38,8 @@ Lite-Mem (github.com/eric050828/lite-mem) — 記憶核心，唯讀依賴
 
 ### 後端（共用）
 
+使用 Python 3.12（`.python-version` 已固定版本）；目前 `uv.lock` 的 Pydantic 相依套件不相容 Python 3.14。Docker 部署與 Vercel 前端連線設定請見 [DEPLOY.md](DEPLOY.md)。
+
 ```bash
 uv sync
 cp .env.example .env  # 預設值即可在本機跑起來

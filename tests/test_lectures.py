@@ -184,12 +184,15 @@ class TestLectureManager:
 
     @pytest.mark.asyncio
     async def test_lectures_sorted_by_time(self, manager, audio_file):
-        await manager.process_lecture(
+        first = await manager.process_lecture(
             "CS101", audio_file, "First", generate_summary=False,
         )
-        await manager.process_lecture(
+        second = await manager.process_lecture(
             "CS101", audio_file, "Second", generate_summary=False,
         )
+        # Distinct fixed timestamps avoid depending on platform clock resolution.
+        first.created_at = 1000.0
+        second.created_at = 2000.0
         lectures = manager.list_lectures("CS101")
         # Most recent first
         assert lectures[0].title == "Second"

@@ -12,6 +12,7 @@ manage the session metadata + course_id mapping here.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -51,6 +52,14 @@ def init_sessions_table() -> None:
             );
             CREATE INDEX IF NOT EXISTS ix_sessions_user_course
                 ON chat_sessions(moodle_user_id, course_id, last_msg_at DESC);
+            CREATE TABLE IF NOT EXISTS chat_message_metadata (
+                memory_db_path TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                message_id INTEGER NOT NULL,
+                material_context TEXT,
+                mention_user_ids TEXT,
+                PRIMARY KEY (memory_db_path, session_id, message_id)
+            );
             """
         )
         conn.commit()
@@ -120,7 +129,40 @@ def rename_session(session_id: str, title: str) -> None:
 
 def delete_session(session_id: str) -> None:
     with _db() as conn:
+        conn.execute("DELETE FROM chat_message_metadata WHERE session_id = ?", (session_id,))
         conn.execute(
             "DELETE FROM chat_sessions WHERE session_id = ?", (session_id,)
         )
         conn.commit()
+
+
+def save_message_metadata(
+    session_id: str, message_id: int, *,
+    material_context: list[dict[str, Any]] | None = None,
+    mention_user_ids: list[int] | None = None,
+) -> None:
+    with _db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO chat_message_metadata "
+            "(memory_db_path, session_id, message_id, material_context, mention_user_ids) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (settings.memory_db_path, session_id, message_id,
+             json.dumps(material_context, ensure_ascii=False) if material_context is not None else None,
+             json.dumps(mention_user_ids) if mention_user_ids is not None else None),
+        )
+        conn.commit()
+
+
+def get_message_metadata(session_id: str) -> dict[int, dict[str, Any]]:
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM chat_message_metadata WHERE memory_db_path = ? AND session_id = ?",
+            (settings.memory_db_path, session_id),
+        ).fetchall()
+    return {
+        row["message_id"]: {
+            key: json.loads(row[key]) if row[key] is not None else None
+            for key in ("material_context", "mention_user_ids")
+        }
+        for row in rows
+    }

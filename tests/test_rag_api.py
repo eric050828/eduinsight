@@ -61,7 +61,7 @@ class TestMaterialUpload:
     def test_upload_pdf(self, client):
         pdf_bytes = _make_test_pdf()
         resp = client.post(
-            "/courses/CS101/materials",
+            "/courses/CS101/materials?wait=true",
             files={"file": ("lecture01.pdf", pdf_bytes, "application/pdf")},
         )
         assert resp.status_code == 200
@@ -75,7 +75,7 @@ class TestMaterialUpload:
     def test_upload_pptx(self, client):
         pptx_bytes = _make_test_pptx()
         resp = client.post(
-            "/courses/CS101/materials",
+            "/courses/CS101/materials?wait=true",
             files={"file": ("slides.pptx", pptx_bytes, "application/vnd.openxmlformats")},
         )
         assert resp.status_code == 200

@@ -26,7 +26,7 @@ def user_id(username="student1001"):
 
 def make_notification(username="student1001", title="Assignment due"):
     return notifications.create_notification(
-        user_id(username), title, "Review your assignment.", "assignment_due", "/assignments",
+        user_id(username), title, "Review your assignment.", "assignment_due", "/my",
     )
 
 
@@ -128,6 +128,48 @@ def test_seed_without_existing_demo_users(auth_headers):
         conn.commit()
     assert notifications.seed_demo_notifications() == 0
     assert auth.get_user_by_username("student1001") is None
+
+
+def test_notification_seed_repairs_only_legacy_demo_links(client, auth_headers):
+    assert notifications.seed_demo_notifications() == 30
+    legacy = {"assignment_due": "/assignments", "grade_released": "/grades", "ai_tip": "/chat"}
+    expected = {"assignment_due": "/my", "grade_released": "/analytics",
+                "ai_tip": "/ai-assistant"}
+    manual = notifications.create_notification(user_id(), "Custom", "Body", "ai_tip", "/chat")
+    with notifications._db() as conn:
+        for kind, link in legacy.items():
+            conn.execute(
+                "UPDATE notifications SET link = ?, is_read = 1, created_at = 123 "
+                "WHERE demo_key = ?", (link, kind),
+            )
+        conn.commit()
+        before = [dict(row) for row in conn.execute("SELECT * FROM notifications ORDER BY id")]
+    for _ in range(2):
+        assert notifications.seed_demo_notifications() == 0
+    with notifications._db() as conn:
+        after = [dict(row) for row in conn.execute("SELECT * FROM notifications ORDER BY id")]
+    assert after == [
+        row | {"link": expected[row["demo_key"]]} if row["demo_key"] else row for row in before
+    ]
+    assert next(row for row in after if row["id"] == manual["id"])["link"] == "/chat"
+    assert client.get("/notifications", headers=auth_headers("student1001")).json()[
+        "unread_count"
+    ] == 1
+
+
+def test_notification_seed_preserves_valid_custom_demo_link(auth_headers):
+    notifications.seed_demo_notifications()
+    with notifications._db() as conn:
+        conn.execute(
+            "UPDATE notifications SET link = '/course/ds101' "
+            "WHERE demo_key = 'assignment_due'"
+        )
+        conn.commit()
+    assert notifications.seed_demo_notifications() == 0
+    with notifications._db() as conn:
+        assert {row[0] for row in conn.execute(
+            "SELECT link FROM notifications WHERE demo_key = 'assignment_due'"
+        )} == {"/course/ds101"}
 
 
 def test_profiles_defaults_partial_updates_and_isolation(client, auth_headers):

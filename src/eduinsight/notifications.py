@@ -89,13 +89,15 @@ def seed_demo_notifications() -> int:
     """Seed three notifications per existing demo account; return inserted count.
 
     Call after auth.seed_demo_users(). Repeated calls preserve read state and
-    do not duplicate notifications. This does not create or change any users.
+    do not duplicate notifications. Legacy demo links are repaired without
+    changing read state or timestamps. This does not create or change any users.
     """
     usernames = [*auth.TEACHER_COURSE_MAP, *(f"student{i}" for i in range(1001, 1006))]
     demos = [
-        ("assignment_due", "Assignment due", "Your next assignment is due soon.", "/assignments"),
-        ("grade_released", "Grade released", "A new grade is available.", "/grades"),
-        ("ai_tip", "AI study tip", "Review one difficult concept with your AI tutor.", "/chat"),
+        ("assignment_due", "Assignment due", "Your next assignment is due soon.", "/my"),
+        ("grade_released", "Grade released", "A new grade is available.", "/analytics"),
+        ("ai_tip", "AI study tip", "Review one difficult concept with your AI tutor.",
+         "/ai-assistant"),
     ]
     inserted = 0
     with _db() as conn:
@@ -112,6 +114,11 @@ def seed_demo_notifications() -> int:
                     (user["id"], title, body, kind, link, time.time(), kind),
                 )
                 inserted += cur.rowcount
+                conn.execute(
+                    "UPDATE notifications SET link = ? WHERE user_id = ? AND demo_key = ? "
+                    "AND link IN ('/assignments', '/grades', '/chat')",
+                    (link, user["id"], kind),
+                )
         conn.commit()
     return inserted
 

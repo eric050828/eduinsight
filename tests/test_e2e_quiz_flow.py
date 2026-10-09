@@ -123,7 +123,7 @@ class TestE2EQuizFlow:
         # ── Step 1: Upload course material (PDF) ──
         pdf_bytes = _make_test_pdf()
         resp = client.post(
-            "/courses/ds101/materials",
+            "/courses/ds101/materials?wait=true",
             files={"file": ("search_algorithms.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
         )
         assert resp.status_code == 200, f"Upload failed: {resp.text}"

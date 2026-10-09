@@ -14,13 +14,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from litemem import Memory
 from litemem.portable import MemoryBundle
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from . import sessions as sessions_mod
 from .analytics import (
@@ -38,6 +39,11 @@ from .auth import router as auth_router
 from .classroom_assistant import ClassroomAssistant
 from .config import settings
 from .courses import router as courses_router
+from .analytics_extra import router as analytics_extra_router
+from .course_structure import router as course_structure_router
+from .course_structure import seed_demo_course_structure
+from .platform_admin import router as platform_admin_router
+from .platform_admin import seed_demo_audit
 from .assignments import router as assignments_router
 from .assignments import seed_demo_assignments
 from .diagnostics import router as diagnostics_router
@@ -54,6 +60,7 @@ from .live_quiz import (
     SessionStatus,
 )
 from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
+from .material_metadata import MaterialMetadata
 from .lti import router as lti_router
 from .moodle import MoodleClient
 from .office_hours import BookingStatus, OfficeHourManager, SlotStatus
@@ -110,6 +117,8 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     sessions_mod.init_sessions_table()
     seeded = seed_demo_users()
     seed_demo_notifications()
+    seed_demo_course_structure()
+    seed_demo_audit()
     logger.info("Auth DB ready: seeded users = %s", seeded)
     embedder = settings.memory_embedder or None  # "" means disabled
     _memory = Memory(settings.memory_db_path, embedder=embedder)
@@ -185,6 +194,8 @@ class ChatRequest(BaseModel):
     topic: str = ""
     course_id: str = ""  # Optional: include RAG context from course materials
     session_id: str = ""  # Optional: continue an existing session; empty = new
+    material_filenames: list[str] | None = None
+    mention_user_ids: list[int] | None = None
 
 
 class MaterialCitation(BaseModel):
@@ -269,6 +280,18 @@ async def chat(
             raise HTTPException(status_code=403, detail="Session belongs to another student")
         if req.course_id and existing["course_id"] != req.course_id:
             raise HTTPException(status_code=403, detail="Session belongs to another course")
+        if req.material_filenames is not None and not req.course_id:
+            req.course_id = existing["course_id"]
+    if req.material_filenames is not None:
+        if not req.course_id:
+            raise HTTPException(status_code=400, detail="course_id is required for material_filenames")
+        if _rag is None:
+            raise HTTPException(status_code=503, detail="RAG not initialized")
+        metadata = MaterialMetadata()
+        items = await run_in_threadpool(_material_items, _rag, metadata, req.course_id)
+        known = {item["filename"] for item in items}
+        if any(name not in known for name in req.material_filenames):
+            raise HTTPException(status_code=400, detail="Material filename does not belong to this course")
     if not session_id:
         course_for_session = req.course_id or "general"
         title = req.message[:40] if req.message else "新對話"
@@ -279,7 +302,10 @@ async def chat(
     citations: list[MaterialCitation] = []
     rag_context = ""
     if req.course_id and _rag is not None:
-        rag_results = _rag.search(req.course_id, req.message, top_k=5)
+        rag_results = await run_in_threadpool(
+            _rag.search,
+            req.course_id, req.message, top_k=5, material_filenames=req.material_filenames,
+        )
         for i, r in enumerate(rag_results, 1):
             citations.append(MaterialCitation(
                 id=str(i),
@@ -288,16 +314,20 @@ async def chat(
                 anchor_id=r.anchor_id,
                 text=r.text[:300],
             ))
-        rag_context = _rag.get_context_for_prompt(req.course_id, req.message)
+        rag_context = _rag.format_context(rag_results)
 
     if assistant._llm is not None:
         response = await assistant.answer(
             req.moodle_user_id, req.message, topic=req.topic,
             material_context=rag_context,
         )
-        _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
-        _memory._store.store_message(
+        user_msg_id = _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
+        assistant_msg_id = _memory._store.store_message(
             uid, response.answer, session_id=session_id, role="assistant"
+        )
+        sessions_mod.save_message_metadata(session_id, user_msg_id, mention_user_ids=req.mention_user_ids)
+        sessions_mod.save_message_metadata(
+            session_id, assistant_msg_id, material_context=[c.model_dump() for c in citations],
         )
         sessions_mod.touch_session(session_id)
         return ChatResponse(
@@ -313,8 +343,12 @@ async def chat(
         "[No LLM configured] Memory context retrieved."
         " Set GEMINI_API_KEY to enable AI answers."
     )
-    _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
-    _memory._store.store_message(uid, fallback_reply, session_id=session_id, role="assistant")
+    user_msg_id = _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
+    assistant_msg_id = _memory._store.store_message(uid, fallback_reply, session_id=session_id, role="assistant")
+    sessions_mod.save_message_metadata(session_id, user_msg_id, mention_user_ids=req.mention_user_ids)
+    sessions_mod.save_message_metadata(
+        session_id, assistant_msg_id, material_context=[c.model_dump() for c in citations],
+    )
     sessions_mod.touch_session(session_id)
     return ChatResponse(
         reply=fallback_reply,
@@ -741,8 +775,11 @@ async def get_session_messages(
         rows = _memory._store.get_messages(uid)
     except Exception:
         rows = []
+    metadata = sessions_mod.get_message_metadata(session_id)
     msgs = [
-        {"role": m["role"], "content": m["content"], "created_at": m["created_at"]}
+        {"role": m["role"], "content": m["content"], "created_at": m["created_at"],
+         "material_context": metadata.get(m["id"], {}).get("material_context"),
+         "mention_user_ids": metadata.get(m["id"], {}).get("mention_user_ids")}
         for m in rows
         if m.get("session_id") == session_id
     ]
@@ -927,9 +964,23 @@ class MaterialUploadResponse(BaseModel):
     total_pages: int
 
 
+class MaterialItem(BaseModel):
+    course_id: str
+    filename: str
+    size_bytes: int | None = None
+    content_type: str | None = None
+    kind: str
+    uploaded_at: str | None = None
+    uploaded_by: int | None = None
+    chunk_count: int
+    status: str
+    error: str | None = None
+
+
 class MaterialListResponse(BaseModel):
     course_id: str
     documents: list[str]
+    items: list[MaterialItem] = []
 
 
 class MaterialDeleteResponse(BaseModel):
@@ -938,18 +989,78 @@ class MaterialDeleteResponse(BaseModel):
     chunks_removed: int
 
 
+def _material_items(rag: CourseRAG, metadata: MaterialMetadata, course_id: str) -> list[dict[str, Any]]:
+    with rag._material_lock:
+        metadata.backfill(course_id, rag.document_counts(course_id))
+        return metadata.list(course_id)
+
+
+def _start_material(rag: CourseRAG, metadata: MaterialMetadata, course_id: str,
+                    filename: str, size_bytes: int, content_type: str | None,
+                    uploaded_by: int) -> None:
+    with rag._material_lock:
+        if not metadata.start(course_id, filename, size_bytes, content_type, uploaded_by):
+            raise HTTPException(status_code=409, detail="Material is already indexing")
+
+
+def _material_markdown_path(course_id: str, filename: str) -> Path:
+    root = Path("_materials_md").resolve()
+    if (course_id in ("", ".", "..") or filename in ("", ".", "..")
+            or any(char in course_id + filename for char in ("/", "\\", ":"))):
+        raise HTTPException(status_code=400, detail="Invalid material course or filename")
+    path = (root / course_id / f"{filename}.md").resolve()
+    if not path.is_relative_to(root):
+        raise HTTPException(status_code=400, detail="Invalid material path")
+    return path
+
+
+def _index_material(
+    rag: CourseRAG, metadata: MaterialMetadata, course_id: str,
+    filename: str, tmp_path: str, md_path: Path, *, wait: bool = False,
+) -> MaterialUploadResponse | None:
+    try:
+        parsed = to_markdown(tmp_path)
+        parsed.filename = filename
+        for chunk in parsed.chunks:
+            chunk.source = filename
+        # Keep replacement/removal and indexing indivisible for other RAG jobs.
+        with rag._lock:
+            rag.remove_document(course_id, filename)
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+            md_path.write_text(parsed.markdown, encoding="utf-8")
+            rag.index_markdown(course_id, parsed)
+            count = rag.document_counts(course_id).get(filename, 0)
+            metadata.finish(course_id, filename, count)
+        return MaterialUploadResponse(
+            status="indexed", filename=filename, course_id=course_id,
+            chunks_indexed=count, total_pages=parsed.total_pages,
+        )
+    except Exception as exc:
+        # An unsuccessful replacement must not leave partially indexed chunks.
+        with rag._lock:
+            rag.remove_document(course_id, filename)
+            md_path.unlink(missing_ok=True)
+            metadata.finish(course_id, filename, 0, str(exc))
+        logger.exception("Material indexing failed for %s/%s", course_id, filename)
+        if wait:
+            raise HTTPException(status_code=400 if isinstance(exc, ValueError) else 500, detail=str(exc))
+        return None
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+
+
 @app.post(
     "/courses/{course_id}/materials",
     response_model=MaterialUploadResponse,
 )
 async def upload_material(
-    course_id: str, file: UploadFile,
+    course_id: str, file: UploadFile, background_tasks: BackgroundTasks, wait: bool = False,
     user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> MaterialUploadResponse:
     """Upload a course document (PDF/PPTX) for RAG-powered Q&A.
 
-    The document is parsed, chunked, and indexed into Lite-Mem so that
-    student questions can reference course materials in their answers.
+    Indexing runs after the response; poll /materials/{filename}/status.
+    Use ?wait=true for the legacy synchronous 'indexed' response.
     """
     course_id = _teacher_course_scope(user, course_id)
     if _rag is None:
@@ -957,6 +1068,7 @@ async def upload_material(
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
+    md_path = _material_markdown_path(course_id, file.filename)
 
     suffix = Path(file.filename).suffix.lower()
     if suffix not in (".pdf", ".pptx", ".md", ".markdown", ".txt"):
@@ -968,36 +1080,31 @@ async def upload_material(
     # Save to a temp file for parsing
     import tempfile
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
-
+    metadata = MaterialMetadata()
+    content = await file.read()
+    await run_in_threadpool(
+        _start_material, _rag, metadata, course_id, file.filename, len(content), file.content_type, user.id,
+    )
     try:
-        # Markdown pipeline: convert → cache .md → index chunks with anchor
-        parsed = to_markdown(tmp_path)
-        parsed.filename = file.filename
-        for chunk in parsed.chunks:
-            chunk.source = file.filename
-
-        # Save the markdown file alongside so /markdown endpoint can serve it
-        md_dir = Path("_materials_md") / course_id
-        md_dir.mkdir(parents=True, exist_ok=True)
-        md_path = md_dir / f"{file.filename}.md"
-        md_path.write_text(parsed.markdown, encoding="utf-8")
-
-        chunks_indexed = _rag.index_markdown(course_id, parsed)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
-        Path(tmp_path).unlink(missing_ok=True)
-
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(content)
+            tmp_path = tmp.name
+    except Exception as exc:
+        metadata.finish(course_id, file.filename, 0, str(exc))
+        raise
+    if wait:
+        return await run_in_threadpool(
+            _index_material, _rag, metadata, course_id, file.filename, tmp_path, md_path, wait=True,
+        )
+    background_tasks.add_task(
+        _index_material, _rag, metadata, course_id, file.filename, tmp_path, md_path,
+    )
     return MaterialUploadResponse(
-        status="indexed",
+        status="indexing",
         filename=file.filename,
         course_id=course_id,
-        chunks_indexed=chunks_indexed,
-        total_pages=parsed.total_pages,
+        chunks_indexed=0,
+        total_pages=0,
     )
 
 
@@ -1007,7 +1114,7 @@ class YoutubeMaterialRequest(BaseModel):
 
 
 @app.post("/courses/{course_id}/materials/youtube", response_model=MaterialUploadResponse)
-async def add_youtube_material(
+def add_youtube_material(
     course_id: str, req: YoutubeMaterialRequest,
     user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> MaterialUploadResponse:
@@ -1044,16 +1151,26 @@ async def add_youtube_material(
         f"AI 助理會以此影片作為知識來源回答。\n"
     )
 
-    md_dir = Path("_materials_md") / course_id
-    md_dir.mkdir(parents=True, exist_ok=True)
-    (md_dir / f"{filename}.md").write_text(md, encoding="utf-8")
+    md_path = _material_markdown_path(course_id, filename)
+    metadata = MaterialMetadata()
+    _start_material(_rag, metadata, course_id, filename, len(md.encode("utf-8")), "text/markdown", user.id)
 
     # Index a single chunk so RAG can hit it; one chunk per topic heading.
     from .documents import ParsedMarkdown, split_markdown_by_headings
 
     chunks = split_markdown_by_headings(md, source=filename)
     parsed = ParsedMarkdown(filename=filename, markdown=md, total_pages=1, chunks=chunks)
-    n = _rag.index_markdown(course_id, parsed)
+    try:
+        with _rag._lock:
+            _rag.remove_document(course_id, filename)
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+            md_path.write_text(md, encoding="utf-8")
+            _rag.index_markdown(course_id, parsed)
+            n = _rag.document_counts(course_id).get(filename, 0)
+            metadata.finish(course_id, filename, n)
+    except Exception as exc:
+        metadata.finish(course_id, filename, 0, str(exc))
+        raise
     return MaterialUploadResponse(
         status="indexed",
         filename=filename,
@@ -1073,7 +1190,7 @@ async def get_material_markdown(
     The frontend uses this to render the citation jump panel.
     """
     course_id = _teacher_course_scope(user, course_id)
-    md_path = Path("_materials_md") / course_id / f"{filename}.md"
+    md_path = _material_markdown_path(course_id, filename)
     if not md_path.exists():
         raise HTTPException(status_code=404, detail="Markdown not found for this material")
     return {
@@ -1084,7 +1201,7 @@ async def get_material_markdown(
 
 
 @app.get("/courses/{course_id}/materials", response_model=MaterialListResponse)
-async def list_materials(
+def list_materials(
     course_id: str,
     user: AuthUser = Depends(get_current_user),
 ) -> MaterialListResponse:
@@ -1092,15 +1209,37 @@ async def list_materials(
     course_id = _teacher_course_scope(user, course_id)
     if _rag is None:
         raise HTTPException(status_code=503, detail="RAG not initialized")
-    docs = _rag.list_documents(course_id)
-    return MaterialListResponse(course_id=course_id, documents=docs)
+    metadata = MaterialMetadata()
+    items = _material_items(_rag, metadata, course_id)
+    return MaterialListResponse(
+        course_id=course_id, documents=[item["filename"] for item in items], items=items,
+    )
+
+
+@app.get("/courses/{course_id}/materials/{filename}/status")
+def get_material_status(
+    course_id: str, filename: str,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    course_id = _teacher_course_scope(user, course_id)
+    if _rag is None:
+        raise HTTPException(status_code=503, detail="RAG not initialized")
+    metadata = MaterialMetadata()
+    item = metadata.get(course_id, filename)
+    if item is None:
+        with _rag._material_lock:
+            metadata.backfill(course_id, _rag.document_counts(course_id))
+            item = metadata.get(course_id, filename)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Material not found")
+    return {key: item[key] for key in ("status", "chunk_count", "error")}
 
 
 @app.delete(
     "/courses/{course_id}/materials/{filename}",
     response_model=MaterialDeleteResponse,
 )
-async def delete_material(
+def delete_material(
     course_id: str, filename: str,
     user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> MaterialDeleteResponse:
@@ -1108,9 +1247,18 @@ async def delete_material(
     course_id = _teacher_course_scope(user, course_id)
     if _rag is None:
         raise HTTPException(status_code=503, detail="RAG not initialized")
-    removed = _rag.remove_document(course_id, filename)
+    metadata = MaterialMetadata()
+    md_path = _material_markdown_path(course_id, filename)
+    with _rag._material_lock:
+        item = metadata.get(course_id, filename)
+        if item and item["status"] == "indexing":
+            raise HTTPException(status_code=409, detail="Material is still indexing")
+        with _rag._lock:
+            removed = _rag.remove_document(course_id, filename)
+            deleted = metadata.delete(course_id, filename)
+            md_path.unlink(missing_ok=True)
     return MaterialDeleteResponse(
-        status="removed" if removed > 0 else "not_found",
+        status="removed" if removed > 0 or deleted else "not_found",
         filename=filename,
         chunks_removed=removed,
     )
@@ -1989,6 +2137,8 @@ async def demo_reset(
 
     seed_demo_course_sessions(DEMO_STUDENTS)
     seed_demo_assignments()
+    seed_demo_course_structure()
+    seed_demo_audit()
 
     # Backdate student 1004's facts to 3 weeks ago to create a "high risk" profile
     _backdate_uid = "moodle:1004"
@@ -3292,6 +3442,9 @@ async def get_office_hour_student_summary(
 app.include_router(lti_router)
 app.include_router(auth_router)
 app.include_router(courses_router)
+app.include_router(analytics_extra_router)
+app.include_router(course_structure_router)
+app.include_router(platform_admin_router)
 app.include_router(assignments_router)
 app.include_router(diagnostics_router)
 app.include_router(notifications_router)
