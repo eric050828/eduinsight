@@ -37,6 +37,7 @@ from .auth import init_db as init_auth_db
 from .auth import router as auth_router
 from .classroom_assistant import ClassroomAssistant
 from .config import settings
+from .courses import router as courses_router
 from .documents import to_markdown
 from .grades import GradeManager
 from .interaction import InteractionManager
@@ -3282,5 +3283,6 @@ async def get_office_hour_student_summary(
 # LTI 1.3 integration
 app.include_router(lti_router)
 app.include_router(auth_router)
+app.include_router(courses_router)
 
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
