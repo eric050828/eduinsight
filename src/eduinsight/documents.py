@@ -15,11 +15,94 @@ from __future__ import annotations
 
 import logging
 import re
+import struct
 import unicodedata
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .config import settings
+
 logger = logging.getLogger(__name__)
+
+
+class DocumentLimitError(ValueError):
+    """Unsafe document rejected before extraction."""
+
+
+def _check_zip_directory(file_path: str | Path) -> None:
+    """Bound entry allocation before ZipFile builds its in-memory entry list.
+
+    Python 3.12's EOCD reader handles ZIP64 and reads at most the ZIP comment
+    tail, not entry contents. Walk fixed-size central headers without loading
+    names/extra fields, checking actual entries as well as the declared count.
+    This also catches an attacker lying about the count in the end record.
+    """
+    with Path(file_path).open("rb") as stream:
+        end = zipfile._EndRecData(stream)
+        if end is None:
+            raise zipfile.BadZipFile("Invalid ZIP end record")
+        if end[zipfile._ECD_ENTRIES_TOTAL] > settings.max_zip_entries:
+            raise DocumentLimitError("document_zip_entries_exceeded")
+        size = end[zipfile._ECD_SIZE]
+        if size > settings.max_zip_uncompressed_bytes:
+            raise DocumentLimitError("document_zip_expansion_exceeded")
+        location = end[zipfile._ECD_LOCATION]
+        if end[zipfile._ECD_SIGNATURE] == zipfile.stringEndArchive64:
+            location -= zipfile.sizeEndCentDir64 + zipfile.sizeEndCentDir64Locator
+        start = location - size
+        if start < 0:
+            raise zipfile.BadZipFile("Invalid ZIP central directory")
+        stream.seek(start)
+        entries = 0
+        while stream.tell() < location:
+            header = stream.read(46)
+            if len(header) != 46 or header[:4] != b"PK\x01\x02":
+                raise zipfile.BadZipFile("Invalid ZIP central directory")
+            entries += 1
+            if entries > settings.max_zip_entries:
+                raise DocumentLimitError("document_zip_entries_exceeded")
+            name_size, extra_size, comment_size = struct.unpack_from("<HHH", header, 28)
+            stream.seek(name_size + extra_size + comment_size, 1)
+            if stream.tell() > location:
+                raise zipfile.BadZipFile("Invalid ZIP central directory")
+
+
+def inspect_zip(file_path: str | Path) -> None:
+    """Inspect the central directory before handing an Office ZIP to a parser.
+
+    No entries are extracted. Reject per-entry and aggregate expansion ratios,
+    encrypted files, excessive entries/size, and excessive PPTX slides or XLSX
+    sheets. DOCX/XLSX are inspected too if support is added to this parser later.
+    """
+    _check_zip_directory(file_path)
+    with zipfile.ZipFile(file_path) as archive:
+        entries = archive.infolist()
+        if len(entries) > settings.max_zip_entries:
+            raise DocumentLimitError("document_zip_entries_exceeded")
+        expanded = compressed = 0
+        pages = 0
+        for entry in entries:
+            expanded += entry.file_size
+            compressed += entry.compress_size
+            if (expanded > settings.max_zip_uncompressed_bytes
+                    or entry.file_size > (
+                        max(entry.compress_size, 1) * settings.max_zip_compression_ratio
+                    )
+                    or entry.flag_bits & 1):
+                raise DocumentLimitError("document_zip_expansion_exceeded")
+            if re.fullmatch(
+                r"ppt/slides/slide\d+\.xml|xl/worksheets/sheet\d+\.xml", entry.filename,
+            ):
+                pages += 1
+        if expanded > max(compressed, 1) * settings.max_zip_compression_ratio:
+            raise DocumentLimitError("document_zip_expansion_exceeded")
+        check_page_limit(pages)
+
+
+def check_page_limit(pages: int) -> None:
+    if pages > settings.max_document_pages:
+        raise DocumentLimitError("document_pages_exceeded")
 
 
 @dataclass
@@ -227,6 +310,9 @@ def parse_pdf(file_path: str | Path) -> ParsedDocument:
 
     filename = path.name
     total_pages = len(doc)
+    if total_pages > settings.max_document_pages:
+        doc.close()
+        check_page_limit(total_pages)
     all_chunks: list[DocumentChunk] = []
     chunk_idx = 0
 
@@ -273,6 +359,7 @@ def parse_pptx(file_path: str | Path) -> ParsedDocument:
     if not path.exists():
         raise FileNotFoundError(f"PPTX not found: {path}")
 
+    inspect_zip(path)
     try:
         prs = Presentation(str(path))
     except Exception as e:
@@ -282,6 +369,7 @@ def parse_pptx(file_path: str | Path) -> ParsedDocument:
     all_chunks: list[DocumentChunk] = []
     chunk_idx = 0
     total_slides = len(prs.slides)
+    check_page_limit(total_slides)
 
     for slide_num, slide in enumerate(prs.slides, 1):
         texts: list[str] = []
@@ -347,7 +435,11 @@ def pdf_to_markdown(file_path: str | Path) -> str:
     import pymupdf4llm  # type: ignore
 
     path = Path(file_path)
-    md = pymupdf4llm.to_markdown(str(path))
+    import fitz
+
+    with fitz.open(str(path)) as doc:
+        check_page_limit(len(doc))
+        md = pymupdf4llm.to_markdown(doc)
     return md or ""
 
 
@@ -365,7 +457,9 @@ def pptx_to_markdown(file_path: str | Path) -> str:
     from pptx import Presentation
 
     path = Path(file_path)
+    inspect_zip(path)
     prs = Presentation(str(path))
+    check_page_limit(len(prs.slides))
     out: list[str] = []
 
     for idx, slide in enumerate(prs.slides, 1):
@@ -439,6 +533,9 @@ def to_markdown(file_path: str | Path) -> ParsedMarkdown:
     suffix = path.suffix.lower()
     filename = path.name
 
+    if suffix in (".docx", ".xlsx"):
+        inspect_zip(path)
+
     if suffix == ".pdf":
         md = pdf_to_markdown(path)
     elif suffix == ".pptx":
@@ -475,6 +572,8 @@ def to_markdown(file_path: str | Path) -> ParsedMarkdown:
                 ))
             md = "\n\n".join(md_lines)
             pages = legacy.total_pages
+        except DocumentLimitError:
+            raise
         except Exception:  # noqa: BLE001
             pass
 

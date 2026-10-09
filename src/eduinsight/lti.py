@@ -48,6 +48,7 @@ from .auth import (
     get_user_by_username,
 )
 from .config import settings
+from .db import is_locked
 
 logger = logging.getLogger(__name__)
 
@@ -389,6 +390,8 @@ async def lti_login(request: Request) -> Response:
         # redirect() already returns a Response (calls do_redirect internally)
         return oidc_login.redirect(target_link_uri, js_redirect=True)
     except Exception as e:
+        if is_locked(e):
+            raise
         logger.error("LTI login failed: %s", e)
         return HTMLResponse(
             content="<h1>LTI Login Error</h1><p>Unable to validate login.</p>",
@@ -494,6 +497,8 @@ async def lti_launch(request: Request) -> Response:
         return response
 
     except Exception as e:
+        if is_locked(e):
+            raise
         logger.error("LTI launch failed: %s", e)
         return HTMLResponse(
             content="<h1>LTI Launch Error</h1><p>Unable to validate launch.</p>",

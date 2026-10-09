@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import auth, courses
 from .auth import AuthUser, get_current_user, require_role
+from .db import schema_once
 from .notifications import create_notification
 
 router = APIRouter(tags=["enrollment"])
@@ -57,7 +58,9 @@ def _db(*, write: bool = False):
     courses.init_enrollments()
     with auth._db() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.executescript(_SCHEMA)
+        with schema_once(conn, "enrollment") as initialize:
+            if initialize:
+                conn.executescript(_SCHEMA)
         try:
             if write:
                 conn.execute("BEGIN IMMEDIATE")

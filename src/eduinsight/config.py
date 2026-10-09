@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     login_throttle_enabled: bool = True
     host: str = "127.0.0.1"
     port: int = 8000
+
+    # Resource limits (bytes use binary MB). Checked before multipart spooling.
+    max_material_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    max_lecture_bytes: int = Field(default=200 * 1024 * 1024, gt=0)
+    max_import_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    max_body_bytes: int = Field(default=1024 * 1024, gt=0)
+    max_zip_uncompressed_bytes: int = Field(default=200 * 1024 * 1024, gt=0)
+    max_zip_entries: int = Field(default=5000, gt=0)
+    max_zip_compression_ratio: float = Field(default=100, gt=0)
+    max_document_pages: int = Field(default=500, gt=0)
+    llm_cli_timeout_seconds: float = Field(default=120, gt=0)
+    llm_cli_max_output_bytes: int = Field(default=1024 * 1024, gt=0)
+    sqlite_busy_timeout_ms: int = Field(default=10000, ge=0)
 
     # CORS — comma-separated origins, e.g. "http://localhost:3000,https://edu-insight-two.vercel.app"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"

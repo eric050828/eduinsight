@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from . import assignments
 from .auth import AuthUser, get_current_user, require_role
 from .courses import COURSE_CATALOG, _check_course_access, _visible_course_ids, catalog_entries
+from .db import schema_once
 from .platform_admin import record_audit
 
 router = APIRouter(tags=["course-structure"])
@@ -58,7 +59,9 @@ CREATE TABLE IF NOT EXISTS course_structure_deletions (
 @contextmanager
 def _db(*, write: bool = False):
     with assignments._db() as conn:
-        conn.executescript(_SCHEMA)
+        with schema_once(conn, "course_structure") as initialize:
+            if initialize:
+                conn.executescript(_SCHEMA)
         if write:
             conn.execute("BEGIN IMMEDIATE")
         yield conn

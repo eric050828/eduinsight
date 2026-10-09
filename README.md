@@ -217,3 +217,49 @@ one worker while login throttles and LTI stores remain process-local. The develo
 bridge requires explicit `EDUINSIGHT_ENABLE_LTI_BRIDGE=true` and refuses admin roles and
 existing accounts. LTI uses a 60-second single-use code exchanged via `POST /lti/exchange`;
 JWTs are never included in redirect URLs. The current frontend does not use LTI.
+
+## Phase 2 resource limits
+
+Upload limits apply while receiving multipart data, before the complete upload is
+spooled, and again while copying 64 KiB chunks into a temporary file. Oversize
+requests return HTTP 413 (`payload_too_large`), including chunked requests without
+Content-Length. Other bodies are limited to 1 MiB; setting a multipart Content-Type
+on a normal route does not bypass that limit. Upload requests allow an additional
+64 KiB for multipart framing/metadata; individual file bytes retain the exact limit.
+
+| Variable | Default | Purpose |
+| --- | ---: | --- |
+| `EDUINSIGHT_MAX_MATERIAL_BYTES` | 26214400 | Material upload: 25 MiB |
+| `EDUINSIGHT_MAX_LECTURE_BYTES` | 209715200 | Lecture audio: 200 MiB |
+| `EDUINSIGHT_MAX_IMPORT_BYTES` | 52428800 | Memory JSON import: 50 MiB |
+| `EDUINSIGHT_MAX_BODY_BYTES` | 1048576 | Other request bodies: 1 MiB |
+| `EDUINSIGHT_MAX_ZIP_UNCOMPRESSED_BYTES` | 209715200 | Office ZIP expansion: 200 MiB |
+| `EDUINSIGHT_MAX_ZIP_ENTRIES` | 5000 | ZIP central-directory entries |
+| `EDUINSIGHT_MAX_ZIP_COMPRESSION_RATIO` | 100 | Per-entry and aggregate expansion ratio |
+| `EDUINSIGHT_MAX_DOCUMENT_PAGES` | 500 | PDF pages / PPTX slides / inspected XLSX sheets |
+| `EDUINSIGHT_LLM_CLI_TIMEOUT_SECONDS` | 120 | Claude subprocess deadline |
+| `EDUINSIGHT_LLM_CLI_MAX_OUTPUT_BYTES` | 1048576 | Combined stdout + stderr cap |
+| `EDUINSIGHT_SQLITE_BUSY_TIMEOUT_MS` | 10000 | Application-owned SQLite connection wait |
+
+
+All limits must be positive, except the SQLite wait may be zero. Office archives
+are inspected before extraction; excessive expansion/entry counts or page counts
+fail parsing. Current material formats remain PDF, PPTX, Markdown and text;
+DOCX/XLSX ZIP inspection is available without adding format support. Assignment
+attachments retain their existing 10 MiB / five-file limits. Forum bodies retain
+20,000 characters; direct messages retain 2,000 characters and history pages <=100.
+Legacy history/admin query limits are capped at 200.
+
+`/health` returns only status and version publicly and to non-admin users. A valid
+admin bearer token enables diagnostics. Client errors use stable messages/codes;
+exception details go to server logs. SQLite contention returns HTTP 503 with
+`Retry-After: 1`; retry writes only with appropriate application-level handling.
+
+Claude CLI requests use tools/MCP disabled, safe mode, no saved sessions, a fresh
+empty temporary working directory and a minimal environment. OS/home locations
+and Claude authentication (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`) are
+retained; unrelated JWT/Moodle/provider/cloud secrets are omitted. Flags were
+verified with installed Claude Code **2.1.295** `claude --help`; deployments must
+provide a CLI supporting these flags. The CLI and Gemini/OpenAI/Groq clients all
+identify retrieved memories/materials/transcripts as untrusted reference data.
+See [AUTH_ISOLATION_REPORT.md](AUTH_ISOLATION_REPORT.md) for verification boundaries.

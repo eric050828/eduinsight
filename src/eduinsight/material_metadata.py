@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import settings
+from .db import connect
 
 
 def material_kind(filename: str) -> str:
@@ -41,7 +42,7 @@ class MaterialMetadata:
 
     @contextmanager
     def _db(self):
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        conn = connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
@@ -92,7 +93,7 @@ class MaterialMetadata:
                 "SELECT * FROM course_material_metadata WHERE course_id=? AND filename=?",
                 (course_id, filename),
             ).fetchone()
-        return dict(row) if row else None
+        return self._view(row) if row else None
 
     def list(self, course_id: str) -> list[dict]:
         with self._db() as conn:
@@ -100,7 +101,17 @@ class MaterialMetadata:
                 "SELECT * FROM course_material_metadata WHERE course_id=? ORDER BY filename",
                 (course_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [self._view(row) for row in rows]
+
+    @staticmethod
+    def _view(row) -> dict:
+        item = dict(row)
+        # Older databases may contain exception text from before phase 2.
+        if item["error"] is not None and item["error"] not in (
+            "material_index_failed", "material_upload_failed",
+        ):
+            item["error"] = "material_index_failed"
+        return item
 
     def delete(self, course_id: str, filename: str) -> bool:
         with self._db() as conn:

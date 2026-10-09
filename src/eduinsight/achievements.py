@@ -21,6 +21,7 @@ from . import assignments, course_structure, sessions
 from .analytics_extra import _messages, _timestamp
 from .auth import AuthUser, require_role
 from .class_analytics import _activity_stamps, _own_course_ids, _weekly
+from .db import schema_once
 
 router = APIRouter(tags=["achievements"])
 
@@ -204,18 +205,20 @@ def profile_stats(user: AuthUser = Depends(require_role("student"))) -> dict:
 @contextmanager
 def _calendar_db(*, write: bool = False):
     with assignments._db() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS student_calendar_events (
-                id TEXT PRIMARY KEY,
-                student_id INTEGER NOT NULL,
-                title TEXT NOT NULL,
-                start REAL NOT NULL,
-                end REAL,
-                notes TEXT NOT NULL DEFAULT ''
-            );
-            CREATE INDEX IF NOT EXISTS ix_student_calendar_owner
-                ON student_calendar_events(student_id, start);
-        """)
+        with schema_once(conn, "achievements") as initialize:
+            if initialize:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS student_calendar_events (
+                        id TEXT PRIMARY KEY,
+                        student_id INTEGER NOT NULL,
+                        title TEXT NOT NULL,
+                        start REAL NOT NULL,
+                        end REAL,
+                        notes TEXT NOT NULL DEFAULT ''
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_student_calendar_owner
+                        ON student_calendar_events(student_id, start);
+                """)
         if write:
             conn.execute("BEGIN IMMEDIATE")
         yield conn

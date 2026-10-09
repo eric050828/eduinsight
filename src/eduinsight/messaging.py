@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import auth, courses
 from .auth import AuthUser, get_current_user
+from .db import schema_once
 from .notifications import create_notification
 
 router = APIRouter(tags=["messaging"])
@@ -48,7 +49,9 @@ CREATE TABLE IF NOT EXISTS message_presence (
 def _db(*, write: bool = False):
     with auth._db() as conn:  # noqa: SLF001
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.executescript(_SCHEMA)
+        with schema_once(conn, "messaging") as initialize:
+            if initialize:
+                conn.executescript(_SCHEMA)
         if write:
             conn.execute("BEGIN IMMEDIATE")
         try:

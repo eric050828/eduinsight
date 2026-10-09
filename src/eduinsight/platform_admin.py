@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, Query
 from . import auth
 from .auth import AuthUser, require_role
 from .config import settings
+from .db import connect, schema_once
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 
@@ -56,18 +57,20 @@ _PROCESS_STARTED_AT = _process_started_at()
 @contextmanager
 def _db():
     with auth._db() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS platform_audit_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts REAL NOT NULL,
-                actor TEXT NOT NULL,
-                action TEXT NOT NULL,
-                target TEXT NOT NULL,
-                demo_key TEXT UNIQUE
-            );
-            CREATE INDEX IF NOT EXISTS ix_platform_audit_ts
-                ON platform_audit_log(ts DESC, id DESC);
-        """)
+        with schema_once(conn, "platform_admin") as initialize:
+            if initialize:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS platform_audit_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        ts REAL NOT NULL,
+                        actor TEXT NOT NULL,
+                        action TEXT NOT NULL,
+                        target TEXT NOT NULL,
+                        demo_key TEXT UNIQUE
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_platform_audit_ts
+                        ON platform_audit_log(ts DESC, id DESC);
+                """)
         yield conn
         conn.commit()
 
@@ -144,7 +147,7 @@ def _database_info(db_path: str) -> dict:
     if not path.is_file():
         return {"size_bytes": 0, "wal_size_bytes": 0, "row_counts": {}}
     # Read-only access never creates a missing Lite-Mem database or alters its schema.
-    conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
+    conn = connect(path.as_uri() + "?mode=ro", uri=True, readonly=True)
     try:
         counts = _row_counts(conn)
     finally:
@@ -194,7 +197,7 @@ def platform_system(user: AuthUser = Depends(require_role("admin"))) -> dict:
 
 @router.get("/audit-log")
 def audit_log(
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(require_role("admin")),
 ) -> dict:

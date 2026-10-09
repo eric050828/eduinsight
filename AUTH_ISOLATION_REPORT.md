@@ -255,3 +255,196 @@ checks passed for this agent's touched files.
 Production upgrades must inspect existing demo accounts and registration settings;
 hardening does not silently delete existing users or override saved admin settings.
 Process-local throttling and LTI state require a single worker until shared stores are added.
+
+## Phase 2 hardening
+
+Completed on `feat/platform-apis` with no branch switches, staging, commits or pushes.
+The pre-change tree was clean. `AUTH_ISOLATION_REPORT.md` was read before changes;
+phase 1 authentication/enrollment policy is preserved. No backend listener was
+started, no request was made to port 8000, and no real application DB was opened.
+HTTP verification uses in-process ASGI/TestClient and conftest's temporary auth
+and memory paths; material files are also isolated in temporary directories.
+
+### 1. Upload/body and parser resource limits
+
+- `security.BodyLimitMiddleware` counts bytes on ASGI receive before Starlette's
+  multipart parser buffers/spools the complete body. Known upload paths have
+  per-file counters driven by a streaming multipart parser. They abort on the
+  first offending chunk with 413 (`payload_too_large`), including requests with
+  no Content-Length or an incorrectly small header. Known oversized lengths are
+  rejected without reading. Multipart failures use Starlette's cleanup exception
+  so already-spooled files are closed; the HTTP handler restores the 413 status.
+- Exact defaults: materials 25 MiB, lecture audio 200 MiB, JSON import 50 MiB;
+  other bodies 1 MiB. Upload envelopes have a fixed extra 64 KiB allowance, while
+  actual file bytes keep the exact configured cap. Multipart Content-Type on a
+  normal route never exempts it. CORS headers are retained on early rejections.
+- `stage_upload()` copies 64 KiB chunks to disk with its own byte counter and
+  closes uploads/removes partial files on failure/cancellation. Material and
+  lecture parsers receive file paths. JSON import is parsed only after the
+  complete file has passed its streaming limit; JSON decoding itself still
+  constructs the bounded JSON object in memory.
+- ZIP inspection runs before python-pptx: 200 MiB expanded, 5,000 entries,
+  per-entry and aggregate compression ratio <=100, no encrypted entries.
+  A bounded central-directory scan precedes `ZipFile` entry allocation and
+  validates actual count even if an attacker forges the EOCD count. This uses
+  the installed Python 3.12 stdlib EOCD/ZIP64 reader, whose implementation was
+  inspected locally. PDF pages/PPTX slides cap at 500 before text extraction;
+  PPTX slide/XLSX sheet entries are also counted before Office parser loading.
+  DOCX/XLSX receive the same ZIP check if passed to the conversion helper, but
+  are still unsupported material formats; no new parser route was introduced.
+- Existing attachment limits remain 10 MiB/five files, now with pre-spooling
+  protection in the main app as well. Forum body/title limits (20,000/200 chars)
+  and messaging text/history limits (2,000 chars/100 records) were inspected and
+  retained. Existing legacy conversation/danmaku limits and admin user/audit
+  limits now accept 1..200; no new list response shape was introduced.
+
+All configurable settings and numeric defaults are documented in README.md,
+DEPLOY.md and `.env.example`: `EDUINSIGHT_MAX_MATERIAL_BYTES`,
+`EDUINSIGHT_MAX_LECTURE_BYTES`, `EDUINSIGHT_MAX_IMPORT_BYTES`,
+`EDUINSIGHT_MAX_BODY_BYTES`, `EDUINSIGHT_MAX_ZIP_UNCOMPRESSED_BYTES`,
+`EDUINSIGHT_MAX_ZIP_ENTRIES`, `EDUINSIGHT_MAX_ZIP_COMPRESSION_RATIO`,
+`EDUINSIGHT_MAX_DOCUMENT_PAGES`, `EDUINSIGHT_LLM_CLI_TIMEOUT_SECONDS`,
+`EDUINSIGHT_LLM_CLI_MAX_OUTPUT_BYTES`, `EDUINSIGHT_SQLITE_BUSY_TIMEOUT_MS`.
+
+### 2. Claude CLI and provider prompt isolation
+
+Observed locally on 2026-10-09: `claude --version` returned **2.1.295 (Claude Code)**.
+`claude --help` was run and the following used flags exist in that output:
+
+| Flag / value | Help-confirmed behavior / invocation |
+| --- | --- |
+| `--print` | Non-interactive completion; prompt sent through stdin |
+| `--model haiku` | Select model; actual remote alias/account availability is not verified |
+| `--tools ""` | Help explicitly says empty string disables all built-in tools |
+| `--strict-mcp-config` | Use only explicitly supplied MCP configurations |
+| `--mcp-config '{"mcpServers":{}}'` | Help accepts JSON strings; invocation supplies zero servers |
+| `--no-session-persistence` | Help says sessions are not saved to disk/resumable in print mode |
+| `--safe-mode` | Disables customizations, including project instructions/hooks/plugins/MCP; admin-managed policy still applies |
+| `--setting-sources ""` | No user/project/local setting sources requested |
+| `--disable-slash-commands` | Available flag, included to disable command/skill expansion |
+| `--system-prompt ...` | Real system prompt, not a user-message `[System]` label |
+| `--output-format text` | Help lists text as a supported print-mode format |
+
+The previous `--max-turns` was not present in this installation's help and is no
+longer used. `--bare` exists but was deliberately not used because help says it
+skips OAuth/keychain authentication reads; safe mode preserves normal auth.
+
+Every invocation runs in a new empty `TemporaryDirectory`, outside the repo, and
+cleans it after the child exits. An allowlist retains OS/runtime/home/config
+locations plus only Claude's `ANTHROPIC_API_KEY`/`CLAUDE_CODE_OAUTH_TOKEN`, if set;
+unrelated JWT/Moodle/OpenAI/Gemini/Groq/AWS and other secrets are not inherited.
+Input uses stdin to avoid OS command-line length limits. Concurrent stdout/stderr
+readers count the combined output and cap it at 1 MiB. The 120-second deadline
+covers input writing, output draining and process wait. Timeout, cancellation or
+output overflow cancels reader tasks, kills the running child and awaits its exit
+before directory cleanup. CLI failure returns a stable error, logging stderr only
+on the server. Gemini, OpenAI and Groq share an always-present system policy:
+retrieved memories/materials/transcripts/citations are untrusted data and embedded
+instructions must never be followed. This policy also applies to Claude.
+
+**Verified:** installed version/help availability and described semantics; mocked
+subprocess tests assert command arguments, empty tool/MCP/settings values,
+allowlisted environment, fresh cwd, stdin, combined output limits and kill/reap
+on timeout/cancellation/overflow. Provider payload tests assert the policy even
+without a caller-supplied system prompt.
+
+**Assumed / not live-verified:** the installed CLI honors its advertised internal
+semantics; subscription/OAuth or API authentication works with the reduced env;
+remote `haiku` availability; no CLI-controlled persistence/MCP side effects; and
+model adherence to the untrusted-data policy. No live model request or adversarial
+model evaluation was made. This is CLI configuration isolation, not an OS sandbox;
+admin-managed policy and retained authentication files remain CLI trust boundaries.
+Older versions must support these flags; an unsupported invocation fails without
+retrying with weaker flags.
+
+### 3. Information disclosure
+
+- Public/non-admin `/health` returns exactly `{status, version}`; a valid admin
+  JWT retains prior LLM/memory statistics. Missing/invalid JWTs still permit
+  public monitoring and never trigger private statistics.
+- Moodle, material, import and other legacy exception responses now use stable
+  messages/codes (`moodle_unavailable`, `material_index_failed`,
+  `invalid_bundle_json`, `invalid_request`, `resource_not_found`). HTTP statuses
+  are retained. Full exceptions remain in logs. Legacy material metadata rows
+  with pre-existing exception text are sanitized at read without rewriting DBs.
+- Unhandled exceptions return JSON 500 `{ "detail": "internal_server_error" }`.
+  Non-contention SQLite operational errors follow the same generic response.
+
+### 4. SQLite robustness and shorter attachment transactions
+
+`db.connect()` supplies a configurable 10-second busy timeout and WAL for every
+application-owned writable connection; read-only diagnostics set timeout but do
+not change journal mode. The frozen Lite-Mem source already sets WAL and a
+5-second busy timeout internally; it is unchanged. HTTP SQLite BUSY/LOCKED,
+including extended codes or lock strings, returns JSON 503 `database_busy` and
+`Retry-After: 1`. Existing history and LTI broad exception fallbacks propagate
+SQLite lock failures to this handler rather than reporting empty history/400.
+
+Serialized `schema_once()` scopes initialization to database file identity and
+module, commits before recording success, and bounds its process-local cache.
+Assignments, submission_files, notifications, forum, messaging, achievements,
+preferences, platform_admin, course_structure, courses and enrollment now skip
+DDL/default seeding on subsequent requests. Sessions/profiles and auth platform
+defaults receive the same policy. Existing explicit settings and the one-time
+legacy enrollment migration are preserved. A caller-owned attachment transaction
+never gets committed by the schema cache; missing tables can still be created
+inside that transaction and rolled back. Runtime manual table removal requires
+a restart; schema changes should occur before serving requests.
+
+Attachments authorize/check editable state and file count, stage bounded bytes
+outside the write transaction, then recheck under BEGIN IMMEDIATE before inserting
+metadata. Failed inserts remove staged files. Regression tests acquire a second
+connection's write lock during every file read, proving staging holds no write
+transaction. WAL/timeout tests use real temporary SQLite files and prove readers
+still work while a writer is held, writes return 503, and writes recover afterward.
+
+Once a background material response has started, no later failure can change its
+HTTP status; the established indexing/status polling behavior is retained. Lock
+failures before response start receive 503; inspect status/server logs for jobs
+that fail afterward. Disk crash recovery and a durable background retry queue are
+outside the requested changes.
+
+### 5. Tests and verification
+
+Baseline before edits: **1404 passed in 223.84s**. The **82** new regressions are in
+`tests/test_security_phase2.py`; it uses real JWTs and temporary DBs, bounded
+stream generators and mocked provider/subprocess calls. Existing assertions in
+LLM/material/quiz tests were updated only for the deliberately hardened behavior.
+
+Intermediate full run: **1482 passed, 1 failed in 300.84s**, due to the old quiz
+assertion expecting raw exception text. The assertion now checks the stable
+resource-not-found code. Final focused run after that fix and remaining hardening:
+**198 passed, 0 failed in 33.73s**.
+
+Final full-suite result: **1486 passed, 0 failed in 295.37s (0:04:55)**, including
+all **82** Phase 2 regressions. No tests were skipped or excluded.
+
+Exact requested PowerShell command (no exclusions, no UV_NO_SYNC workaround):
+
+```powershell
+$env:UV_PROJECT_ENVIRONMENT = Join-Path $env:TEMP 'be-venv'
+$env:UV_CACHE_DIR = Join-Path $env:TEMP 'be-uv-cache'
+uv run --python 3.12 --frozen pytest -q
+```
+
+Ruff passes without exclusions for new db/security/phase-2 tests and changed
+llm/config files. Other touched source files pass Ruff with existing line-length
+and `datetime.timezone.utc` style findings excluded (`E501`, `UP017`); whole-repo
+lint cleanup was not undertaken. Git diff whitespace checks pass.
+
+### 6. Files touched / remaining limitations
+
+- Runtime: `src/eduinsight/db.py` (new), `security.py` (new), `config.py`, `app.py`,
+  `documents.py`, `llm.py`, `material_metadata.py`, `auth.py`, `lti.py`,
+  `assignments.py`, `submission_files.py`, `notifications.py`, `forum.py`,
+  `messaging.py`, `achievements.py`, `preferences.py`, `platform_admin.py`,
+  `course_structure.py`, `courses.py`, `enrollment.py`, `sessions.py`, `profiles.py`,
+  `admin_manage.py` (all paths after the first are in `src/eduinsight/`).
+- Tests: `tests/test_security_phase2.py` (new), `tests/test_llm.py`,
+  `tests/test_materials_meta.py`, `tests/test_quiz.py`.
+- Documentation: `AUTH_ISOLATION_REPORT.md`, `README.md`, `DEPLOY.md`, `.env.example`.
+
+No implementation item was intentionally deferred. Live CLI/account/model and
+runtime CLI-internal side-effect validation could not be established by help and
+mocks; the verified/assumed distinction above is explicit. No external provider,
+real DB, development listener or other repository was used for verification.

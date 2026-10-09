@@ -174,7 +174,7 @@ async def test_failed_background_job_records_error_and_cleans_temp_file(client, 
     monkeypatch.setattr(app_module, "to_markdown", fail_parse)
     assert (await upload(client)).json()["status"] == "indexing"
     assert (await client.get("/courses/CS101/materials/notes.md/status")).json() == {
-        "status": "failed", "chunk_count": 0, "error": "Cannot parse document",
+        "status": "failed", "chunk_count": 0, "error": "material_index_failed",
     }
     assert all(not Path(path).exists() for path in paths)
     assert (await client.get("/courses/CS101/materials")).json()["items"][0]["status"] == "failed"
@@ -196,7 +196,7 @@ async def test_partial_index_failure_does_not_leave_chunks(client, monkeypatch):
     assert rag.list_documents("CS101") == ["other.md"]
     assert not Path("_materials_md/CS101/notes.md.md").exists()
     assert (await client.get("/courses/CS101/materials/notes.md/status")).json() == {
-        "status": "failed", "chunk_count": 0, "error": "Embedding unavailable",
+        "status": "failed", "chunk_count": 0, "error": "material_index_failed",
     }
 
 
@@ -223,7 +223,7 @@ async def test_sync_failure_remains_http_error(client, monkeypatch):
     monkeypatch.setattr(app_module, "to_markdown", fail)
     response = await upload(client, wait=True)
     assert response.status_code == 400
-    assert response.json()["detail"] == "Invalid document"
+    assert response.json()["detail"] == "material_index_failed"
     assert (
         await client.get("/courses/CS101/materials/notes.md/status")
     ).json()["status"] == "failed"

@@ -112,3 +112,67 @@ uv run --python 3.12 --frozen python -c 'from getpass import getpass; from eduin
 ### app.py 整合責任
 
 在 lifespan 最前面、任何 DB 或 seed 寫入前呼叫 `validate_production_settings()`（從 `.config` import）。正常 DB 初始化保持啟用；所有展示 seed 與 demo reset/semester 入口須以 `demo_enabled()` 限制。`auth.seed_demo_users()` 本身已有防護。既有 `app.include_router(lti_router)` 會自動提供 `/lti/exchange`，不需另外新增 router。
+
+## Phase 2 hardening configuration
+
+These settings are read from the environment or `.env`. Byte values use binary
+MiB, not decimal MB; no proxy limit is required for the server's own enforcement.
+Configure reverse-proxy upload limits and temporary-disk capacity consistently
+with the application limits and the 64 KiB multipart envelope allowance.
+
+| Variable | Default | Purpose |
+| --- | ---: | --- |
+| `EDUINSIGHT_MAX_MATERIAL_BYTES` | 26214400 | Material upload: 25 MiB |
+| `EDUINSIGHT_MAX_LECTURE_BYTES` | 209715200 | Lecture audio: 200 MiB |
+| `EDUINSIGHT_MAX_IMPORT_BYTES` | 52428800 | Memory JSON import: 50 MiB |
+| `EDUINSIGHT_MAX_BODY_BYTES` | 1048576 | Other request bodies: 1 MiB |
+| `EDUINSIGHT_MAX_ZIP_UNCOMPRESSED_BYTES` | 209715200 | Office ZIP expansion: 200 MiB |
+| `EDUINSIGHT_MAX_ZIP_ENTRIES` | 5000 | ZIP central-directory entries |
+| `EDUINSIGHT_MAX_ZIP_COMPRESSION_RATIO` | 100 | Per-entry and aggregate expansion ratio |
+| `EDUINSIGHT_MAX_DOCUMENT_PAGES` | 500 | PDF pages / PPTX slides / inspected XLSX sheets |
+| `EDUINSIGHT_LLM_CLI_TIMEOUT_SECONDS` | 120 | Claude subprocess deadline |
+| `EDUINSIGHT_LLM_CLI_MAX_OUTPUT_BYTES` | 1048576 | Combined stdout + stderr cap |
+| `EDUINSIGHT_SQLITE_BUSY_TIMEOUT_MS` | 10000 | Application-owned SQLite connection wait |
+
+
+The body middleware enforces Content-Length before reading and also counts actual
+received bytes, including chunked requests. Upload-route file bytes are counted
+before Starlette multipart spooling and copied to disk in bounded chunks. Do not
+use streaming multipart Content-Type to exempt another route. Parsing limits
+reject unsafe Office ZIPs before library extraction and reject excessive PDF pages
+or PPTX slides. DOCX/XLSX are not newly supported upload formats.
+
+Application-owned SQLite connections use WAL and the configured busy timeout.
+Lazy schemas/default seeds run once per database identity per process under a
+thread lock. They preserve stored settings, authoritative enrollment and existing
+rows. Restart after an out-of-band schema change; do not drop live tables. SQLite
+WAL/SHM files must share the database's persistent writable directory. The locked
+Lite-Mem dependency already configures WAL and a 5-second busy timeout internally;
+its source/dependencies are unchanged. SQLite lock failures before a response
+starts return 503 (`database_busy`) with `Retry-After: 1`. Background material
+jobs have already sent their initial indexing response, so check material status
+and logs for job failures rather than expecting a later HTTP status change.
+
+Monitoring can keep using unauthenticated `/health` (only status/version).
+Authenticated admin requests retain diagnostic fields. Errors such as
+`material_index_failed`, `moodle_unavailable`, `invalid_bundle_json`, and
+`internal_server_error` contain no raw exceptions; inspect protected server logs
+for full diagnostic details, including pre-existing material errors hidden at read.
+
+For Claude CLI fallback, install a version supporting all flags verified in
+**Claude Code 2.1.295**: `--print`, `--model`, `--tools`, `--strict-mcp-config`,
+`--mcp-config`, `--no-session-persistence`, `--safe-mode`, `--setting-sources`,
+`--disable-slash-commands`, `--system-prompt`, and `--output-format`. The client
+passes an empty tool list/MCP config/settings sources, an actual system prompt,
+and plain-text input over stdin. Unsupported flags fail the invocation; no unsafe
+retry is performed. Do not replace safe mode with `--bare`: this installation's
+help explicitly says bare mode stops reading subscription OAuth/keychain auth.
+Home/config locations are retained only to keep existing Claude authentication
+available; unrelated application/provider secrets are not inherited.
+
+Help output and mocked regression tests verify option availability, command/env,
+output bounding, cancellation/timeout kill-and-reap and temporary cleanup. They do
+not establish live subscription authentication, model behavior, or independently
+prove the CLI's internal no-tools/no-MCP/no-session semantics. Safe mode's help
+also says admin-managed policy still applies. Prompt rules are a defense in depth;
+the CLI is not an OS-level sandbox. No live LLM request was made for verification.

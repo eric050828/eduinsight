@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
 import time
+from contextlib import contextmanager
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from . import sessions
 from .auth import TEACHER_COURSE_MAP, AuthUser, get_current_user
+from .db import schema_once
 
 router = APIRouter(prefix="/courses", tags=["courses"])
 
@@ -48,21 +49,24 @@ class CourseParticipant(BaseModel):
 def _catalog_db():
     """Static assignments are seed data only; persisted assignments take precedence."""
     with sessions._db() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS course_catalog (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                teacher_username TEXT,
-                description TEXT NOT NULL DEFAULT '',
-                archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1))
-            );
-        """)
-        for course_id, name in COURSE_CATALOG.items():
-            teacher = next((username for username, owned in TEACHER_COURSE_MAP.items()
-                            if owned == course_id), None)
-            conn.execute("INSERT OR IGNORE INTO course_catalog (id, name, teacher_username) "
-                         "VALUES (?, ?, ?)", (course_id, name, teacher))
-        conn.commit()
+        with schema_once(conn, "courses") as initialize:
+            if initialize:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS course_catalog (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        teacher_username TEXT,
+                        description TEXT NOT NULL DEFAULT '',
+                        archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1))
+                    );
+                """)
+                for course_id, name in COURSE_CATALOG.items():
+                    teacher = next((username for username, owned in TEACHER_COURSE_MAP.items()
+                                    if owned == course_id), None)
+                    conn.execute("INSERT OR IGNORE INTO course_catalog "
+                                 "(id, name, teacher_username) "
+                                 "VALUES (?, ?, ?)", (course_id, name, teacher))
+                conn.commit()
         yield conn
         conn.commit()
 
@@ -80,17 +84,22 @@ def init_enrollments() -> None:
     """
     sessions.init_sessions_table()
     with sessions._db() as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        exists = conn.execute("SELECT 1 FROM sqlite_master WHERE name='course_enrollments'").fetchone()
-        conn.execute("""CREATE TABLE IF NOT EXISTS course_enrollments (
-            course_id TEXT NOT NULL, moodle_user_id INTEGER NOT NULL,
-            role TEXT NOT NULL DEFAULT 'student', source TEXT NOT NULL,
-            created_at REAL NOT NULL, UNIQUE(course_id, moodle_user_id))""")
-        if not exists:
-            conn.execute("INSERT OR IGNORE INTO course_enrollments "
-                         "SELECT course_id, moodle_user_id, 'student', 'legacy_sessions', "
-                         "MIN(created_at) FROM chat_sessions GROUP BY course_id, moodle_user_id")
-        conn.commit()
+        with schema_once(conn, "course_enrollments") as initialize:
+            if initialize:
+                conn.execute("BEGIN IMMEDIATE")
+                exists = conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name='course_enrollments'",
+                ).fetchone()
+                conn.execute("""CREATE TABLE IF NOT EXISTS course_enrollments (
+                    course_id TEXT NOT NULL, moodle_user_id INTEGER NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'student', source TEXT NOT NULL,
+                    created_at REAL NOT NULL, UNIQUE(course_id, moodle_user_id))""")
+                if not exists:
+                    conn.execute("INSERT OR IGNORE INTO course_enrollments "
+                                 "SELECT course_id, moodle_user_id, 'student', 'legacy_sessions', "
+                                 "MIN(created_at) FROM chat_sessions "
+                                 "GROUP BY course_id, moodle_user_id")
+                conn.commit()
     catalog_entries()
 
 

@@ -21,6 +21,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 from .auth import TEACHER_COURSE_MAP, AuthUser, get_current_user, require_role
 from .config import settings
 from .courses import _check_course_access
+from .db import connect, schema_once
 
 router = APIRouter(tags=["assignments"])
 
@@ -87,39 +88,42 @@ class SubmissionGrade(BaseModel):
 @contextmanager
 def _db(*, write: bool = False):
     Path(settings.auth_db_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(settings.auth_db_path)
+    conn = connect(settings.auth_db_path)
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS assignments (
-                id TEXT PRIMARY KEY,
-                course_id TEXT NOT NULL,
-                title TEXT NOT NULL,
-                description TEXT NOT NULL,
-                due_at REAL NOT NULL,
-                max_score REAL NOT NULL CHECK(max_score > 0),
-                allow_late INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL,
-                updated_at REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS ix_assignments_course ON assignments(course_id, due_at);
-            CREATE TABLE IF NOT EXISTS assignment_submissions (
-                assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
-                student_id INTEGER NOT NULL,
-                text TEXT NOT NULL DEFAULT '',
-                file_name TEXT,
-                file_metadata TEXT,
-                state TEXT NOT NULL CHECK(state IN ('draft', 'submitted', 'graded')),
-                late INTEGER NOT NULL DEFAULT 0,
-                submitted_at REAL,
-                score REAL CHECK(score >= 0),
-                feedback TEXT,
-                graded_at REAL,
-                updated_at REAL NOT NULL,
-                PRIMARY KEY (assignment_id, student_id)
-            );
-        """)
+        with schema_once(conn, "assignments") as initialize:
+            if initialize:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS assignments (
+                        id TEXT PRIMARY KEY,
+                        course_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        due_at REAL NOT NULL,
+                        max_score REAL NOT NULL CHECK(max_score > 0),
+                        allow_late INTEGER NOT NULL DEFAULT 0,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_assignments_course
+                        ON assignments(course_id, due_at);
+                    CREATE TABLE IF NOT EXISTS assignment_submissions (
+                        assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+                        student_id INTEGER NOT NULL,
+                        text TEXT NOT NULL DEFAULT '',
+                        file_name TEXT,
+                        file_metadata TEXT,
+                        state TEXT NOT NULL CHECK(state IN ('draft', 'submitted', 'graded')),
+                        late INTEGER NOT NULL DEFAULT 0,
+                        submitted_at REAL,
+                        score REAL CHECK(score >= 0),
+                        feedback TEXT,
+                        graded_at REAL,
+                        updated_at REAL NOT NULL,
+                        PRIMARY KEY (assignment_id, student_id)
+                    );
+                """)
         if write:
             conn.execute("BEGIN IMMEDIATE")
         yield conn

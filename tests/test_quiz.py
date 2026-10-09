@@ -347,7 +347,7 @@ class TestQuizAPI:
     def test_generate_quiz_no_materials(self, client):
         resp = client.post("/courses/EMPTY/quiz/generate", json={"num_questions": 3})
         assert resp.status_code == 404
-        assert "No materials found" in resp.json()["detail"]
+        assert resp.json()["detail"] == "resource_not_found"
 
     def test_generate_quiz_default_params(self, client):
         resp = client.post("/courses/CS101/quiz/generate", json={})

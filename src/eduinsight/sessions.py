@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import settings
+from .db import connect, schema_once
 
 
 def _ensure_dir(path: str) -> None:
@@ -29,7 +30,7 @@ def _ensure_dir(path: str) -> None:
 @contextmanager
 def _db():
     _ensure_dir(settings.auth_db_path)
-    conn = sqlite3.connect(settings.auth_db_path)
+    conn = connect(settings.auth_db_path)
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -40,29 +41,31 @@ def _db():
 def init_sessions_table() -> None:
     """Create the sessions table if missing. Idempotent."""
     with _db() as conn:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS chat_sessions (
-                session_id    TEXT PRIMARY KEY,
-                moodle_user_id INTEGER NOT NULL,
-                course_id     TEXT NOT NULL,
-                title         TEXT NOT NULL,
-                created_at    REAL NOT NULL,
-                last_msg_at   REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS ix_sessions_user_course
-                ON chat_sessions(moodle_user_id, course_id, last_msg_at DESC);
-            CREATE TABLE IF NOT EXISTS chat_message_metadata (
-                memory_db_path TEXT NOT NULL,
-                session_id TEXT NOT NULL,
-                message_id INTEGER NOT NULL,
-                material_context TEXT,
-                mention_user_ids TEXT,
-                PRIMARY KEY (memory_db_path, session_id, message_id)
-            );
-            """
-        )
-        conn.commit()
+        with schema_once(conn, "sessions") as initialize:
+            if initialize:
+                conn.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS chat_sessions (
+                        session_id    TEXT PRIMARY KEY,
+                        moodle_user_id INTEGER NOT NULL,
+                        course_id     TEXT NOT NULL,
+                        title         TEXT NOT NULL,
+                        created_at    REAL NOT NULL,
+                        last_msg_at   REAL NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_sessions_user_course
+                        ON chat_sessions(moodle_user_id, course_id, last_msg_at DESC);
+                    CREATE TABLE IF NOT EXISTS chat_message_metadata (
+                        memory_db_path TEXT NOT NULL,
+                        session_id TEXT NOT NULL,
+                        message_id INTEGER NOT NULL,
+                        material_context TEXT,
+                        mention_user_ids TEXT,
+                        PRIMARY KEY (memory_db_path, session_id, message_id)
+                    );
+                    """
+                )
+                conn.commit()
 
 
 def create_session(

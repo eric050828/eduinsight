@@ -83,7 +83,7 @@ def _existing_user(user_id: int) -> dict:
 def list_users(
     role: auth.Role | None = None,
     q: str | None = Query(default=None, max_length=200),
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     user: AuthUser = Depends(require_role("admin")),
 ) -> dict:

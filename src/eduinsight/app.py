@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,9 +23,13 @@ from litemem import Memory
 from litemem.portable import MemoryBundle
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from . import config, courses
 from . import sessions as sessions_mod
-from . import courses, config
+from .achievements import router as achievements_router
+from .admin_manage import router as admin_manage_router
+from .admin_manage import seed_demo_admin_data
 from .analytics import (
     analyze_class,
     analyze_student,
@@ -32,38 +37,27 @@ from .analytics import (
     generate_class_summaries,
     learning_trajectory,
 )
+from .analytics_extra import router as analytics_extra_router
+from .assignments import router as assignments_router
+from .assignments import seed_demo_assignments
 from .assistant import LearningAssistant
 from .attendance import AttendanceManager, GPSLocation
-from .auth import AuthUser, get_current_user, require_role, seed_demo_users
+from .auth import AuthUser, get_current_user, get_optional_user, require_role, seed_demo_users
 from .auth import init_db as init_auth_db
 from .auth import router as auth_router
+from .class_analytics import router as class_analytics_router
 from .classroom_assistant import ClassroomAssistant
 from .config import settings
-from .courses import router as courses_router
-from .analytics_extra import router as analytics_extra_router
 from .course_structure import router as course_structure_router
 from .course_structure import seed_demo_course_structure
-from .platform_admin import router as platform_admin_router
-from .platform_admin import seed_demo_audit
-from .achievements import router as achievements_router
-from .admin_manage import router as admin_manage_router
-from .admin_manage import seed_demo_admin_data
-from .class_analytics import router as class_analytics_router
+from .courses import router as courses_router
+from .db import is_locked
+from .diagnostics import router as diagnostics_router
+from .documents import to_markdown
 from .enrollment import router as enrollment_router
 from .enrollment import seed_demo_enrollment
 from .forum import router as forum_router
 from .forum import seed_demo_forum
-from .messaging import router as messaging_router
-from .messaging import seed_demo_messages
-from .preferences import router as preferences_router
-from .submission_files import router as submission_files_router
-from .assignments import router as assignments_router
-from .assignments import seed_demo_assignments
-from .diagnostics import router as diagnostics_router
-from .notifications import router as notifications_router
-from .notifications import seed_demo_notifications
-from .profiles import router as profiles_router
-from .documents import to_markdown
 from .grades import GradeManager
 from .interaction import InteractionManager
 from .lectures import LectureManager
@@ -73,13 +67,30 @@ from .live_quiz import (
     SessionStatus,
 )
 from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
-from .material_metadata import MaterialMetadata
 from .lti import router as lti_router
+from .material_metadata import MaterialMetadata
+from .messaging import router as messaging_router
+from .messaging import seed_demo_messages
 from .moodle import MoodleClient
+from .notifications import router as notifications_router
+from .notifications import seed_demo_notifications
 from .office_hours import BookingStatus, OfficeHourManager, SlotStatus
+from .platform_admin import router as platform_admin_router
+from .platform_admin import seed_demo_audit
+from .preferences import router as preferences_router
+from .profiles import router as profiles_router
 from .quiz import QuizGenerator
 from .rag import CourseRAG
 from .report import ReportGenerator
+from .security import (
+    BodyLimitMiddleware,
+    database_error_handler,
+    http_error_handler,
+    safe_error,
+    server_error_handler,
+    stage_upload,
+)
+from .submission_files import router as submission_files_router
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +204,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(BodyLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -200,6 +212,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_exception_handler(sqlite3.OperationalError, database_error_handler)
+app.add_exception_handler(Exception, server_error_handler)
+app.add_exception_handler(StarletteHTTPException, http_error_handler)
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -262,7 +278,9 @@ class TeacherDashboardResponse(BaseModel):
 
 
 @app.get("/health")
-async def health() -> dict[str, Any]:
+async def health(user: AuthUser | None = Depends(get_optional_user)) -> dict[str, Any]:
+    if user is None or user.role != "admin":
+        return {"status": "ok", "version": "0.1.0"}
     llm_name = "None"
     if _llm is not None:
         llm_name = getattr(_llm, "model", None) or type(_llm).__name__
@@ -273,7 +291,10 @@ async def health() -> dict[str, Any]:
             result["memory_db"] = settings.memory_db_path
             result["total_users"] = stats.total_users
             result["total_facts"] = stats.total_facts
-        except Exception:
+        except Exception as exc:
+            if is_locked(exc):
+                raise
+            logger.exception("Health memory statistics failed")
             result["memory_db"] = "error"
     return result
 
@@ -403,7 +424,7 @@ async def get_courses(
         try:
             courses = await client.get_user_courses(moodle_user_id)
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Moodle API error: {e}")
+            raise HTTPException(status_code=502, detail=safe_error(e, "moodle_unavailable"))
     return [
         {
             "id": c.id,
@@ -426,7 +447,7 @@ async def get_grades(
         try:
             grades = await client.get_grades(course_id, moodle_user_id)
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Moodle API error: {e}")
+            raise HTTPException(status_code=502, detail=safe_error(e, "moodle_unavailable"))
     return [
         {
             "item_name": g.item_name,
@@ -652,7 +673,7 @@ async def teacher_summaries(
 @app.get("/student/{moodle_user_id}/conversations")
 async def student_conversations(
     moodle_user_id: int,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=200),
     course_id: str | None = None,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -662,7 +683,8 @@ async def student_conversations(
     uid = f"moodle:{moodle_user_id}"
     try:
         rows = _memory._store.get_messages(uid)
-    except Exception:
+    except Exception as exc:
+        safe_error(exc, "history_unavailable")
         return {"moodle_user_id": moodle_user_id, "total_conversations": 0, "conversations": []}
 
     # Build session_id → course_id lookup once
@@ -799,7 +821,8 @@ async def get_session_messages(
     uid = f"moodle:{sess['moodle_user_id']}"
     try:
         rows = _memory._store.get_messages(uid)
-    except Exception:
+    except Exception as exc:
+        safe_error(exc, "history_unavailable")
         rows = []
     metadata = sessions_mod.get_message_metadata(session_id)
     msgs = [
@@ -1066,10 +1089,13 @@ def _index_material(
         with rag._lock:
             rag.remove_document(course_id, filename)
             md_path.unlink(missing_ok=True)
-            metadata.finish(course_id, filename, 0, str(exc))
+            error = safe_error(exc, "material_index_failed")
+            metadata.finish(course_id, filename, 0, error)
         logger.exception("Material indexing failed for %s/%s", course_id, filename)
         if wait:
-            raise HTTPException(status_code=400 if isinstance(exc, ValueError) else 500, detail=str(exc))
+            raise HTTPException(
+                status_code=400 if isinstance(exc, ValueError) else 500, detail=error,
+            ) from exc
         return None
     finally:
         Path(tmp_path).unlink(missing_ok=True)
@@ -1103,20 +1129,15 @@ async def upload_material(
             detail=f"Unsupported file type: {suffix}. Supported: .pdf, .pptx, .md, .txt",
         )
 
-    # Save to a temp file for parsing
-    import tempfile
-
-    metadata = MaterialMetadata()
-    content = await file.read()
-    await run_in_threadpool(
-        _start_material, _rag, metadata, course_id, file.filename, len(content), file.content_type, user.id,
-    )
+    tmp_path, size = await stage_upload(file, settings.max_material_bytes, suffix=suffix)
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content)
-            tmp_path = tmp.name
-    except Exception as exc:
-        metadata.finish(course_id, file.filename, 0, str(exc))
+        metadata = MaterialMetadata()
+        await run_in_threadpool(
+            _start_material, _rag, metadata, course_id, file.filename,
+            size, file.content_type, user.id,
+        )
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
         raise
     if wait:
         return await run_in_threadpool(
@@ -1195,7 +1216,7 @@ def add_youtube_material(
             n = _rag.document_counts(course_id).get(filename, 0)
             metadata.finish(course_id, filename, n)
     except Exception as exc:
-        metadata.finish(course_id, filename, 0, str(exc))
+        metadata.finish(course_id, filename, 0, safe_error(exc, "material_index_failed"))
         raise
     return MaterialUploadResponse(
         status="indexed",
@@ -1342,7 +1363,7 @@ async def generate_quiz(
             num_questions=req.num_questions,
         )
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=safe_error(e, "resource_not_found"))
 
     return QuizGenerateResponse(
         course_id=result.course_id,
@@ -1442,7 +1463,7 @@ async def create_quiz_session(
             req.course_id, questions, teacher_id=0, title=req.title
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
 
     return CreateSessionResponse(
         session_id=session.session_id,
@@ -1465,7 +1486,7 @@ async def activate_quiz_session(
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
 
     return SessionInfoResponse(
         session_id=session.session_id,
@@ -1564,7 +1585,7 @@ async def submit_quiz_answer(
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
 
     # Return whether correct + the correct answer (immediate feedback)
     session = _quiz_manager.get_session(session_id)
@@ -1709,7 +1730,7 @@ async def create_poll(
             req.course_id, teacher_id=0, title=req.title, options=req.options
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return PollResponse(
         poll_id=poll.poll_id,
         course_id=poll.course_id,
@@ -1731,7 +1752,7 @@ async def activate_poll(
     except KeyError:
         raise HTTPException(status_code=404, detail="Poll not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return PollResponse(
         poll_id=poll.poll_id,
         course_id=poll.course_id,
@@ -1774,7 +1795,7 @@ async def vote_poll(
     except KeyError:
         raise HTTPException(status_code=404, detail="Poll not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return {"status": "voted"}
 
 
@@ -1836,7 +1857,7 @@ async def post_question(
             req.course_id, text=req.text, student_id=req.student_id
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return AnonQuestionResponse(
         question_id=q.question_id,
         text=q.text,
@@ -1917,7 +1938,7 @@ async def post_danmaku(
             req.course_id, text=req.text, student_id=req.student_id
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return DanmakuResponse(
         message_id=msg.message_id,
         text=msg.text,
@@ -1927,7 +1948,7 @@ async def post_danmaku(
 
 @app.get("/interaction/danmaku")
 async def get_danmaku(
-    course_id: str, limit: int = 50, since: float | None = None,
+    course_id: str, limit: int = Query(default=50, ge=1, le=200), since: float | None = None,
     user: AuthUser = Depends(get_current_user),
 ) -> list[DanmakuResponse]:
     """Get recent danmaku messages for a course."""
@@ -2000,8 +2021,6 @@ async def upload_lecture(
     if _lectures is None:
         raise HTTPException(status_code=503, detail="Lecture manager not initialized")
 
-    import tempfile
-
     from .transcribe import SUPPORTED_FORMATS
 
     # Validate file extension
@@ -2012,11 +2031,7 @@ async def upload_lecture(
             detail=f"Unsupported format: {ext}. Supported: {', '.join(sorted(SUPPORTED_FORMATS))}",
         )
 
-    # Save to temp file
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
+    tmp_path, _ = await stage_upload(file, settings.max_lecture_bytes, suffix=ext)
 
     try:
         lecture = await _lectures.process_lecture(
@@ -2035,9 +2050,9 @@ async def upload_lecture(
             segment_count=len(lecture.transcript.segments),
         )
     except FileNotFoundError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request")) from e
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request")) from e
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
@@ -2376,12 +2391,15 @@ async def import_memory(
     assistant = get_assistant()
     mem = assistant.memory
 
+    tmp_path, _ = await stage_upload(file, settings.max_import_bytes, suffix=".json")
     try:
-        content = await file.read()
-        data = json.loads(content)
+        with open(tmp_path, encoding="utf-8") as stream:
+            data = json.load(stream)
         bundle = MemoryBundle.from_dict(data)
-    except (json.JSONDecodeError, KeyError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"Invalid bundle JSON: {e}")
+    except (KeyError, ValueError, TypeError) as e:
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_bundle_json")) from e
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
 
     count = mem.import_bundle(bundle)
     return ImportResponse(
@@ -2486,7 +2504,7 @@ async def close_attendance_session(
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return _att_session_resp(session, user)
 
 
@@ -2541,7 +2559,7 @@ async def attendance_checkin(
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return CheckinResponse(
         student_id=record.student_id,
         session_id=record.session_id,
@@ -2631,7 +2649,7 @@ async def checkin_by_code(
             gps_location=gps,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return CheckinResponse(
         student_id=record.student_id,
         session_id=record.session_id,
@@ -2734,7 +2752,7 @@ async def set_grade_categories(
             [{"name": c.name, "weight": c.weight} for c in req.categories],
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return [GradeCategoryResponse(name=c.name, weight=c.weight) for c in cats]
 
 
@@ -2748,7 +2766,7 @@ async def get_grade_categories(
     try:
         cats = _grades.get_categories(course_id)
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=safe_error(e, "resource_not_found"))
     return [GradeCategoryResponse(name=c.name, weight=c.weight) for c in cats]
 
 
@@ -2769,9 +2787,9 @@ async def record_score(
             total=req.total,
         )
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=safe_error(e, "resource_not_found"))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return ScoreResponse(
         record_id=rec.record_id,
         course_id=rec.course_id,
@@ -2838,7 +2856,7 @@ async def get_student_grades(
     try:
         summary = _grades.student_summary_with_rank(course_id, student_id)
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=safe_error(e, "resource_not_found"))
     return StudentGradeResponse(
         course_id=summary.course_id,
         student_id=summary.student_id,
@@ -2868,7 +2886,7 @@ async def get_class_overview(
     try:
         overview = _grades.class_overview(course_id)
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=safe_error(e, "resource_not_found"))
     return ClassOverviewResponse(
         course_id=overview.course_id,
         total_students=overview.total_students,
@@ -3285,7 +3303,7 @@ async def create_office_hour_slot(
             location=req.location,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return _slot_resp(slot)
 
 
@@ -3329,7 +3347,7 @@ async def cancel_office_hour_slot(
     except KeyError:
         raise HTTPException(status_code=404, detail="Slot not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return _slot_resp(slot)
 
 
@@ -3348,7 +3366,7 @@ async def book_office_hour_slot(
     except KeyError:
         raise HTTPException(status_code=404, detail="Slot not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return _booking_resp(booking)
 
 
@@ -3407,7 +3425,7 @@ async def start_office_hour_meeting(
     except KeyError:
         raise HTTPException(status_code=404, detail="Booking not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return _booking_resp(booking)
 
 
@@ -3423,7 +3441,7 @@ async def resolve_office_hour_booking(
     except KeyError:
         raise HTTPException(status_code=404, detail="Booking not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return _booking_resp(booking)
 
 
@@ -3439,7 +3457,7 @@ async def cancel_office_hour_booking(
     except KeyError:
         raise HTTPException(status_code=404, detail="Booking not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=safe_error(e, "invalid_request"))
     return _booking_resp(booking)
 
 

@@ -31,6 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from .config import demo_enabled, settings
+from .db import connect, schema_once
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 _bearer = HTTPBearer(auto_error=False)
@@ -98,7 +99,7 @@ def _ensure_dir(path: str) -> None:
 @contextmanager
 def _db():
     _ensure_dir(settings.auth_db_path)
-    conn = sqlite3.connect(settings.auth_db_path)
+    conn = connect(settings.auth_db_path)
     conn.row_factory = sqlite3.Row
     try:
         _ensure_active_column(conn)
@@ -133,12 +134,14 @@ def _ensure_active_column(conn: sqlite3.Connection) -> None:
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_moodle "
                      "ON users(moodle_user_id) WHERE moodle_user_id IS NOT NULL")
         conn.commit()
-    # Insert before preferences' development defaults, preserving explicit admin settings.
-    conn.execute("CREATE TABLE IF NOT EXISTS platform_settings "
-                 "(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-    conn.execute("INSERT OR IGNORE INTO platform_settings (key, value) VALUES (?, ?)",
-                 ("allow_self_register", json.dumps(settings.env == "development")))
-    conn.commit()
+    with schema_once(conn, "auth_platform_defaults") as initialize:
+        if initialize:
+            # Insert before preferences' development defaults, preserving explicit admin settings.
+            conn.execute("CREATE TABLE IF NOT EXISTS platform_settings "
+                         "(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            conn.execute("INSERT OR IGNORE INTO platform_settings (key, value) VALUES (?, ?)",
+                         ("allow_self_register", json.dumps(settings.env == "development")))
+            conn.commit()
 
 
 def init_db() -> None:

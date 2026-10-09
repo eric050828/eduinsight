@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 from . import assignments
 from .auth import AuthUser, get_current_user, require_role
 from .config import settings
+from .db import schema_once
 
 router = APIRouter(tags=["submission-files"])
 
@@ -57,7 +58,9 @@ def _ensure_table(conn: sqlite3.Connection) -> None:
 @contextmanager
 def _db(*, write: bool = False):
     with assignments._db() as conn:
-        _ensure_table(conn)
+        with schema_once(conn, "submission_files") as initialize:
+            if initialize:
+                _ensure_table(conn)
         if write:
             conn.execute("BEGIN IMMEDIATE")
         yield conn
@@ -152,7 +155,12 @@ def list_submission_files(
     connection attempting lazy schema creation while the caller holds a lock.
     """
     if connection is not None:
-        _ensure_table(connection)
+        # A caller-owned transaction may roll back: never commit it or cache
+        # uncommitted DDL. Existing schemas need only a read, not repeated DDL.
+        if connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='submission_files'"
+        ).fetchone() is None:
+            _ensure_table(connection)
         return _list(connection, assignment_id, student_id)
     with _db() as conn:
         return _list(conn, assignment_id, student_id)
@@ -213,6 +221,28 @@ def upload_file(
     created = False
     try:
         _authorize_assignment(assignment_id, user)
+        # Preserve validation order and reject non-editable/full submissions
+        # before disk staging. Repeat these checks under the write lock below.
+        with _db() as conn:
+            _editable(conn, assignment_id, student_id)
+            if len(_list(conn, assignment_id, student_id)) >= MAX_FILES:
+                raise HTTPException(409, "A submission can have at most five files")
+        name = _filename(file.filename)
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,200}", assignment_id):
+            raise HTTPException(400, "Unsafe assignment identifier")
+        file_id = uuid.uuid4().hex
+        relative = f"{assignment_id}/{student_id}/{file_id}_{name}"
+        destination = _storage_path(relative)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination = _storage_path(relative)  # Recheck after directory creation.
+        size = 0
+        with destination.open("xb") as out:
+            created = True
+            while chunk := file.file.read(64 * 1024):
+                size += len(chunk)
+                if size > MAX_FILE_BYTES:
+                    raise HTTPException(413, "File exceeds the 10 MB limit")
+                out.write(chunk)
         with _db(write=True) as conn:
             exists = conn.execute(
                 "SELECT 1 FROM assignments WHERE id = ?",
@@ -223,22 +253,6 @@ def upload_file(
             _editable(conn, assignment_id, student_id)
             if len(_list(conn, assignment_id, student_id)) >= MAX_FILES:
                 raise HTTPException(409, "A submission can have at most five files")
-            name = _filename(file.filename)
-            if not re.fullmatch(r"[A-Za-z0-9_-]{1,200}", assignment_id):
-                raise HTTPException(400, "Unsafe assignment identifier")
-            file_id = uuid.uuid4().hex
-            relative = f"{assignment_id}/{student_id}/{file_id}_{name}"
-            destination = _storage_path(relative)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination = _storage_path(relative)  # Recheck after directory creation.
-            size = 0
-            with destination.open("xb") as out:
-                created = True
-                while chunk := file.file.read(64 * 1024):
-                    size += len(chunk)
-                    if size > MAX_FILE_BYTES:
-                        raise HTTPException(413, "File exceeds the 10 MB limit")
-                    out.write(chunk)
             now = time.time()
             conn.execute(
                 "INSERT OR IGNORE INTO assignment_submissions "

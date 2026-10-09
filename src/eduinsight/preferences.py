@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 from . import auth
 from .auth import AuthUser, get_current_user, require_role
+from .db import schema_once
 from .platform_admin import record_audit
 
 router = APIRouter(tags=["preferences"])
@@ -62,22 +63,24 @@ class PlatformSettings(BaseModel):
 @contextmanager
 def _db():
     with auth._db() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS user_preferences (
-                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-                preferences TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS platform_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            );
-        """)
-        for key, value in DEFAULT_SETTINGS.items():
-            conn.execute(
-                "INSERT OR IGNORE INTO platform_settings (key, value) VALUES (?, ?)",
-                (key, json.dumps(value, ensure_ascii=False)),
-            )
-        conn.commit()
+        with schema_once(conn, "preferences") as initialize:
+            if initialize:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS user_preferences (
+                        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                        preferences TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS platform_settings (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    );
+                """)
+                for key, value in DEFAULT_SETTINGS.items():
+                    conn.execute(
+                        "INSERT OR IGNORE INTO platform_settings (key, value) VALUES (?, ?)",
+                        (key, json.dumps(value, ensure_ascii=False)),
+                    )
+                conn.commit()
         yield conn
         conn.commit()
 

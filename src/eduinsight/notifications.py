@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from . import auth
 from .auth import AuthUser, get_current_user
+from .db import schema_once
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -35,8 +36,10 @@ CREATE INDEX IF NOT EXISTS ix_notifications_user_created
 def _db():
     with auth._db() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.executescript(_SCHEMA)
-        conn.commit()
+        with schema_once(conn, "notifications") as initialize:
+            if initialize:
+                conn.executescript(_SCHEMA)
+                conn.commit()
         yield conn
 
 

@@ -19,6 +19,7 @@ from pydantic import (
 
 from . import auth
 from .auth import AuthUser, Role, get_current_user
+from .db import schema_once
 
 router = APIRouter(prefix="/profile", tags=["profiles"])
 _http_url = TypeAdapter(HttpUrl)
@@ -78,13 +79,15 @@ class Profile(BaseModel):
 def _db():
     with auth._db() as conn:
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS profiles ("
-            "user_id INTEGER PRIMARY KEY REFERENCES users(id), "
-            "display_name TEXT, email TEXT, location TEXT, bio TEXT, "
-            "social_links TEXT NOT NULL DEFAULT '{}', avatar_url TEXT)"
-        )
-        conn.commit()
+        with schema_once(conn, "profiles") as initialize:
+            if initialize:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS profiles ("
+                    "user_id INTEGER PRIMARY KEY REFERENCES users(id), "
+                    "display_name TEXT, email TEXT, location TEXT, bio TEXT, "
+                    "social_links TEXT NOT NULL DEFAULT '{}', avatar_url TEXT)"
+                )
+                conn.commit()
         yield conn
 
 

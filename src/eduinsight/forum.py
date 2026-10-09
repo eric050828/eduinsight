@@ -19,8 +19,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .auth import AuthUser, TEACHER_COURSE_MAP, get_current_user
+from .auth import TEACHER_COURSE_MAP, AuthUser, get_current_user
 from .config import settings
+from .db import connect, schema_once
 from .notifications import create_notification
 
 router = APIRouter(tags=["forum"])
@@ -80,38 +81,40 @@ class PinBody(BaseModel):
 @contextmanager
 def _db(*, write: bool = False):
     Path(settings.auth_db_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(settings.auth_db_path, timeout=30)
+    conn = connect(settings.auth_db_path)
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS forum_threads (
-                id TEXT PRIMARY KEY, course_id TEXT NOT NULL,
-                author_id INTEGER NOT NULL, author_name TEXT NOT NULL,
-                author_role TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
-                pinned INTEGER NOT NULL DEFAULT 0,
-                created_at REAL NOT NULL, updated_at REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS ix_forum_threads_course ON forum_threads(course_id);
-            CREATE TABLE IF NOT EXISTS forum_posts (
-                id TEXT PRIMARY KEY,
-                thread_id TEXT NOT NULL REFERENCES forum_threads(id) ON DELETE CASCADE,
-                author_id INTEGER NOT NULL, author_name TEXT NOT NULL,
-                author_role TEXT NOT NULL, body TEXT NOT NULL,
-                created_at REAL NOT NULL, updated_at REAL NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS ix_forum_posts_thread ON forum_posts(thread_id);
-            CREATE TABLE IF NOT EXISTS forum_thread_subscriptions (
-                thread_id TEXT NOT NULL REFERENCES forum_threads(id) ON DELETE CASCADE,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                PRIMARY KEY(thread_id, user_id)
-            );
-            CREATE TABLE IF NOT EXISTS forum_course_subscriptions (
-                course_id TEXT NOT NULL,
-                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                PRIMARY KEY(course_id, user_id)
-            );
-        """)
+        with schema_once(conn, "forum") as initialize:
+            if initialize:
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS forum_threads (
+                        id TEXT PRIMARY KEY, course_id TEXT NOT NULL,
+                        author_id INTEGER NOT NULL, author_name TEXT NOT NULL,
+                        author_role TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL,
+                        pinned INTEGER NOT NULL DEFAULT 0,
+                        created_at REAL NOT NULL, updated_at REAL NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_forum_threads_course ON forum_threads(course_id);
+                    CREATE TABLE IF NOT EXISTS forum_posts (
+                        id TEXT PRIMARY KEY,
+                        thread_id TEXT NOT NULL REFERENCES forum_threads(id) ON DELETE CASCADE,
+                        author_id INTEGER NOT NULL, author_name TEXT NOT NULL,
+                        author_role TEXT NOT NULL, body TEXT NOT NULL,
+                        created_at REAL NOT NULL, updated_at REAL NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS ix_forum_posts_thread ON forum_posts(thread_id);
+                    CREATE TABLE IF NOT EXISTS forum_thread_subscriptions (
+                        thread_id TEXT NOT NULL REFERENCES forum_threads(id) ON DELETE CASCADE,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        PRIMARY KEY(thread_id, user_id)
+                    );
+                    CREATE TABLE IF NOT EXISTS forum_course_subscriptions (
+                        course_id TEXT NOT NULL,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        PRIMARY KEY(course_id, user_id)
+                    );
+                """)
         if write:
             conn.execute("BEGIN IMMEDIATE")
         yield conn
