@@ -32,7 +32,7 @@ from .analytics import (
 )
 from .assistant import LearningAssistant
 from .attendance import AttendanceManager, GPSLocation
-from .auth import TEACHER_COURSE_MAP, AuthUser, get_current_user, seed_demo_users
+from .auth import TEACHER_COURSE_MAP, AuthUser, get_current_user, require_role, seed_demo_users
 from .auth import init_db as init_auth_db
 from .auth import router as auth_router
 from .classroom_assistant import ClassroomAssistant
@@ -239,21 +239,28 @@ async def health() -> dict[str, Any]:
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest) -> ChatResponse:
+async def chat(
+    req: ChatRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> ChatResponse:
     """Student sends a message; assistant responds with memory-augmented AI answer.
 
     If course_id is provided, retrieves relevant course materials (RAG)
     and includes them in the prompt context alongside student memories.
     """
+    _check_student_access(user, req.moodle_user_id)
+    req.course_id = _teacher_course_scope(user, req.course_id) or ""
     assistant = get_assistant()
     uid = f"moodle:{req.moodle_user_id}"
 
-    # Resolve session: reuse if valid+matching, else create
+    # An explicitly supplied session must belong to the requested student.
     session_id = req.session_id
     if session_id:
-        existing = sessions_mod.get_session(session_id)
-        if not existing or existing["moodle_user_id"] != req.moodle_user_id:
-            session_id = ""  # mismatch → new session
+        existing = _check_chat_session_access(user, session_id)
+        if existing["moodle_user_id"] != req.moodle_user_id:
+            raise HTTPException(status_code=403, detail="Session belongs to another student")
+        if req.course_id and existing["course_id"] != req.course_id:
+            raise HTTPException(status_code=403, detail="Session belongs to another course")
     if not session_id:
         course_for_session = req.course_id or "general"
         title = req.message[:40] if req.message else "新對話"
@@ -310,16 +317,24 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
 
 @app.post("/record-struggle")
-async def record_struggle(req: RecordStruggleRequest) -> dict[str, str]:
+async def record_struggle(
+    req: RecordStruggleRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, str]:
     """Record that a student is struggling with a topic."""
+    _check_student_access(user, req.moodle_user_id)
     assistant = get_assistant()
     assistant.record_struggle(req.moodle_user_id, req.topic, req.details)
     return {"status": "recorded"}
 
 
 @app.get("/courses/{moodle_user_id}")
-async def get_courses(moodle_user_id: int) -> list[dict[str, Any]]:
+async def get_courses(
+    moodle_user_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> list[dict[str, Any]]:
     """Get courses for a Moodle user."""
+    _check_student_access(user, moodle_user_id)
     async with get_moodle_client() as client:
         try:
             courses = await client.get_user_courses(moodle_user_id)
@@ -337,8 +352,12 @@ async def get_courses(moodle_user_id: int) -> list[dict[str, Any]]:
 
 
 @app.get("/moodle/grades/{course_id}/{moodle_user_id}")
-async def get_grades(course_id: int, moodle_user_id: int) -> list[dict[str, Any]]:
+async def get_grades(
+    course_id: int, moodle_user_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> list[dict[str, Any]]:
     """Get grades for a user in a course."""
+    _check_student_access(user, moodle_user_id)
     async with get_moodle_client() as client:
         try:
             grades = await client.get_grades(course_id, moodle_user_id)
@@ -396,7 +415,7 @@ def _resolve_course_scope(user: AuthUser, course_id: str | None) -> str | None:
         if course_id not in enrolled:
             raise HTTPException(status_code=403, detail=f"Not enrolled in course {course_id}")
         return course_id
-    owned = TEACHER_COURSE_MAP.get(user.username)
+    owned = TEACHER_COURSE_MAP.get(user.username) if user.role == "teacher" else None
     if owned is None:
         return course_id  # admin or unmapped teacher: unrestricted
     if course_id and course_id != owned:
@@ -410,10 +429,10 @@ def _resolve_course_scope(user: AuthUser, course_id: str | None) -> str | None:
 def _check_student_access(user: AuthUser, moodle_user_id: int) -> None:
     """Per-student endpoints: students see only themselves; mapped teachers only their class."""
     if user.role == "student":
-        if user.moodle_user_id != moodle_user_id:
+        if user.moodle_user_id is None or user.moodle_user_id != moodle_user_id:
             raise HTTPException(status_code=403, detail="Students may only view their own data")
         return
-    owned = TEACHER_COURSE_MAP.get(user.username)
+    owned = TEACHER_COURSE_MAP.get(user.username) if user.role == "teacher" else None
     if owned is not None and moodle_user_id not in _students_in_course(owned):
         raise HTTPException(
             status_code=403,
@@ -421,10 +440,43 @@ def _check_student_access(user: AuthUser, moodle_user_id: int) -> None:
         )
 
 
+def _teacher_course_scope(user: AuthUser, course_id: str | None) -> str | None:
+    """Scope shared course resources for mapped teachers; students may participate."""
+    if user.role == "teacher":
+        return _resolve_course_scope(user, course_id)
+    return course_id
+
+
+def _check_resource_course(user: AuthUser, getter: Any, resource_id: str) -> None:
+    try:
+        resource = getter(resource_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    _teacher_course_scope(user, resource.course_id)
+
+
+def _check_chat_session_access(user: AuthUser, session_id: str) -> dict[str, Any]:
+    sess = sessions_mod.get_session(session_id)
+    if sess is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    _check_student_access(user, sess["moodle_user_id"])
+    _teacher_course_scope(user, sess["course_id"])
+    return sess
+
+
+def _check_booking_access(user: AuthUser, booking_id: str) -> None:
+    try:
+        booking = _office_hours.get_booking(booking_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    _check_student_access(user, booking.student_id)
+    _teacher_course_scope(user, booking.course_id)
+
+
 @app.get("/teacher/students", response_model=TeacherDashboardResponse)
 async def teacher_students(
     course_id: str | None = None,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> TeacherDashboardResponse:
     course_id = _resolve_course_scope(user, course_id)
     """List students with memory stats for the teacher dashboard.
@@ -465,24 +517,21 @@ async def teacher_students(
 
 
 @app.get("/teacher/me/course")
-async def teacher_my_course(username: str) -> dict[str, str | None]:
-    """Return the course_id owned by this demo teacher (or null for admin/unmapped).
+async def teacher_my_course(
+    username: str | None = None,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> dict[str, str | None]:
+    """Resolve the teacher's course from the authenticated identity."""
+    if username is not None and username != user.username:
+        raise HTTPException(status_code=403, detail="Username does not match current user")
+    return {"username": user.username, "course_id": TEACHER_COURSE_MAP.get(user.username)}
 
-    The teacher_username is taken from a query param so the frontend can call
-    this without the auth token plumbing — fine for the demo. In a real
-    deployment we'd resolve this from the JWT subject.
-    """
-    from .auth import TEACHER_COURSE_MAP
-    return {
-        "username": username,
-        "course_id": TEACHER_COURSE_MAP.get(username),
-    }
 
 
 @app.get("/teacher/students/{moodle_user_id}/memories")
 async def teacher_student_memories(
     moodle_user_id: int,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> dict[str, Any]:
     """Get all memories for a specific student (teacher view)."""
     _check_student_access(user, moodle_user_id)
@@ -498,7 +547,7 @@ async def teacher_student_memories(
 @app.get("/teacher/summaries")
 async def teacher_summaries(
     course_id: str | None = None,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> dict[str, Any]:
     """AI interaction summaries for all students (teacher view).
 
@@ -538,8 +587,11 @@ async def student_conversations(
     moodle_user_id: int,
     limit: int = 50,
     course_id: str | None = None,
+    user: AuthUser = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Past chat history. If course_id is provided, only return that course's sessions."""
+    _check_student_access(user, moodle_user_id)
+    course_id = _teacher_course_scope(user, course_id)
     uid = f"moodle:{moodle_user_id}"
     try:
         rows = _memory._store.get_messages(uid)
@@ -612,20 +664,27 @@ class SessionResponse(BaseModel):
 
 @app.get("/student/{moodle_user_id}/courses/{course_id}/sessions")
 async def list_course_sessions(
-    moodle_user_id: int, course_id: str
+    moodle_user_id: int, course_id: str,
+    user: AuthUser = Depends(get_current_user),
 ) -> list[SessionResponse]:
     """List all sessions for one (student, course) pair, newest first."""
+    _check_student_access(user, moodle_user_id)
+    course_id = _teacher_course_scope(user, course_id)
     rows = sessions_mod.list_sessions(moodle_user_id, course_id)
     return [SessionResponse(**r) for r in rows]
 
 
 @app.get("/student/{moodle_user_id}/courses")
-async def list_student_courses(moodle_user_id: int) -> dict[str, Any]:
+async def list_student_courses(
+    moodle_user_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """Return distinct course_ids the student has chat history in.
 
     Used by the AI Assistant page to render the per-student course list
     in the left rail (instead of a hard-coded global catalog).
     """
+    _check_student_access(user, moodle_user_id)
     with sessions_mod._db() as conn:  # noqa: SLF001
         cur = conn.execute(
             "SELECT course_id, COUNT(*) AS sess_count, MAX(last_msg_at) AS last_active "
@@ -634,6 +693,9 @@ async def list_student_courses(moodle_user_id: int) -> dict[str, Any]:
             (moodle_user_id,),
         )
         rows = [dict(r) for r in cur.fetchall()]
+    owned = _teacher_course_scope(user, None)
+    if owned is not None:
+        rows = [row for row in rows if row["course_id"] == owned]
     return {"moodle_user_id": moodle_user_id, "courses": rows}
 
 
@@ -643,18 +705,29 @@ class CreateSessionBody(BaseModel):
 
 @app.post("/student/{moodle_user_id}/courses/{course_id}/sessions", response_model=SessionResponse)
 async def create_course_session(
-    moodle_user_id: int, course_id: str, body: CreateSessionBody
+    moodle_user_id: int, course_id: str, body: CreateSessionBody,
+    user: AuthUser = Depends(get_current_user),
 ) -> SessionResponse:
+    _check_student_access(user, moodle_user_id)
+    course_id = _teacher_course_scope(user, course_id)
     sess = sessions_mod.create_session(moodle_user_id, course_id, body.title)
     return SessionResponse(**sess)
 
 
+@app.get("/sessions/{session_id}", response_model=SessionResponse)
+async def get_chat_session(
+    session_id: str, user: AuthUser = Depends(get_current_user),
+) -> SessionResponse:
+    return SessionResponse(**_check_chat_session_access(user, session_id))
+
+
 @app.get("/sessions/{session_id}/messages")
-async def get_session_messages(session_id: str) -> dict[str, Any]:
+async def get_session_messages(
+    session_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """Return all messages of one session, oldest first."""
-    sess = sessions_mod.get_session(session_id)
-    if not sess:
-        raise HTTPException(status_code=404, detail="Session not found")
+    sess = _check_chat_session_access(user, session_id)
     uid = f"moodle:{sess['moodle_user_id']}"
     try:
         rows = _memory._store.get_messages(uid)
@@ -675,21 +748,21 @@ class RenameSessionBody(BaseModel):
 
 @app.patch("/sessions/{session_id}", response_model=SessionResponse)
 async def rename_session_endpoint(
-    session_id: str, body: RenameSessionBody
+    session_id: str, body: RenameSessionBody,
+    user: AuthUser = Depends(get_current_user),
 ) -> SessionResponse:
-    sess = sessions_mod.get_session(session_id)
-    if not sess:
-        raise HTTPException(status_code=404, detail="Session not found")
+    _check_chat_session_access(user, session_id)
     sessions_mod.rename_session(session_id, body.title)
     sess = sessions_mod.get_session(session_id)
     return SessionResponse(**sess)
 
 
 @app.delete("/sessions/{session_id}")
-async def delete_session_endpoint(session_id: str) -> dict[str, bool]:
-    sess = sessions_mod.get_session(session_id)
-    if not sess:
-        raise HTTPException(status_code=404, detail="Session not found")
+async def delete_session_endpoint(
+    session_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, bool]:
+    _check_chat_session_access(user, session_id)
     sessions_mod.delete_session(session_id)
     return {"deleted": True}
 
@@ -721,8 +794,12 @@ class ClassAnalyticsResponse(BaseModel):
 
 
 @app.get("/analytics/student/{moodle_user_id}", response_model=StudentAnalyticsResponse)
-async def get_student_analytics(moodle_user_id: int) -> StudentAnalyticsResponse:
+async def get_student_analytics(
+    moodle_user_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> StudentAnalyticsResponse:
     """Get learning analytics for a specific student."""
+    _check_student_access(user, moodle_user_id)
     assistant = get_assistant()
     sa = analyze_student(assistant.memory, moodle_user_id)
     return StudentAnalyticsResponse(
@@ -751,8 +828,12 @@ class TrajectoryResponse(BaseModel):
 
 
 @app.get("/analytics/student/{moodle_user_id}/trajectory", response_model=TrajectoryResponse)
-async def get_student_trajectory(moodle_user_id: int) -> TrajectoryResponse:
+async def get_student_trajectory(
+    moodle_user_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> TrajectoryResponse:
     """Get learning trajectory over time for a student."""
+    _check_student_access(user, moodle_user_id)
     assistant = get_assistant()
     traj = learning_trajectory(assistant.memory, moodle_user_id)
     return TrajectoryResponse(
@@ -787,8 +868,12 @@ class StudentRiskResponse(BaseModel):
 
 
 @app.get("/analytics/student/{moodle_user_id}/risk", response_model=StudentRiskResponse)
-async def get_student_risk(moodle_user_id: int) -> StudentRiskResponse:
+async def get_student_risk(
+    moodle_user_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> StudentRiskResponse:
     """Assess a student's risk level based on their learning activity patterns."""
+    _check_student_access(user, moodle_user_id)
     assistant = get_assistant()
     risk = assess_risk(assistant.memory, moodle_user_id)
     return StudentRiskResponse(
@@ -806,7 +891,7 @@ async def get_student_risk(moodle_user_id: int) -> StudentRiskResponse:
 @app.get("/analytics/class", response_model=ClassAnalyticsResponse)
 async def get_class_analytics(
     course_id: str | None = None,
-    user: AuthUser = Depends(get_current_user),
+    user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> ClassAnalyticsResponse:
     """Get class-wide learning analytics (common struggles, topic distribution)."""
     course_id = _resolve_course_scope(user, course_id)
@@ -849,12 +934,16 @@ class MaterialDeleteResponse(BaseModel):
     "/courses/{course_id}/materials",
     response_model=MaterialUploadResponse,
 )
-async def upload_material(course_id: str, file: UploadFile) -> MaterialUploadResponse:
+async def upload_material(
+    course_id: str, file: UploadFile,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> MaterialUploadResponse:
     """Upload a course document (PDF/PPTX) for RAG-powered Q&A.
 
     The document is parsed, chunked, and indexed into Lite-Mem so that
     student questions can reference course materials in their answers.
     """
+    course_id = _teacher_course_scope(user, course_id)
     if _rag is None:
         raise HTTPException(status_code=503, detail="RAG not initialized")
 
@@ -911,7 +1000,8 @@ class YoutubeMaterialRequest(BaseModel):
 
 @app.post("/courses/{course_id}/materials/youtube", response_model=MaterialUploadResponse)
 async def add_youtube_material(
-    course_id: str, req: YoutubeMaterialRequest
+    course_id: str, req: YoutubeMaterialRequest,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> MaterialUploadResponse:
     """Add a YouTube video as a course material.
 
@@ -919,6 +1009,7 @@ async def add_youtube_material(
     EvidenceCanvas renders the iframe inline so students can watch the
     video in the right panel when an AI answer cites this material.
     """
+    course_id = _teacher_course_scope(user, course_id)
     if _rag is None:
         raise HTTPException(status_code=503, detail="RAG not initialized")
 
@@ -965,11 +1056,15 @@ async def add_youtube_material(
 
 
 @app.get("/courses/{course_id}/materials/{filename}/markdown")
-async def get_material_markdown(course_id: str, filename: str) -> dict[str, str]:
+async def get_material_markdown(
+    course_id: str, filename: str,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, str]:
     """Return the cached markdown body for a previously-uploaded file.
 
     The frontend uses this to render the citation jump panel.
     """
+    course_id = _teacher_course_scope(user, course_id)
     md_path = Path("_materials_md") / course_id / f"{filename}.md"
     if not md_path.exists():
         raise HTTPException(status_code=404, detail="Markdown not found for this material")
@@ -981,8 +1076,12 @@ async def get_material_markdown(course_id: str, filename: str) -> dict[str, str]
 
 
 @app.get("/courses/{course_id}/materials", response_model=MaterialListResponse)
-async def list_materials(course_id: str) -> MaterialListResponse:
+async def list_materials(
+    course_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> MaterialListResponse:
     """List all indexed documents for a course."""
+    course_id = _teacher_course_scope(user, course_id)
     if _rag is None:
         raise HTTPException(status_code=503, detail="RAG not initialized")
     docs = _rag.list_documents(course_id)
@@ -993,8 +1092,12 @@ async def list_materials(course_id: str) -> MaterialListResponse:
     "/courses/{course_id}/materials/{filename}",
     response_model=MaterialDeleteResponse,
 )
-async def delete_material(course_id: str, filename: str) -> MaterialDeleteResponse:
+async def delete_material(
+    course_id: str, filename: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> MaterialDeleteResponse:
     """Remove a document's indexed chunks from the course."""
+    course_id = _teacher_course_scope(user, course_id)
     if _rag is None:
         raise HTTPException(status_code=503, detail="RAG not initialized")
     removed = _rag.remove_document(course_id, filename)
@@ -1034,12 +1137,16 @@ class QuizGenerateResponse(BaseModel):
     "/courses/{course_id}/quiz/generate",
     response_model=QuizGenerateResponse,
 )
-async def generate_quiz(course_id: str, req: QuizGenerateRequest) -> QuizGenerateResponse:
+async def generate_quiz(
+    course_id: str, req: QuizGenerateRequest,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> QuizGenerateResponse:
     """Generate multiple-choice quiz questions from course materials using AI.
 
     Retrieves relevant document chunks via RAG, then prompts the LLM
     to create quiz questions based on the content.
     """
+    course_id = _teacher_course_scope(user, course_id)
     if _quiz is None:
         raise HTTPException(
             status_code=503,
@@ -1129,11 +1236,15 @@ class SessionInfoResponse(BaseModel):
 
 
 @app.post("/quiz/sessions", response_model=CreateSessionResponse)
-async def create_quiz_session(req: CreateSessionRequest) -> CreateSessionResponse:
+async def create_quiz_session(
+    req: CreateSessionRequest,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> CreateSessionResponse:
     """Create a live quiz session from a set of questions.
 
     Teacher creates a session; students can join once it's activated.
     """
+    _teacher_course_scope(user, req.course_id)
     questions = [
         QuizSessionQuestion(
             question=q.question,
@@ -1161,8 +1272,12 @@ async def create_quiz_session(req: CreateSessionRequest) -> CreateSessionRespons
 
 
 @app.post("/quiz/sessions/{session_id}/activate", response_model=SessionInfoResponse)
-async def activate_quiz_session(session_id: str) -> SessionInfoResponse:
+async def activate_quiz_session(
+    session_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> SessionInfoResponse:
     """Activate a session so students can submit answers."""
+    _check_resource_course(user, _quiz_manager.get_session, session_id)
     try:
         session = _quiz_manager.activate_session(session_id)
     except KeyError:
@@ -1181,8 +1296,12 @@ async def activate_quiz_session(session_id: str) -> SessionInfoResponse:
 
 
 @app.post("/quiz/sessions/{session_id}/close", response_model=SessionInfoResponse)
-async def close_quiz_session(session_id: str) -> SessionInfoResponse:
+async def close_quiz_session(
+    session_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> SessionInfoResponse:
     """Close a session (no more answers accepted)."""
+    _check_resource_course(user, _quiz_manager.get_session, session_id)
     try:
         session = _quiz_manager.close_session(session_id)
     except KeyError:
@@ -1199,8 +1318,12 @@ async def close_quiz_session(session_id: str) -> SessionInfoResponse:
 
 
 @app.get("/quiz/sessions/{session_id}", response_model=SessionInfoResponse)
-async def get_quiz_session(session_id: str) -> SessionInfoResponse:
+async def get_quiz_session(
+    session_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> SessionInfoResponse:
     """Get session info (without revealing correct answers)."""
+    _check_resource_course(user, _quiz_manager.get_session, session_id)
     try:
         session = _quiz_manager.get_session(session_id)
     except KeyError:
@@ -1217,8 +1340,12 @@ async def get_quiz_session(session_id: str) -> SessionInfoResponse:
 
 
 @app.get("/quiz/sessions/{session_id}/questions")
-async def get_session_questions(session_id: str) -> list[dict]:
+async def get_session_questions(
+    session_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> list[dict]:
     """Get questions for students (without correct answers)."""
+    _check_resource_course(user, _quiz_manager.get_session, session_id)
     try:
         session = _quiz_manager.get_session(session_id)
     except KeyError:
@@ -1239,9 +1366,12 @@ async def get_session_questions(session_id: str) -> list[dict]:
 
 @app.post("/quiz/sessions/{session_id}/answer", response_model=SubmitAnswerResponse)
 async def submit_quiz_answer(
-    session_id: str, req: SubmitAnswerRequest
+    session_id: str, req: SubmitAnswerRequest,
+    user: AuthUser = Depends(get_current_user),
 ) -> SubmitAnswerResponse:
     """Submit a student's answer to a question."""
+    _check_student_access(user, req.student_id)
+    _check_resource_course(user, _quiz_manager.get_session, session_id)
     try:
         answer = _quiz_manager.submit_answer(
             session_id,
@@ -1264,11 +1394,15 @@ async def submit_quiz_answer(
 
 
 @app.get("/quiz/sessions/{session_id}/stats", response_model=SessionStatsResponse)
-async def get_quiz_stats(session_id: str) -> SessionStatsResponse:
+async def get_quiz_stats(
+    session_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> SessionStatsResponse:
     """Get real-time statistics for a quiz session.
 
     Returns per-question correct rate and option distribution.
     """
+    _check_resource_course(user, _quiz_manager.get_session, session_id)
     try:
         stats = _quiz_manager.get_stats(session_id)
     except KeyError:
@@ -1294,8 +1428,12 @@ async def get_quiz_stats(session_id: str) -> SessionStatsResponse:
 
 
 @app.get("/quiz/sessions")
-async def list_quiz_sessions(course_id: str | None = None) -> list[SessionInfoResponse]:
+async def list_quiz_sessions(
+    course_id: str | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> list[SessionInfoResponse]:
     """List quiz sessions, optionally filtered by course."""
+    course_id = _teacher_course_scope(user, course_id)
     sessions = _quiz_manager.list_sessions(course_id)
     return [
         SessionInfoResponse(
@@ -1377,8 +1515,12 @@ class DanmakuResponse(BaseModel):
 
 
 @app.post("/interaction/polls", response_model=PollResponse)
-async def create_poll(req: CreatePollRequest) -> PollResponse:
+async def create_poll(
+    req: CreatePollRequest,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> PollResponse:
     """Create a new classroom poll."""
+    _teacher_course_scope(user, req.course_id)
     try:
         poll = _interaction.create_poll(
             req.course_id, teacher_id=0, title=req.title, options=req.options
@@ -1395,8 +1537,12 @@ async def create_poll(req: CreatePollRequest) -> PollResponse:
 
 
 @app.post("/interaction/polls/{poll_id}/activate", response_model=PollResponse)
-async def activate_poll(poll_id: str) -> PollResponse:
+async def activate_poll(
+    poll_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> PollResponse:
     """Open a poll for voting."""
+    _check_resource_course(user, _interaction.get_poll, poll_id)
     try:
         poll = _interaction.activate_poll(poll_id)
     except KeyError:
@@ -1413,8 +1559,12 @@ async def activate_poll(poll_id: str) -> PollResponse:
 
 
 @app.post("/interaction/polls/{poll_id}/close", response_model=PollResponse)
-async def close_poll(poll_id: str) -> PollResponse:
+async def close_poll(
+    poll_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> PollResponse:
     """Close a poll (no more votes accepted)."""
+    _check_resource_course(user, _interaction.get_poll, poll_id)
     try:
         poll = _interaction.close_poll(poll_id)
     except KeyError:
@@ -1429,8 +1579,13 @@ async def close_poll(poll_id: str) -> PollResponse:
 
 
 @app.post("/interaction/polls/{poll_id}/vote")
-async def vote_poll(poll_id: str, req: VoteRequest) -> dict[str, str]:
+async def vote_poll(
+    poll_id: str, req: VoteRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, str]:
     """Cast or change a vote on a poll."""
+    _check_student_access(user, req.student_id)
+    _check_resource_course(user, _interaction.get_poll, poll_id)
     try:
         _interaction.vote(poll_id, student_id=req.student_id, option_idx=req.option_idx)
     except KeyError:
@@ -1441,8 +1596,12 @@ async def vote_poll(poll_id: str, req: VoteRequest) -> dict[str, str]:
 
 
 @app.get("/interaction/polls/{poll_id}/stats", response_model=PollStatsResponse)
-async def poll_stats(poll_id: str) -> PollStatsResponse:
+async def poll_stats(
+    poll_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> PollStatsResponse:
     """Get real-time poll results."""
+    _check_resource_course(user, _interaction.get_poll, poll_id)
     try:
         stats = _interaction.poll_stats(poll_id)
     except KeyError:
@@ -1458,8 +1617,12 @@ async def poll_stats(poll_id: str) -> PollStatsResponse:
 
 
 @app.get("/interaction/polls")
-async def list_polls(course_id: str | None = None) -> list[PollResponse]:
+async def list_polls(
+    course_id: str | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> list[PollResponse]:
     """List polls, optionally filtered by course."""
+    course_id = _teacher_course_scope(user, course_id)
     polls = _interaction.list_polls(course_id)
     return [
         PollResponse(
@@ -1477,8 +1640,13 @@ async def list_polls(course_id: str | None = None) -> list[PollResponse]:
 
 
 @app.post("/interaction/questions", response_model=AnonQuestionResponse)
-async def post_question(req: PostQuestionRequest) -> AnonQuestionResponse:
+async def post_question(
+    req: PostQuestionRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> AnonQuestionResponse:
     """Post an anonymous question (student identity hidden in response)."""
+    _check_student_access(user, req.student_id)
+    _teacher_course_scope(user, req.course_id)
     try:
         q = _interaction.post_question(
             req.course_id, text=req.text, student_id=req.student_id
@@ -1495,8 +1663,13 @@ async def post_question(req: PostQuestionRequest) -> AnonQuestionResponse:
 
 
 @app.post("/interaction/questions/{question_id}/upvote")
-async def upvote_question(question_id: str, req: UpvoteRequest) -> dict[str, int]:
+async def upvote_question(
+    question_id: str, req: UpvoteRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, int]:
     """Upvote an anonymous question."""
+    _check_student_access(user, req.student_id)
+    _check_resource_course(user, _interaction._get_question, question_id)
     try:
         count = _interaction.upvote_question(question_id, student_id=req.student_id)
     except KeyError:
@@ -1505,8 +1678,12 @@ async def upvote_question(question_id: str, req: UpvoteRequest) -> dict[str, int
 
 
 @app.post("/interaction/questions/{question_id}/resolve", response_model=AnonQuestionResponse)
-async def resolve_question(question_id: str) -> AnonQuestionResponse:
+async def resolve_question(
+    question_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> AnonQuestionResponse:
     """Mark a question as resolved (teacher action)."""
+    _check_resource_course(user, _interaction._get_question, question_id)
     try:
         q = _interaction.resolve_question(question_id)
     except KeyError:
@@ -1522,9 +1699,11 @@ async def resolve_question(question_id: str) -> AnonQuestionResponse:
 
 @app.get("/interaction/questions")
 async def list_questions(
-    course_id: str, include_resolved: bool = True
+    course_id: str, include_resolved: bool = True,
+    user: AuthUser = Depends(get_current_user),
 ) -> list[AnonQuestionResponse]:
     """List anonymous questions for a course, sorted by upvotes."""
+    course_id = _teacher_course_scope(user, course_id)
     questions = _interaction.list_questions(course_id, include_resolved=include_resolved)
     return [
         AnonQuestionResponse(
@@ -1542,8 +1721,13 @@ async def list_questions(
 
 
 @app.post("/interaction/danmaku", response_model=DanmakuResponse)
-async def post_danmaku(req: PostDanmakuRequest) -> DanmakuResponse:
+async def post_danmaku(
+    req: PostDanmakuRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> DanmakuResponse:
     """Post a danmaku (text wall) message."""
+    _check_student_access(user, req.student_id)
+    _teacher_course_scope(user, req.course_id)
     try:
         msg = _interaction.post_danmaku(
             req.course_id, text=req.text, student_id=req.student_id
@@ -1559,9 +1743,11 @@ async def post_danmaku(req: PostDanmakuRequest) -> DanmakuResponse:
 
 @app.get("/interaction/danmaku")
 async def get_danmaku(
-    course_id: str, limit: int = 50, since: float | None = None
+    course_id: str, limit: int = 50, since: float | None = None,
+    user: AuthUser = Depends(get_current_user),
 ) -> list[DanmakuResponse]:
     """Get recent danmaku messages for a course."""
+    course_id = _teacher_course_scope(user, course_id)
     messages = _interaction.get_danmaku(course_id, limit=limit, since=since)
     return [
         DanmakuResponse(
@@ -1619,12 +1805,14 @@ async def upload_lecture(
     file: UploadFile,
     title: str = Form("Untitled Lecture"),
     language: str | None = Form(None),
+    user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> LectureUploadResponse:
     """Upload and process a lecture recording.
 
     Accepts audio files (mp3, wav, m4a, etc.). The file is transcribed,
     summarized, and indexed into the course RAG for student search.
     """
+    course_id = _teacher_course_scope(user, course_id)
     if _lectures is None:
         raise HTTPException(status_code=503, detail="Lecture manager not initialized")
 
@@ -1671,8 +1859,12 @@ async def upload_lecture(
 
 
 @app.get("/lectures/{course_id}", response_model=list[LectureInfoResponse])
-async def list_lectures(course_id: str) -> list[LectureInfoResponse]:
+async def list_lectures(
+    course_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> list[LectureInfoResponse]:
     """List all lectures for a course."""
+    course_id = _teacher_course_scope(user, course_id)
     if _lectures is None:
         raise HTTPException(status_code=503, detail="Lecture manager not initialized")
 
@@ -1698,8 +1890,10 @@ async def list_lectures(course_id: str) -> list[LectureInfoResponse]:
 @app.get("/lectures/{course_id}/{lecture_id}/transcript")
 async def get_lecture_transcript(
     course_id: str, lecture_id: str,
+    user: AuthUser = Depends(get_current_user),
 ) -> LectureTranscriptResponse:
     """Get the full transcript of a lecture."""
+    course_id = _teacher_course_scope(user, course_id)
     if _lectures is None:
         raise HTTPException(status_code=503, detail="Lecture manager not initialized")
 
@@ -1720,8 +1914,12 @@ async def get_lecture_transcript(
 
 
 @app.delete("/lectures/{course_id}/{lecture_id}")
-async def delete_lecture(course_id: str, lecture_id: str) -> dict[str, bool]:
+async def delete_lecture(
+    course_id: str, lecture_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> dict[str, bool]:
     """Delete a lecture and its indexed content."""
+    course_id = _teacher_course_scope(user, course_id)
     if _lectures is None:
         raise HTTPException(status_code=503, detail="Lecture manager not initialized")
 
@@ -1745,7 +1943,9 @@ class DemoResetResponse(BaseModel):
 
 
 @app.post("/demo/reset", response_model=DemoResetResponse)
-async def demo_reset() -> DemoResetResponse:
+async def demo_reset(
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> DemoResetResponse:
     """Reset the database and seed demo data.
 
     This deletes all existing data and populates the database with
@@ -1842,7 +2042,9 @@ class SemesterDemoResponse(BaseModel):
 
 
 @app.post("/demo/semester", response_model=SemesterDemoResponse)
-async def demo_semester() -> SemesterDemoResponse:
+async def demo_semester(
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> SemesterDemoResponse:
     """Seed a semester-long demo for student 2001 with time-spread data.
 
     Creates 18 weeks of learning interactions with backdated timestamps
@@ -1920,8 +2122,12 @@ class ImportResponse(BaseModel):
 
 
 @app.get("/export/student/{moodle_user_id}", response_model=ExportResponse)
-async def export_student(moodle_user_id: int) -> ExportResponse:
+async def export_student(
+    moodle_user_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> ExportResponse:
     """Export a student's memory as a portable MemoryBundle JSON."""
+    _check_student_access(user, moodle_user_id)
     assistant = get_assistant()
     mem = assistant.memory
     user_id = f"moodle:{moodle_user_id}"
@@ -1935,15 +2141,21 @@ async def export_student(moodle_user_id: int) -> ExportResponse:
 
 
 @app.get("/export/all", response_model=ExportAllResponse)
-async def export_all() -> ExportAllResponse:
+async def export_all(
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> ExportAllResponse:
     """Export all students' memories as portable MemoryBundle JSONs."""
     assistant = get_assistant()
     mem = assistant.memory
 
     bundles: list[dict[str, Any]] = []
     total_records = 0
+    course_id = _teacher_course_scope(user, None)
+    enrolled = _students_in_course(course_id) if course_id else None
     for uid in mem.list_users():
         if not uid.startswith("moodle:"):
+            continue
+        if enrolled is not None and int(uid.removeprefix("moodle:")) not in enrolled:
             continue
         bundle = mem.export(uid)
         bundles.append(bundle.to_dict())
@@ -1957,7 +2169,10 @@ async def export_all() -> ExportAllResponse:
 
 
 @app.post("/import", response_model=ImportResponse)
-async def import_memory(file: UploadFile) -> ImportResponse:
+async def import_memory(
+    file: UploadFile,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> ImportResponse:
     """Import a student's memory from a MemoryBundle JSON file.
 
     Accepts a JSON file produced by the export endpoint.
@@ -1973,6 +2188,10 @@ async def import_memory(file: UploadFile) -> ImportResponse:
     except (json.JSONDecodeError, KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Invalid bundle JSON: {e}")
 
+    if user.role == "teacher" and user.username in TEACHER_COURSE_MAP:
+        if not bundle.user_id.startswith("moodle:") or not bundle.user_id[7:].isdigit():
+            raise HTTPException(status_code=403, detail="Bundle must belong to a course student")
+        _check_student_access(user, int(bundle.user_id[7:]))
     count = mem.import_bundle(bundle)
     return ImportResponse(
         status="imported",
@@ -2046,8 +2265,10 @@ def _att_session_resp(s: Any) -> AttendanceSessionResponse:
 @app.post("/attendance/sessions", response_model=AttendanceSessionResponse)
 async def create_attendance_session(
     req: CreateAttendanceSessionRequest,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> AttendanceSessionResponse:
     """Create and open an attendance session."""
+    _teacher_course_scope(user, req.course_id)
     gps = None
     if req.latitude is not None and req.longitude is not None:
         gps = GPSLocation(latitude=req.latitude, longitude=req.longitude)
@@ -2063,8 +2284,12 @@ async def create_attendance_session(
 
 
 @app.post("/attendance/sessions/{session_id}/close", response_model=AttendanceSessionResponse)
-async def close_attendance_session(session_id: str) -> AttendanceSessionResponse:
+async def close_attendance_session(
+    session_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> AttendanceSessionResponse:
     """Close an attendance session."""
+    _check_resource_course(user, _attendance.get_session, session_id)
     try:
         session = _attendance.close_session(session_id)
     except KeyError:
@@ -2075,8 +2300,12 @@ async def close_attendance_session(session_id: str) -> AttendanceSessionResponse
 
 
 @app.get("/attendance/sessions/{session_id}", response_model=AttendanceSessionResponse)
-async def get_attendance_session(session_id: str) -> AttendanceSessionResponse:
+async def get_attendance_session(
+    session_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> AttendanceSessionResponse:
     """Get session details."""
+    _check_resource_course(user, _attendance.get_session, session_id)
     try:
         session = _attendance.get_session(session_id)
     except KeyError:
@@ -2085,15 +2314,24 @@ async def get_attendance_session(session_id: str) -> AttendanceSessionResponse:
 
 
 @app.get("/attendance/sessions")
-async def list_attendance_sessions(course_id: str | None = None) -> list[AttendanceSessionResponse]:
+async def list_attendance_sessions(
+    course_id: str | None = None,
+    user: AuthUser = Depends(get_current_user),
+) -> list[AttendanceSessionResponse]:
     """List attendance sessions."""
+    course_id = _teacher_course_scope(user, course_id)
     sessions = _attendance.list_sessions(course_id)
     return [_att_session_resp(s) for s in sessions]
 
 
 @app.post("/attendance/sessions/{session_id}/checkin", response_model=CheckinResponse)
-async def attendance_checkin(session_id: str, req: CheckinRequest) -> CheckinResponse:
+async def attendance_checkin(
+    session_id: str, req: CheckinRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> CheckinResponse:
     """Student checks in to an attendance session."""
+    _check_student_access(user, req.student_id)
+    _check_resource_course(user, _attendance.get_session, session_id)
     gps = None
     if req.latitude is not None and req.longitude is not None:
         gps = GPSLocation(latitude=req.latitude, longitude=req.longitude)
@@ -2117,8 +2355,12 @@ async def attendance_checkin(session_id: str, req: CheckinRequest) -> CheckinRes
 
 
 @app.get("/attendance/sessions/{session_id}/records")
-async def get_attendance_records(session_id: str) -> list[CheckinResponse]:
+async def get_attendance_records(
+    session_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> list[CheckinResponse]:
     """Get all check-in records for a session."""
+    _check_resource_course(user, _attendance.get_session, session_id)
     try:
         records = _attendance.get_records(session_id)
     except KeyError:
@@ -2135,8 +2377,12 @@ async def get_attendance_records(session_id: str) -> list[CheckinResponse]:
 
 
 @app.get("/attendance/sessions/{session_id}/stats", response_model=AttendanceStatsResponse)
-async def get_attendance_stats(session_id: str) -> AttendanceStatsResponse:
+async def get_attendance_stats(
+    session_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> AttendanceStatsResponse:
     """Get attendance statistics for a session."""
+    _check_resource_course(user, _attendance.get_session, session_id)
     try:
         stats = _attendance.session_stats(session_id)
     except KeyError:
@@ -2154,20 +2400,28 @@ async def get_attendance_stats(session_id: str) -> AttendanceStatsResponse:
 
 @app.get("/attendance/student/{student_id}/history")
 async def get_student_attendance_history(
-    student_id: int, course_id: str | None = None
+    student_id: int, course_id: str | None = None,
+    user: AuthUser = Depends(get_current_user),
 ) -> list[dict]:
     """Get a student's attendance history."""
+    _check_student_access(user, student_id)
+    course_id = _teacher_course_scope(user, course_id)
     return _attendance.student_history(student_id, course_id)
 
 
 @app.post("/attendance/checkin-by-code", response_model=CheckinResponse)
-async def checkin_by_code(req: CheckinRequest) -> CheckinResponse:
+async def checkin_by_code(
+    req: CheckinRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> CheckinResponse:
     """Student checks in using just a code (finds the matching session)."""
+    _check_student_access(user, req.student_id)
     if not req.code:
         raise HTTPException(status_code=400, detail="Check-in code is required")
     session = _attendance.find_session_by_code(req.code)
     if not session:
         raise HTTPException(status_code=404, detail="No open session with this code")
+    _teacher_course_scope(user, session.course_id)
     gps = None
     if req.latitude is not None and req.longitude is not None:
         gps = GPSLocation(latitude=req.latitude, longitude=req.longitude)
@@ -2261,16 +2515,20 @@ class DeleteScoreRequest(BaseModel):
 
 
 @app.get("/grades/courses")
-async def list_grade_courses() -> list[str]:
+async def list_grade_courses(user: AuthUser = Depends(get_current_user)) -> list[str]:
     """List all courses with grade categories configured."""
-    return _grades.list_courses()
+    courses = _grades.list_courses()
+    owned = _teacher_course_scope(user, None)
+    return [c for c in courses if owned is None or c == owned]
 
 
 @app.post("/grades/{course_id}/categories", response_model=list[GradeCategoryResponse])
 async def set_grade_categories(
-    course_id: str, req: SetCategoriesRequest
+    course_id: str, req: SetCategoriesRequest,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> list[GradeCategoryResponse]:
     """Set grade categories and weights for a course."""
+    course_id = _teacher_course_scope(user, course_id)
     try:
         cats = _grades.set_categories(
             course_id,
@@ -2282,8 +2540,12 @@ async def set_grade_categories(
 
 
 @app.get("/grades/{course_id}/categories", response_model=list[GradeCategoryResponse])
-async def get_grade_categories(course_id: str) -> list[GradeCategoryResponse]:
+async def get_grade_categories(
+    course_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> list[GradeCategoryResponse]:
     """Get grade categories for a course."""
+    course_id = _teacher_course_scope(user, course_id)
     try:
         cats = _grades.get_categories(course_id)
     except KeyError as e:
@@ -2292,8 +2554,12 @@ async def get_grade_categories(course_id: str) -> list[GradeCategoryResponse]:
 
 
 @app.post("/grades/{course_id}/scores", response_model=ScoreResponse)
-async def record_score(course_id: str, req: RecordScoreRequest) -> ScoreResponse:
+async def record_score(
+    course_id: str, req: RecordScoreRequest,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> ScoreResponse:
     """Record a score for a student."""
+    course_id = _teacher_course_scope(user, course_id)
     try:
         rec = _grades.record_score(
             course_id,
@@ -2323,8 +2589,14 @@ async def get_scores(
     course_id: str,
     student_id: int | None = None,
     category: str | None = None,
+    user: AuthUser = Depends(get_current_user),
 ) -> list[ScoreResponse]:
     """Get score records, optionally filtered."""
+    course_id = _teacher_course_scope(user, course_id)
+    if user.role == "student":
+        if student_id is None:
+            student_id = user.moodle_user_id
+        _check_student_access(user, student_id)
     records = _grades.get_scores(course_id, student_id=student_id, category=category)
     return [
         ScoreResponse(
@@ -2341,8 +2613,12 @@ async def get_scores(
 
 
 @app.delete("/grades/{course_id}/scores")
-async def delete_score(course_id: str, req: DeleteScoreRequest) -> dict[str, bool]:
+async def delete_score(
+    course_id: str, req: DeleteScoreRequest,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> dict[str, bool]:
     """Delete a specific score record."""
+    course_id = _teacher_course_scope(user, course_id)
     deleted = _grades.delete_score(
         course_id,
         student_id=req.student_id,
@@ -2354,9 +2630,12 @@ async def delete_score(course_id: str, req: DeleteScoreRequest) -> dict[str, boo
 
 @app.get("/grades/{course_id}/student/{student_id}", response_model=StudentGradeResponse)
 async def get_student_grades(
-    course_id: str, student_id: int
+    course_id: str, student_id: int,
+    user: AuthUser = Depends(get_current_user),
 ) -> StudentGradeResponse:
     """Get weighted grade summary for a student."""
+    _check_student_access(user, student_id)
+    course_id = _teacher_course_scope(user, course_id)
     try:
         summary = _grades.student_summary_with_rank(course_id, student_id)
     except KeyError as e:
@@ -2381,8 +2660,12 @@ async def get_student_grades(
 
 
 @app.get("/grades/{course_id}/overview", response_model=ClassOverviewResponse)
-async def get_class_overview(course_id: str) -> ClassOverviewResponse:
+async def get_class_overview(
+    course_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> ClassOverviewResponse:
     """Get class-level grade statistics and rankings."""
+    course_id = _teacher_course_scope(user, course_id)
     try:
         overview = _grades.class_overview(course_id)
     except KeyError as e:
@@ -2419,8 +2702,12 @@ def _get_report_generator() -> ReportGenerator:
 
 
 @app.get("/reports/weekly/{course_id}")
-async def weekly_report(course_id: str):
+async def weekly_report(
+    course_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+):
     """Generate a weekly teaching analytics report for a course."""
+    course_id = _teacher_course_scope(user, course_id)
     gen = _get_report_generator()
     report = gen.weekly_report(course_id)
     return {
@@ -2459,8 +2746,12 @@ async def weekly_report(course_id: str):
 
 
 @app.get("/reports/correlation/{course_id}")
-async def ai_grade_correlation(course_id: str):
+async def ai_grade_correlation(
+    course_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+):
     """Analyze correlation between AI engagement and grades."""
+    course_id = _teacher_course_scope(user, course_id)
     gen = _get_report_generator()
     result = gen.ai_grade_correlation(course_id)
     return {
@@ -2482,8 +2773,12 @@ async def ai_grade_correlation(course_id: str):
 
 
 @app.get("/reports/export/excel/{course_id}")
-async def export_report_excel(course_id: str):
+async def export_report_excel(
+    course_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+):
     """Export the weekly report as an Excel file (.xlsx)."""
+    course_id = _teacher_course_scope(user, course_id)
     import io
 
     from fastapi.responses import Response
@@ -2622,25 +2917,31 @@ async def index() -> FileResponse:
 
 
 @app.get("/student")
-async def student_page() -> FileResponse:
+async def student_page(user: AuthUser = Depends(get_current_user)) -> FileResponse:
     """Serve the student learning dashboard."""
     return FileResponse(_STATIC_DIR / "student.html")
 
 
 @app.get("/teacher")
-async def teacher_dashboard() -> FileResponse:
+async def teacher_dashboard(
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> FileResponse:
     """Serve the teacher analytics dashboard."""
     return FileResponse(_STATIC_DIR / "teacher.html")
 
 
 @app.get("/demo")
-async def demo_walkthrough() -> FileResponse:
+async def demo_walkthrough(
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> FileResponse:
     """Serve the demo walkthrough page."""
     return FileResponse(_STATIC_DIR / "demo.html")
 
 
 @app.get("/semester")
-async def semester_page() -> FileResponse:
+async def semester_page(
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> FileResponse:
     """Serve the semester demo timeline page."""
     return FileResponse(_STATIC_DIR / "semester.html")
 
@@ -2649,12 +2950,16 @@ async def semester_page() -> FileResponse:
 
 
 @app.get("/classroom/{course_id}/snapshot")
-async def classroom_snapshot(course_id: str, expected_students: int = 30) -> dict:
+async def classroom_snapshot(
+    course_id: str, expected_students: int = 30,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> dict:
     """Get real-time classroom snapshot with alerts and suggestions.
 
     Aggregates live data from quiz, polls, anonymous questions, danmaku,
     and attendance to produce actionable insights for the teacher.
     """
+    course_id = _teacher_course_scope(user, course_id)
     _classroom_assistant._expected_students = expected_students
     snap = _classroom_assistant.get_snapshot(course_id)
     return {
@@ -2764,8 +3069,12 @@ def _booking_resp(b: Any) -> BookingResponse:
 
 
 @app.post("/office-hours/slots", response_model=SlotResponse)
-async def create_office_hour_slot(req: CreateSlotRequest) -> SlotResponse:
+async def create_office_hour_slot(
+    req: CreateSlotRequest,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> SlotResponse:
     """Create an available office hour time slot."""
+    _teacher_course_scope(user, req.course_id)
     try:
         slot = _office_hours.create_slot(
             req.course_id,
@@ -2783,16 +3092,22 @@ async def create_office_hour_slot(req: CreateSlotRequest) -> SlotResponse:
 async def list_office_hour_slots(
     course_id: str | None = None,
     status: str | None = None,
+    user: AuthUser = Depends(get_current_user),
 ) -> list[SlotResponse]:
     """List office hour slots with optional filters."""
+    course_id = _teacher_course_scope(user, course_id)
     slot_status = SlotStatus(status) if status else None
     slots = _office_hours.list_slots(course_id, status=slot_status)
     return [_slot_resp(s) for s in slots]
 
 
 @app.get("/office-hours/slots/{slot_id}", response_model=SlotResponse)
-async def get_office_hour_slot(slot_id: str) -> SlotResponse:
+async def get_office_hour_slot(
+    slot_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> SlotResponse:
     """Get slot details."""
+    _check_resource_course(user, _office_hours.get_slot, slot_id)
     try:
         slot = _office_hours.get_slot(slot_id)
     except KeyError:
@@ -2801,8 +3116,12 @@ async def get_office_hour_slot(slot_id: str) -> SlotResponse:
 
 
 @app.post("/office-hours/slots/{slot_id}/cancel", response_model=SlotResponse)
-async def cancel_office_hour_slot(slot_id: str) -> SlotResponse:
+async def cancel_office_hour_slot(
+    slot_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> SlotResponse:
     """Cancel an available slot."""
+    _check_resource_course(user, _office_hours.get_slot, slot_id)
     try:
         slot = _office_hours.cancel_slot(slot_id)
     except KeyError:
@@ -2813,8 +3132,13 @@ async def cancel_office_hour_slot(slot_id: str) -> SlotResponse:
 
 
 @app.post("/office-hours/slots/{slot_id}/book", response_model=BookingResponse)
-async def book_office_hour_slot(slot_id: str, req: BookSlotRequest) -> BookingResponse:
+async def book_office_hour_slot(
+    slot_id: str, req: BookSlotRequest,
+    user: AuthUser = Depends(get_current_user),
+) -> BookingResponse:
     """Book an available slot for a student."""
+    _check_student_access(user, req.student_id)
+    _check_resource_course(user, _office_hours.get_slot, slot_id)
     try:
         booking = _office_hours.book_slot(
             slot_id, student_id=req.student_id, topic=req.topic,
@@ -2832,14 +3156,20 @@ async def list_office_hour_bookings(
     student_id: str | None = None,
     teacher_id: str | None = None,
     status: str | None = None,
+    user: AuthUser = Depends(get_current_user),
 ) -> list[BookingResponse]:
     """List bookings with optional filters."""
+    course_id = _teacher_course_scope(user, course_id)
     bk_status = BookingStatus(status) if status else None
     try:
         sid = int(student_id) if student_id else None
         tid = int(teacher_id) if teacher_id else None
     except ValueError:
         raise HTTPException(status_code=400, detail="student_id and teacher_id must be numeric")
+    if user.role == "student":
+        if sid is None:
+            sid = user.moodle_user_id
+        _check_student_access(user, sid)
     bookings = _office_hours.list_bookings(
         course_id=course_id,
         student_id=sid,
@@ -2850,8 +3180,12 @@ async def list_office_hour_bookings(
 
 
 @app.get("/office-hours/bookings/{booking_id}", response_model=BookingResponse)
-async def get_office_hour_booking(booking_id: str) -> BookingResponse:
+async def get_office_hour_booking(
+    booking_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> BookingResponse:
     """Get booking details."""
+    _check_booking_access(user, booking_id)
     try:
         booking = _office_hours.get_booking(booking_id)
     except KeyError:
@@ -2860,8 +3194,12 @@ async def get_office_hour_booking(booking_id: str) -> BookingResponse:
 
 
 @app.post("/office-hours/bookings/{booking_id}/start", response_model=BookingResponse)
-async def start_office_hour_meeting(booking_id: str) -> BookingResponse:
+async def start_office_hour_meeting(
+    booking_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> BookingResponse:
     """Mark a booking as in-progress (meeting started)."""
+    _check_booking_access(user, booking_id)
     try:
         booking = _office_hours.start_meeting(booking_id)
     except KeyError:
@@ -2874,8 +3212,10 @@ async def start_office_hour_meeting(booking_id: str) -> BookingResponse:
 @app.post("/office-hours/bookings/{booking_id}/resolve", response_model=BookingResponse)
 async def resolve_office_hour_booking(
     booking_id: str, req: ResolveBookingRequest,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> BookingResponse:
     """Complete a booking with resolution notes (updates student memory)."""
+    _check_booking_access(user, booking_id)
     try:
         booking = _office_hours.resolve_booking(booking_id, notes=req.notes)
     except KeyError:
@@ -2886,8 +3226,12 @@ async def resolve_office_hour_booking(
 
 
 @app.post("/office-hours/bookings/{booking_id}/cancel", response_model=BookingResponse)
-async def cancel_office_hour_booking(booking_id: str) -> BookingResponse:
+async def cancel_office_hour_booking(
+    booking_id: str,
+    user: AuthUser = Depends(get_current_user),
+) -> BookingResponse:
     """Cancel a booking, returning the slot to available."""
+    _check_booking_access(user, booking_id)
     try:
         booking = _office_hours.cancel_booking(booking_id)
     except KeyError:
@@ -2898,8 +3242,12 @@ async def cancel_office_hour_booking(booking_id: str) -> BookingResponse:
 
 
 @app.post("/office-hours/bookings/{booking_id}/no-show", response_model=BookingResponse)
-async def mark_office_hour_no_show(booking_id: str) -> BookingResponse:
+async def mark_office_hour_no_show(
+    booking_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> BookingResponse:
     """Mark a student as no-show."""
+    _check_booking_access(user, booking_id)
     try:
         booking = _office_hours.mark_no_show(booking_id)
     except KeyError:
@@ -2908,8 +3256,12 @@ async def mark_office_hour_no_show(booking_id: str) -> BookingResponse:
 
 
 @app.get("/office-hours/students/{student_id}/summary")
-async def get_office_hour_student_summary(student_id: int) -> dict[str, Any]:
+async def get_office_hour_student_summary(
+    student_id: int,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, Any]:
     """Get AI-generated learning summary for a student (pre-meeting brief)."""
+    _check_student_access(user, student_id)
     summary = _office_hours.get_student_summary(student_id)
     return {
         "student_id": summary.student_id,
