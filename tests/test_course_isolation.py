@@ -65,9 +65,9 @@ class TestTeacherScope:
             r = await c.get("/teacher/students", params={"course_id": "mk201"}, headers=h)
             assert r.status_code == 403
             r = await c.get("/teacher/students", params={"course_id": "ds101"}, headers=h)
-            assert r.status_code == 200
+            assert r.status_code == 403
             assert (await c.get("/teacher/students/1002/memories", headers=h)).status_code == 403
-            assert (await c.get("/teacher/students/1001/memories", headers=h)).status_code == 200
+            assert (await c.get("/teacher/students/1001/memories", headers=h)).status_code == 403
 
     async def test_admin_unrestricted(self, auth_headers) -> None:
         mem = Memory()

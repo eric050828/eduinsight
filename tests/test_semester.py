@@ -46,7 +46,7 @@ class TestSemesterEndpoint:
     """Tests for POST /demo/semester."""
 
     @pytest.fixture
-    async def client(self, tmp_path):
+    async def client(self, tmp_path, auth_headers):
         import eduinsight.app as app_module
 
         db_path = str(tmp_path / "semester_test.db")
@@ -57,7 +57,7 @@ class TestSemesterEndpoint:
         app_module.settings.memory_db_path = db_path
         try:
             transport = ASGITransport(app=app)
-            async with AsyncClient(transport=transport, base_url="http://test") as c:
+            async with AsyncClient(transport=transport, base_url="http://test", headers=auth_headers()) as c:
                 yield c
         finally:
             app_module.settings.memory_db_path = original_path

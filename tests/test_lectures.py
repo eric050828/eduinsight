@@ -226,7 +226,7 @@ class TestLectureManager:
 
 class TestLectureAPI:
     @pytest.fixture
-    def client(self, mem):
+    def client(self, mem, auth_headers, monkeypatch):
         """Create a test client with lecture manager initialized."""
         from fastapi.testclient import TestClient
 
@@ -234,13 +234,16 @@ class TestLectureAPI:
 
         app_mod._memory = mem
         app_mod._lectures = LectureManager(mem)
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setattr(app_mod._lectures, "_generate_summary", AsyncMock(return_value=""))
         app_mod._lectures.set_transcriber(StubTranscriber(
             text="Test lecture about algorithms and data structures.",
             language="zh",
         ))
         app_mod._rag = CourseRAG(mem)
 
-        client = TestClient(app_mod.app, raise_server_exceptions=False)
+        client = TestClient(app_mod.app, raise_server_exceptions=False, headers=auth_headers())
         yield client
 
         app_mod._memory = None

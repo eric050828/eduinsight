@@ -118,6 +118,7 @@ class TestCheckin:
 
     def test_late_checkin(self, mgr: AttendanceManager):
         s = mgr.create_session("CS101", teacher_id=1001, late_threshold_sec=0)
+        s.created_at -= 1  # Ensure elapsed time exceeds the threshold on Windows.
         # threshold=0 means any delay is late
         rec = mgr.checkin(s.session_id, student_id=2001)
         assert rec.status == CheckinStatus.LATE
@@ -199,6 +200,7 @@ class TestStats:
 
     def test_stats_with_checkins(self, mgr: AttendanceManager):
         s = mgr.create_session("CS101", teacher_id=1001, late_threshold_sec=0)
+        s.created_at -= 1
         # First student: will be late (threshold=0)
         mgr.checkin(s.session_id, student_id=2001)
         mgr.checkin(s.session_id, student_id=2002)
@@ -225,6 +227,7 @@ class TestStudentHistory:
     def test_history_across_sessions(self, mgr: AttendanceManager):
         s1 = mgr.create_session("CS101", teacher_id=1001, title="Week 1")
         s2 = mgr.create_session("CS101", teacher_id=1001, title="Week 2")
+        s1.created_at = s2.created_at - 1
         mgr.checkin(s1.session_id, student_id=2001)
         mgr.checkin(s2.session_id, student_id=2001)
         history = mgr.student_history(2001)
@@ -246,12 +249,12 @@ class TestStudentHistory:
 
 
 @pytest.fixture
-def client():
+def client(auth_headers):
     from fastapi.testclient import TestClient
 
     from eduinsight.app import app
 
-    with TestClient(app) as c:
+    with TestClient(app, headers=auth_headers()) as c:
         yield c
 
 

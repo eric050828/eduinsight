@@ -18,14 +18,14 @@ from eduinsight.assistant import LearningAssistant
 from eduinsight.demo_data import DEMO_STUDENTS
 
 
-async def _make_client(mem: Memory) -> AsyncClient:
+async def _make_client(mem: Memory, auth_headers) -> AsyncClient:
     """Create a test client with a pre-configured in-memory assistant."""
     import eduinsight.app as app_module
 
     app_module._memory = mem
     app_module._assistant = LearningAssistant(mem)
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
+    return AsyncClient(transport=transport, base_url="http://test", headers=auth_headers())
 
 
 def _seed_demo(mem: Memory) -> None:
@@ -174,11 +174,11 @@ class TestAnalyzeClass:
 
 
 class TestStudentAnalyticsEndpoint:
-    async def test_student_analytics(self) -> None:
+    async def test_student_analytics(self, auth_headers) -> None:
         mem = Memory()
         _seed_demo(mem)
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/analytics/student/1001")
             assert resp.status_code == 200
             data = resp.json()
@@ -188,9 +188,9 @@ class TestStudentAnalyticsEndpoint:
             assert len(data["weak_topics"]) >= 1
             assert "Data Structures" in data["question_topics"]
 
-    async def test_empty_student(self) -> None:
+    async def test_empty_student(self, auth_headers) -> None:
         mem = Memory()
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/analytics/student/999")
             assert resp.status_code == 200
             data = resp.json()
@@ -203,7 +203,7 @@ class TestClassAnalyticsEndpoint:
         mem = Memory()
         _seed_demo(mem)
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/analytics/class", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
@@ -316,11 +316,11 @@ class TestLearningTrajectory:
 
 
 class TestTrajectoryEndpoint:
-    async def test_trajectory_endpoint(self) -> None:
+    async def test_trajectory_endpoint(self, auth_headers) -> None:
         mem = Memory()
         _seed_demo(mem)
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/analytics/student/1001/trajectory")
             assert resp.status_code == 200
             data = resp.json()
@@ -332,9 +332,9 @@ class TestTrajectoryEndpoint:
             assert "new_facts" in p
             assert "cumulative_facts" in p
 
-    async def test_empty_trajectory_endpoint(self) -> None:
+    async def test_empty_trajectory_endpoint(self, auth_headers) -> None:
         mem = Memory()
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/analytics/student/999/trajectory")
             assert resp.status_code == 200
             data = resp.json()
@@ -464,11 +464,11 @@ class TestAssessRisk:
 
 
 class TestRiskEndpoint:
-    async def test_risk_endpoint(self) -> None:
+    async def test_risk_endpoint(self, auth_headers) -> None:
         mem = Memory()
         _seed_demo(mem)
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/analytics/student/1001/risk")
             assert resp.status_code == 200
             data = resp.json()
@@ -478,9 +478,9 @@ class TestRiskEndpoint:
             assert isinstance(data["factors"], list)
             assert data["days_since_last_activity"] is not None
 
-    async def test_risk_endpoint_empty_student(self) -> None:
+    async def test_risk_endpoint_empty_student(self, auth_headers) -> None:
         mem = Memory()
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/analytics/student/999/risk")
             assert resp.status_code == 200
             data = resp.json()
@@ -576,7 +576,7 @@ class TestGenerateClassSummaries:
 class TestSummariesAPI:
     async def test_summaries_empty(self, auth_headers) -> None:
         mem = Memory()
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/teacher/summaries", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
@@ -586,7 +586,7 @@ class TestSummariesAPI:
     async def test_summaries_with_data(self, auth_headers) -> None:
         mem = Memory()
         _seed_demo(mem)
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/teacher/summaries", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
