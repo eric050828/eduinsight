@@ -38,9 +38,10 @@ def auth_headers(monkeypatch, tmp_path):
         ).decode("utf-8"),
     )
     auth.seed_demo_users()
-    auth.create_user(auth.RegisterRequest(
-        username="admin", password="admin123", display_name="Admin", role="admin",
-    ))
+    if not auth.get_user_by_username("admin"):  # demo seed already creates it
+        auth.create_user(auth.RegisterRequest(
+            username="admin", password="admin123", display_name="Admin", role="admin",
+        ))
 
     def _make(username: str = "admin") -> dict[str, str]:
         row = auth.get_user_by_username(username)

@@ -317,6 +317,7 @@ def seed_demo_users() -> dict[str, str]:
         ("teacher_lin",    "lin123",     "林教授", "teacher", None),
         ("teacher_wang",   "wang123",    "王教授", "teacher", None),
         ("teacher_li",     "li123",      "李教授", "teacher", None),
+        ("admin",          "admin123",   "系統管理員", "admin", None),
         ("student1001",    "student123", "A 陳同學", "student", 1001),
         ("student1002",    "student123", "B 林同學", "student", 1002),
         ("student1003",    "student123", "C 王同學", "student", 1003),
