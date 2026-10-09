@@ -72,9 +72,22 @@ def _db():
     conn = sqlite3.connect(settings.auth_db_path)
     conn.row_factory = sqlite3.Row
     try:
+        _ensure_active_column(conn)
         yield conn
     finally:
         conn.close()
+
+
+def _ensure_active_column(conn: sqlite3.Connection) -> None:
+    """Upgrade old user tables lazily; serialize concurrent migration attempts."""
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+    if columns and "active" not in columns:
+        conn.execute("BEGIN IMMEDIATE")
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(users)")}
+        if "active" not in columns:
+            conn.execute("ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1 "
+                         "CHECK(active IN (0, 1))")
+        conn.commit()
 
 
 def init_db() -> None:
@@ -88,6 +101,7 @@ def init_db() -> None:
                 display_name    TEXT NOT NULL,
                 role            TEXT NOT NULL CHECK(role IN ('student','teacher','admin')),
                 moodle_user_id  INTEGER,
+                active          INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
                 created_at      REAL NOT NULL
             );
             CREATE INDEX IF NOT EXISTS ix_users_username ON users(username);
@@ -151,6 +165,52 @@ def get_user_by_id(user_id: int) -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
+def public_user(row: dict[str, Any]) -> dict[str, Any]:
+    """Expose account metadata without password hashes or token material."""
+    return _row_to_user(row).model_dump() | {"active": bool(row.get("active", 1))}
+
+
+def list_managed_users(role: str | None, q: str | None, limit: int, offset: int) -> dict:
+    clauses, params = [], []
+    if role:
+        clauses.append("role = ?")
+        params.append(role)
+    if q:
+        clauses.append("(instr(lower(username), lower(?)) > 0 "
+                       "OR instr(lower(display_name), lower(?)) > 0)")
+        params.extend([q, q])
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    with _db() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM users" + where, params).fetchone()[0]
+        rows = conn.execute("SELECT * FROM users" + where + " ORDER BY id LIMIT ? OFFSET ?",
+                            [*params, limit, offset]).fetchall()
+    return {"users": [public_user(dict(row)) for row in rows], "total": total,
+            "limit": limit, "offset": offset}
+
+
+def update_managed_user(user_id: int, changes: dict[str, Any]) -> dict[str, Any]:
+    if set(changes) - {"display_name", "role", "active"}:
+        raise ValueError("Unsupported user fields")
+    with _db() as conn:
+        if changes:
+            conn.execute("UPDATE users SET " + ", ".join(f"{key} = ?" for key in changes)
+                         + " WHERE id = ?", [*changes.values(), user_id])
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "User not found")
+        conn.commit()
+    return public_user(dict(row))
+
+
+def reset_user_password(user_id: int, password: str) -> None:
+    hashed = hash_password(password)
+    with _db() as conn:
+        if conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                        (hashed, user_id)).rowcount == 0:
+            raise HTTPException(404, "User not found")
+        conn.commit()
+
+
 def create_user(req: RegisterRequest) -> AuthUser:
     if get_user_by_username(req.username):
         raise HTTPException(status.HTTP_409_CONFLICT, "Username already exists")
@@ -212,6 +272,8 @@ async def get_current_user(
     row = get_user_by_id(user_id)
     if row is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
+    if not row.get("active", 1):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User is disabled")
     return _row_to_user(row)
 
 
@@ -251,6 +313,8 @@ async def register(req: RegisterRequest) -> TokenResponse:
 @router.post("/login", response_model=TokenResponse)
 async def login(req: LoginRequest) -> TokenResponse:
     row = get_user_by_username(req.username)
+    if row is not None and not row.get("active", 1):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
     if row is None or not verify_password(req.password, row["password_hash"]):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
     user = _row_to_user(row)
@@ -277,6 +341,8 @@ async def lti_bridge_dev(req: LTIBridgeRequest) -> TokenResponse:
     """
     username = f"lti_{req.moodle_user_id}"
     existing = get_user_by_username(username)
+    if existing is not None and not existing.get("active", 1):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User is disabled")
     if existing:
         user = _row_to_user(existing)
     else:

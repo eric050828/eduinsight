@@ -170,3 +170,8 @@ The branch remains `fix/auth-data-isolation`. Commit creation was attempted afte
 Both commit messages should end with:
 
 `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`
+
+## Added after the audit
+
+- `GET /public/settings` is intentionally public. It returns only `site_name` and `maintenance_banner`; every other platform setting is admin-only (`/admin/settings`).
+- Routes added later (messaging, forum, submission files, enrollment, class analytics, achievements, admin management, preferences) all require login and follow the same ownership rules; see their tests for the exact 401/403 coverage.

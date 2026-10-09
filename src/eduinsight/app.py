@@ -44,6 +44,18 @@ from .course_structure import router as course_structure_router
 from .course_structure import seed_demo_course_structure
 from .platform_admin import router as platform_admin_router
 from .platform_admin import seed_demo_audit
+from .achievements import router as achievements_router
+from .admin_manage import router as admin_manage_router
+from .admin_manage import seed_demo_admin_data
+from .class_analytics import router as class_analytics_router
+from .enrollment import router as enrollment_router
+from .enrollment import seed_demo_enrollment
+from .forum import router as forum_router
+from .forum import seed_demo_forum
+from .messaging import router as messaging_router
+from .messaging import seed_demo_messages
+from .preferences import router as preferences_router
+from .submission_files import router as submission_files_router
 from .assignments import router as assignments_router
 from .assignments import seed_demo_assignments
 from .diagnostics import router as diagnostics_router
@@ -119,6 +131,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     seed_demo_notifications()
     seed_demo_course_structure()
     seed_demo_audit()
+    seed_demo_admin_data()
     logger.info("Auth DB ready: seeded users = %s", seeded)
     embedder = settings.memory_embedder or None  # "" means disabled
     _memory = Memory(settings.memory_db_path, embedder=embedder)
@@ -2139,6 +2152,10 @@ async def demo_reset(
     seed_demo_assignments()
     seed_demo_course_structure()
     seed_demo_audit()
+    seed_demo_enrollment()
+    seed_demo_forum()
+    seed_demo_messages()
+    seed_demo_admin_data()
 
     # Backdate student 1004's facts to 3 weeks ago to create a "high risk" profile
     _backdate_uid = "moodle:1004"
@@ -3445,6 +3462,14 @@ app.include_router(courses_router)
 app.include_router(analytics_extra_router)
 app.include_router(course_structure_router)
 app.include_router(platform_admin_router)
+app.include_router(achievements_router)
+app.include_router(admin_manage_router)
+app.include_router(class_analytics_router)
+app.include_router(enrollment_router)
+app.include_router(forum_router)
+app.include_router(messaging_router)
+app.include_router(preferences_router)
+app.include_router(submission_files_router)
 app.include_router(assignments_router)
 app.include_router(diagnostics_router)
 app.include_router(notifications_router)

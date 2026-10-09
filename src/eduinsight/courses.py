@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -28,21 +30,74 @@ class CourseInfo(BaseModel):
     teacher_username: str | None
     teacher_name: str | None
     enrolled_count: int
+    description: str = ""
+    archived: bool = False
 
 
 class CourseParticipant(BaseModel):
+    user_id: int
+    moodle_user_id: int | None
     display_name: str
     role: str
     username: str
     last_active: float | None
 
 
+@contextmanager
+def _catalog_db():
+    """Seed once per row; never overwrite subsequent catalog edits.
+
+    DB teacher assignments apply to catalog/structure access. Legacy app.py
+    analytics and resource routes continue to use TEACHER_COURSE_MAP.
+    """
+    with sessions._db() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS course_catalog (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                teacher_username TEXT,
+                description TEXT NOT NULL DEFAULT '',
+                archived INTEGER NOT NULL DEFAULT 0 CHECK(archived IN (0, 1))
+            );
+        """)
+        for course_id, name in COURSE_CATALOG.items():
+            teacher = next((username for username, owned in TEACHER_COURSE_MAP.items()
+                            if owned == course_id), None)
+            conn.execute("INSERT OR IGNORE INTO course_catalog (id, name, teacher_username) "
+                         "VALUES (?, ?, ?)", (course_id, name, teacher))
+        conn.commit()
+        yield conn
+        conn.commit()
+
+
+def catalog_entries() -> dict[str, dict]:
+    with _catalog_db() as conn:
+        return {row["id"]: dict(row) for row in conn.execute("SELECT * FROM course_catalog")}
+
+
+def _catalog_snapshot() -> dict[str, dict]:
+    """Read-only scope lookup, safe inside another module's write transaction.
+
+    Before the catalog is initialized, authorize the original static seeds.
+    Catalog HTTP reads and management initialize the persisted table separately.
+    """
+    with sessions._db() as conn:
+        exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                              "AND name = 'course_catalog'").fetchone()
+        if exists:
+            return {row["id"]: dict(row) for row in conn.execute("SELECT * FROM course_catalog")}
+    return {cid: {"id": cid, "name": name, "description": "", "archived": False,
+                  "teacher_username": next((username for username, owned
+                                            in TEACHER_COURSE_MAP.items() if owned == cid), None)}
+            for cid, name in COURSE_CATALOG.items()}
+
+
 def _visible_course_ids(user: AuthUser) -> set[str]:
+    catalog = _catalog_snapshot()
     if user.role == "admin":
-        return set(COURSE_CATALOG)
+        return set(catalog)
     if user.role == "teacher":
-        owned = TEACHER_COURSE_MAP.get(user.username)
-        return {owned} if owned is not None else set()
+        return {cid for cid, row in catalog.items() if row["teacher_username"] == user.username}
     if user.moodle_user_id is None:
         return set()
     with sessions._db() as conn:  # noqa: SLF001
@@ -54,21 +109,20 @@ def _visible_course_ids(user: AuthUser) -> set[str]:
 
 
 def _check_course_access(user: AuthUser, course_id: str) -> None:
-    if course_id not in COURSE_CATALOG:
+    if course_id not in _catalog_snapshot():
         raise HTTPException(status_code=404, detail="Course not found")
     if course_id not in _visible_course_ids(user):
         raise HTTPException(status_code=403, detail="Course access denied")
 
 
 def _teacher_username(course_id: str) -> str | None:
-    return next(
-        (username for username, owned in TEACHER_COURSE_MAP.items() if owned == course_id),
-        None,
-    )
+    row = _catalog_snapshot().get(course_id)
+    return row["teacher_username"] if row else None
 
 
 def _course_info(course_id: str) -> CourseInfo:
-    teacher_username = _teacher_username(course_id)
+    entry = catalog_entries()[course_id]
+    teacher_username = entry["teacher_username"]
     with sessions._db() as conn:  # noqa: SLF001
         teacher = conn.execute(
             "SELECT display_name FROM users WHERE username = ? AND role = 'teacher'",
@@ -80,17 +134,19 @@ def _course_info(course_id: str) -> CourseInfo:
         ).fetchone()[0]
     return CourseInfo(
         id=course_id,
-        name=COURSE_CATALOG[course_id],
+        name=entry["name"],
         teacher_username=teacher_username,
         teacher_name=teacher["display_name"] if teacher is not None else None,
         enrolled_count=count,
+        description=entry["description"],
+        archived=bool(entry["archived"]),
     )
 
 
 @router.get("", response_model=list[CourseInfo])
 async def list_courses(user: AuthUser = Depends(get_current_user)) -> list[CourseInfo]:
     visible = _visible_course_ids(user)
-    return [_course_info(course_id) for course_id in COURSE_CATALOG if course_id in visible]
+    return [_course_info(course_id) for course_id in catalog_entries() if course_id in visible]
 
 
 @router.get("/{course_id}/info", response_model=CourseInfo)
@@ -108,12 +164,12 @@ async def course_participants(
     _check_course_access(user, course_id)
     with sessions._db() as conn:  # noqa: SLF001
         teacher = conn.execute(
-            "SELECT display_name, role, username, moodle_user_id FROM users "
+            "SELECT id, display_name, role, username, moodle_user_id FROM users "
             "WHERE username = ? AND role = 'teacher'",
             (_teacher_username(course_id),),
         ).fetchone()
         students = conn.execute(
-            "SELECT u.display_name, u.role, u.username, u.moodle_user_id, "
+            "SELECT u.id, u.display_name, u.role, u.username, u.moodle_user_id, "
             "MAX(MAX(s.created_at, s.last_msg_at)) AS last_active "
             "FROM users u JOIN chat_sessions s ON s.moodle_user_id = u.moodle_user_id "
             "WHERE s.course_id = ? AND u.role = 'student' "
@@ -129,7 +185,7 @@ async def course_participants(
     participants = []
     for row in ([teacher] if teacher is not None else []) + list(students):
         last_active = row["last_active"] if row["role"] == "student" else None
-        if row["moodle_user_id"] is not None:
+        if row["role"] == "student" and row["moodle_user_id"] is not None:
             uid = f"moodle:{row['moodle_user_id']}"
             memory_active = memory_conn.execute(
                 "SELECT MAX(ts) FROM ("
@@ -140,6 +196,8 @@ async def course_participants(
             timestamps = [ts for ts in (last_active, memory_active) if ts is not None]
             last_active = max(timestamps) if timestamps else None
         participants.append(CourseParticipant(
+            user_id=row["id"],
+            moodle_user_id=row["moodle_user_id"] if row["role"] == "student" else None,
             display_name=row["display_name"],
             role=row["role"],
             username=row["username"],

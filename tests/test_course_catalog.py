@@ -13,8 +13,9 @@ from eduinsight.grades import GradeManager
 from eduinsight.live_quiz import QuizSessionManager
 
 COURSE_IDS = {"general", "ds101", "py101", "db101", "mk201", "chm301", "eng201", "ipr101"}
-COURSE_FIELDS = {"id", "name", "teacher_username", "teacher_name", "enrolled_count"}
-PARTICIPANT_FIELDS = {"display_name", "role", "username", "last_active"}
+COURSE_FIELDS = {"id", "name", "teacher_username", "teacher_name", "enrolled_count",
+                 "description", "archived"}
+PARTICIPANT_FIELDS = {"display_name", "role", "username", "last_active", "user_id", "moodle_user_id"}
 
 
 @pytest.fixture
