@@ -1954,7 +1954,7 @@ async def demo_reset(
     global _memory, _assistant, _rag, _quiz
 
     # Import seed data
-    from .demo_data import DEMO_STUDENTS
+    from .demo_data import DEMO_STUDENTS, seed_demo_course_sessions
 
     # Use Lite-Mem's own delete to clear, then re-seed
     db_path = settings.memory_db_path
@@ -1978,6 +1978,8 @@ async def demo_reset(
         for fact_text, category in facts:
             _memory.add(user_id, fact_text, category=category, extract=False)
         total_seeded += len(facts)
+
+    seed_demo_course_sessions(DEMO_STUDENTS)
 
     # Backdate student 1004's facts to 3 weeks ago to create a "high risk" profile
     _backdate_uid = "moodle:1004"
@@ -2053,6 +2055,7 @@ async def demo_semester(
     global _memory, _assistant
     import time as _time
 
+    from .demo_data import seed_demo_course_sessions
     from .semester_demo import SEMESTER_STUDENT_ID, SEMESTER_WEEKS
 
     db_path = settings.memory_db_path
@@ -2088,6 +2091,7 @@ async def demo_semester(
             )
             conn.commit()
 
+    seed_demo_course_sessions([SEMESTER_STUDENT_ID])
     actual_total = len(_memory.list(SEMESTER_STUDENT_ID))
 
     return SemesterDemoResponse(
