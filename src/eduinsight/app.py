@@ -38,6 +38,12 @@ from .auth import router as auth_router
 from .classroom_assistant import ClassroomAssistant
 from .config import settings
 from .courses import router as courses_router
+from .assignments import router as assignments_router
+from .assignments import seed_demo_assignments
+from .diagnostics import router as diagnostics_router
+from .notifications import router as notifications_router
+from .notifications import seed_demo_notifications
+from .profiles import router as profiles_router
 from .documents import to_markdown
 from .grades import GradeManager
 from .interaction import InteractionManager
@@ -103,6 +109,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     init_auth_db()
     sessions_mod.init_sessions_table()
     seeded = seed_demo_users()
+    seed_demo_notifications()
     logger.info("Auth DB ready: seeded users = %s", seeded)
     embedder = settings.memory_embedder or None  # "" means disabled
     _memory = Memory(settings.memory_db_path, embedder=embedder)
@@ -1981,6 +1988,7 @@ async def demo_reset(
         total_seeded += len(facts)
 
     seed_demo_course_sessions(DEMO_STUDENTS)
+    seed_demo_assignments()
 
     # Backdate student 1004's facts to 3 weeks ago to create a "high risk" profile
     _backdate_uid = "moodle:1004"
@@ -3284,5 +3292,9 @@ async def get_office_hour_student_summary(
 app.include_router(lti_router)
 app.include_router(auth_router)
 app.include_router(courses_router)
+app.include_router(assignments_router)
+app.include_router(diagnostics_router)
+app.include_router(notifications_router)
+app.include_router(profiles_router)
 
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
