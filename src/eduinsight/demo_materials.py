@@ -138,9 +138,86 @@ DS101_LECTURE_NOTES = ParsedDocument(
     ],
 )
 
+MK201_LECTURE_NOTES = ParsedDocument(
+    filename="mk201_marketing_notes.pdf",
+    total_pages=1,
+    chunks=[
+        DocumentChunk(
+            text=(
+                "行銷管理：STP 包含市場區隔、目標市場選擇與品牌定位。"
+                "市場區隔可依人口、生活型態與消費行為進行，再評估各區隔的需求與吸引力。"
+                "行銷組合 4P 包含產品、價格、通路與推廣，應配合目標顧客與品牌定位。"
+                "課堂練習：為校園咖啡店選擇目標客群，提出定位與一項推廣方案。"
+            ),
+            source="mk201_marketing_notes.pdf",
+            page=1,
+            chunk_index=0,
+        ),
+    ],
+)
+
+CHM301_LECTURE_NOTES = ParsedDocument(
+    filename="chm301_chemistry_notes.pdf",
+    total_pages=1,
+    chunks=[
+        DocumentChunk(
+            text=(
+                "化學：動態平衡時，正反應與逆反應速率相等，各物種濃度維持穩定。"
+                "勒沙特列原理用來判斷濃度、壓力或溫度改變後的平衡移動方向。"
+                "酸鹼滴定以已知濃度的標準溶液測定未知濃度，須分辨當量點與指示劑終點。"
+                "實驗練習：記錄滴定體積，依反應莫耳比計算濃度，並討論讀值誤差。"
+            ),
+            source="chm301_chemistry_notes.pdf",
+            page=1,
+            chunk_index=0,
+        ),
+    ],
+)
+
+ENG201_LECTURE_NOTES = ParsedDocument(
+    filename="eng201_english_notes.pdf",
+    total_pages=1,
+    chunks=[
+        DocumentChunk(
+            text=(
+                "英文閱讀與表達：閱讀時先找主旨與主題句，再辨識支持論點的例子與證據。"
+                "議論文段落可依主題句、支持細節與結尾句組織，使用 however、therefore 等連接詞。"
+                "口語簡報應有開場、重點與結論，練習清楚發音、適當停頓與眼神交流。"
+                "課堂練習：以 My Career Plan 為題寫一段英文，並進行兩分鐘簡報。"
+            ),
+            source="eng201_english_notes.pdf",
+            page=1,
+            chunk_index=0,
+        ),
+    ],
+)
+
+IPR101_LECTURE_NOTES = ParsedDocument(
+    filename="ipr101_ip_notes.pdf",
+    total_pages=1,
+    chunks=[
+        DocumentChunk(
+            text=(
+                "智慧財產權課程導讀：比較著作權、專利與商標的保護對象，"
+                "並討論創作、技術與品牌在校園專題中的角色。"
+                "案例研討應整理作品來源、授權條件、使用目的與使用範圍，"
+                "區分取得授權與主張合理使用時需要分析的問題。"
+                "課堂練習：分析簡報引用圖片的情境，列出需查證的授權資訊與可能的替代素材。"
+            ),
+            source="ipr101_ip_notes.pdf",
+            page=1,
+            chunk_index=0,
+        ),
+    ],
+)
+
 # ── Courses to seed: (course_id, documents) ──
 DEMO_MATERIALS: list[tuple[str, list[ParsedDocument]]] = [
     ("ds101", [DS101_LECTURE_NOTES]),
+    ("mk201", [MK201_LECTURE_NOTES]),
+    ("chm301", [CHM301_LECTURE_NOTES]),
+    ("eng201", [ENG201_LECTURE_NOTES]),
+    ("ipr101", [IPR101_LECTURE_NOTES]),
 ]
 
 

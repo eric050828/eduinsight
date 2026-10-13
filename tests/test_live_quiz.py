@@ -106,8 +106,9 @@ class TestSessionLifecycle:
         assert len(manager.list_sessions(course_id="CS101")) == 1
 
     def test_list_sessions_sorted_newest_first(self, manager: QuizSessionManager):
-        manager.create_session("CS101", _sample_questions(1), teacher_id=1001)
+        s1 = manager.create_session("CS101", _sample_questions(1), teacher_id=1001)
         s2 = manager.create_session("CS101", _sample_questions(1), teacher_id=1001)
+        s1.created_at = s2.created_at - 1
         sessions = manager.list_sessions()
         assert sessions[0].session_id == s2.session_id
 
@@ -280,13 +281,13 @@ class TestStats:
 
 
 @pytest.fixture
-def client():
+def client(auth_headers):
     """Create test client with app."""
     from fastapi.testclient import TestClient
 
     from eduinsight.app import app
 
-    with TestClient(app) as c:
+    with TestClient(app, headers=auth_headers()) as c:
         yield c
 
 

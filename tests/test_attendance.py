@@ -90,7 +90,7 @@ class TestSessionLifecycle:
 class TestCheckin:
     def test_basic_checkin(self, mgr: AttendanceManager):
         s = mgr.create_session("CS101", teacher_id=1001)
-        rec = mgr.checkin(s.session_id, student_id=2001)
+        rec = mgr.checkin(s.session_id, student_id=2001, code=s.checkin_code)
         assert rec.student_id == 2001
         assert rec.status == CheckinStatus.PRESENT
 
@@ -108,25 +108,26 @@ class TestCheckin:
         s = mgr.create_session("CS101", teacher_id=1001)
         mgr.close_session(s.session_id)
         with pytest.raises(ValueError, match="closed"):
-            mgr.checkin(s.session_id, student_id=2001)
+            mgr.checkin(s.session_id, student_id=2001, code=s.checkin_code)
 
     def test_duplicate_checkin_returns_existing(self, mgr: AttendanceManager):
         s = mgr.create_session("CS101", teacher_id=1001)
-        r1 = mgr.checkin(s.session_id, student_id=2001)
-        r2 = mgr.checkin(s.session_id, student_id=2001)
+        r1 = mgr.checkin(s.session_id, student_id=2001, code=s.checkin_code)
+        r2 = mgr.checkin(s.session_id, student_id=2001, code=s.checkin_code)
         assert r1.checked_in_at == r2.checked_in_at  # same record
 
     def test_late_checkin(self, mgr: AttendanceManager):
         s = mgr.create_session("CS101", teacher_id=1001, late_threshold_sec=0)
+        s.created_at -= 1  # Ensure elapsed time exceeds the threshold on Windows.
         # threshold=0 means any delay is late
-        rec = mgr.checkin(s.session_id, student_id=2001)
+        rec = mgr.checkin(s.session_id, student_id=2001, code=s.checkin_code)
         assert rec.status == CheckinStatus.LATE
 
     def test_multiple_students(self, mgr: AttendanceManager):
         s = mgr.create_session("CS101", teacher_id=1001)
-        mgr.checkin(s.session_id, student_id=2001)
-        mgr.checkin(s.session_id, student_id=2002)
-        mgr.checkin(s.session_id, student_id=2003)
+        mgr.checkin(s.session_id, student_id=2001, code=s.checkin_code)
+        mgr.checkin(s.session_id, student_id=2002, code=s.checkin_code)
+        mgr.checkin(s.session_id, student_id=2003, code=s.checkin_code)
         records = mgr.get_records(s.session_id)
         assert len(records) == 3
 
@@ -159,7 +160,8 @@ class TestGPS:
         )
         # same location
         rec = mgr.checkin(
-            s.session_id, student_id=2001, gps_location=GPSLocation(25.0331, 121.5655)
+            s.session_id, student_id=2001, gps_location=GPSLocation(25.0331, 121.5655),
+            code=s.checkin_code,
         )
         assert rec.status == CheckinStatus.PRESENT
 
@@ -174,13 +176,14 @@ class TestGPS:
                 s.session_id,
                 student_id=2001,
                 gps_location=GPSLocation(25.0500, 121.5654),
+                code=s.checkin_code,
             )
 
     def test_gps_no_student_location_passes(self, mgr: AttendanceManager):
         """If session has GPS but student doesn't provide, allow (code-only mode)."""
         loc = GPSLocation(25.0330, 121.5654)
         s = mgr.create_session("CS101", teacher_id=1001, gps_location=loc)
-        rec = mgr.checkin(s.session_id, student_id=2001)
+        rec = mgr.checkin(s.session_id, student_id=2001, code=s.checkin_code)
         assert rec.status == CheckinStatus.PRESENT
 
 
@@ -199,9 +202,10 @@ class TestStats:
 
     def test_stats_with_checkins(self, mgr: AttendanceManager):
         s = mgr.create_session("CS101", teacher_id=1001, late_threshold_sec=0)
+        s.created_at -= 1
         # First student: will be late (threshold=0)
-        mgr.checkin(s.session_id, student_id=2001)
-        mgr.checkin(s.session_id, student_id=2002)
+        mgr.checkin(s.session_id, student_id=2001, code=s.checkin_code)
+        mgr.checkin(s.session_id, student_id=2002, code=s.checkin_code)
         stats = mgr.session_stats(s.session_id)
         assert stats.total_checkins == 2
         assert stats.late_count == 2
@@ -225,8 +229,9 @@ class TestStudentHistory:
     def test_history_across_sessions(self, mgr: AttendanceManager):
         s1 = mgr.create_session("CS101", teacher_id=1001, title="Week 1")
         s2 = mgr.create_session("CS101", teacher_id=1001, title="Week 2")
-        mgr.checkin(s1.session_id, student_id=2001)
-        mgr.checkin(s2.session_id, student_id=2001)
+        s1.created_at = s2.created_at - 1
+        mgr.checkin(s1.session_id, student_id=2001, code=s1.checkin_code)
+        mgr.checkin(s2.session_id, student_id=2001, code=s2.checkin_code)
         history = mgr.student_history(2001)
         assert len(history) == 2
         assert history[0]["title"] == "Week 2"  # most recent first
@@ -234,8 +239,8 @@ class TestStudentHistory:
     def test_history_filtered_by_course(self, mgr: AttendanceManager):
         s1 = mgr.create_session("CS101", teacher_id=1001)
         s2 = mgr.create_session("CS201", teacher_id=1001)
-        mgr.checkin(s1.session_id, student_id=2001)
-        mgr.checkin(s2.session_id, student_id=2001)
+        mgr.checkin(s1.session_id, student_id=2001, code=s1.checkin_code)
+        mgr.checkin(s2.session_id, student_id=2001, code=s2.checkin_code)
         history = mgr.student_history(2001, course_id="CS101")
         assert len(history) == 1
 
@@ -246,17 +251,20 @@ class TestStudentHistory:
 
 
 @pytest.fixture
-def client():
+def client(auth_headers):
     from fastapi.testclient import TestClient
 
     from eduinsight.app import app
 
-    with TestClient(app) as c:
+    with TestClient(app, headers=auth_headers()) as c:
         yield c
 
 
 class TestAttendanceAPI:
     def _create_session(self, client, course_id="CS101") -> dict:
+        from eduinsight.courses import enroll
+        for sid in (2001, 2002):
+            enroll(course_id, sid, source="test")
         resp = client.post(
             "/attendance/sessions",
             json={"course_id": course_id, "title": "Week 5"},
@@ -313,7 +321,7 @@ class TestAttendanceAPI:
         data = self._create_session(client)
         resp = client.post(
             f"/attendance/sessions/{data['session_id']}/checkin",
-            json={"student_id": 2001},
+            json={"student_id": 2001, "code": data["checkin_code"]},
         )
         assert resp.status_code == 200
         assert resp.json()["status"] == "present"
@@ -338,11 +346,11 @@ class TestAttendanceAPI:
         data = self._create_session(client)
         client.post(
             f"/attendance/sessions/{data['session_id']}/checkin",
-            json={"student_id": 2001},
+            json={"student_id": 2001, "code": data["checkin_code"]},
         )
         client.post(
             f"/attendance/sessions/{data['session_id']}/checkin",
-            json={"student_id": 2002},
+            json={"student_id": 2002, "code": data["checkin_code"]},
         )
         resp = client.get(f"/attendance/sessions/{data['session_id']}/records")
         assert resp.status_code == 200
@@ -352,7 +360,7 @@ class TestAttendanceAPI:
         data = self._create_session(client)
         client.post(
             f"/attendance/sessions/{data['session_id']}/checkin",
-            json={"student_id": 2001},
+            json={"student_id": 2001, "code": data["checkin_code"]},
         )
         resp = client.get(f"/attendance/sessions/{data['session_id']}/stats")
         assert resp.status_code == 200
@@ -364,7 +372,7 @@ class TestAttendanceAPI:
         data = self._create_session(client)
         client.post(
             f"/attendance/sessions/{data['session_id']}/checkin",
-            json={"student_id": 2001},
+            json={"student_id": 2001, "code": data["checkin_code"]},
         )
         resp = client.get("/attendance/student/2001/history")
         assert resp.status_code == 200

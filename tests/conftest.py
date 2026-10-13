@@ -20,6 +20,8 @@ def _isolate_databases(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "auth_db_path", str(tmp_path / "auth.db"))
     auth.init_db()
     sessions.init_sessions_table()
+    from eduinsight.courses import init_enrollments
+    init_enrollments()
 
 
 @pytest.fixture
@@ -30,10 +32,18 @@ def auth_headers(monkeypatch, tmp_path):
     user. Tests written before course-level isolation use the admin token.
     """
     monkeypatch.setattr(auth.settings, "auth_db_path", str(tmp_path / "auth.db"))
+    # These users exercise authorization, so keep password setup inexpensive.
+    monkeypatch.setattr(
+        auth, "hash_password",
+        lambda plain: auth.bcrypt.hashpw(
+            plain.encode("utf-8"), auth.bcrypt.gensalt(rounds=4),
+        ).decode("utf-8"),
+    )
     auth.seed_demo_users()
-    auth.create_user(auth.RegisterRequest(
-        username="admin", password="admin123", display_name="Admin", role="admin",
-    ))
+    if not auth.get_user_by_username("admin"):  # demo seed already creates it
+        auth.create_user(auth.RegisterRequest(
+            username="admin", password="admin123", display_name="Admin", role="admin",
+        ))
 
     def _make(username: str = "admin") -> dict[str, str]:
         row = auth.get_user_by_username(username)

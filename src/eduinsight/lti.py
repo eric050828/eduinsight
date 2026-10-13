@@ -16,12 +16,19 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import secrets
+import threading
 import time
 import urllib.parse
+from collections import OrderedDict
+from collections.abc import Iterator, MutableMapping
 from typing import Any
 
-from fastapi import APIRouter, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.routing import APIRoute
+from pydantic import BaseModel, ConfigDict, Field
 from pylti1p3.cookie import CookieService as _CookieService
 from pylti1p3.message_launch import MessageLaunch
 from pylti1p3.oidc_login import OIDCLogin
@@ -29,15 +36,19 @@ from pylti1p3.redirect import Redirect
 from pylti1p3.request import Request as LTIRequest
 from pylti1p3.session import SessionService
 from pylti1p3.tool_config import ToolConfDict
+from starlette.concurrency import run_in_threadpool
 
 from .auth import (
     RegisterRequest,
+    TokenResponse,
     _row_to_user,
     create_access_token,
     create_user,
+    get_user_by_id,
     get_user_by_username,
 )
 from .config import settings
+from .db import is_locked
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +56,59 @@ logger = logging.getLogger(__name__)
 # In-memory stores (sufficient for single-process demo)
 # ---------------------------------------------------------------------------
 
-_sessions: dict[str, dict[str, Any]] = {}
-_launch_cache: dict[str, Any] = {}  # launch_id -> jwt_body
+class _TTLStore(MutableMapping[str, Any]):
+    """Bounded process-local state; expired entries are never returned."""
+
+    def __init__(self, ttl: int, max_size: int = 1000) -> None:
+        self.ttl = ttl
+        self.max_size = max_size
+        self._entries: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._lock = threading.RLock()
+
+    def _prune(self) -> None:
+        now = time.monotonic()
+        for key, (expires, _) in list(self._entries.items()):
+            if expires <= now:
+                del self._entries[key]
+
+    def __getitem__(self, key: str) -> Any:
+        with self._lock:
+            self._prune()
+            return self._entries[key][1]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        with self._lock:
+            self._prune()
+            self._entries[key] = (time.monotonic() + self.ttl, value)
+            self._entries.move_to_end(key)
+            while len(self._entries) > self.max_size:
+                self._entries.popitem(last=False)
+
+    def __delitem__(self, key: str) -> None:
+        with self._lock:
+            del self._entries[key]
+
+    def __iter__(self) -> Iterator[str]:
+        with self._lock:
+            self._prune()
+            return iter(list(self._entries))
+
+    def __len__(self) -> int:
+        with self._lock:
+            self._prune()
+            return len(self._entries)
+
+    def pop(self, key: str, default: Any = None) -> Any:
+        # Atomic consume, including when multiple test/server threads exchange a code.
+        with self._lock:
+            self._prune()
+            entry = self._entries.pop(key, None)
+            return entry[1] if entry else default
+
+
+_sessions = _TTLStore(ttl=3600)
+_launch_cache = _TTLStore(ttl=3600)
+_exchange_codes = _TTLStore(ttl=60)
 
 
 # ---------------------------------------------------------------------------
@@ -65,17 +127,16 @@ class FastAPILTIRequest(LTIRequest):
         self._request = request
         self._form_data = form_data or {}
         self._session_id = self._resolve_session_id()
-        if self._session_id not in _sessions:
-            _sessions[self._session_id] = {}
 
     def _resolve_session_id(self) -> str:
         """Get or create a session ID from cookies."""
         sid = self._request.cookies.get("lti_session_id")
-        if sid:
+        # Only resume an unexpired ID previously issued by this server.
+        if sid and sid in _sessions:
             return sid
-        # Generate a new session ID from request metadata
-        raw = f"{time.time()}-{id(self._request)}"
-        return hashlib.sha256(raw.encode()).hexdigest()[:32]
+        sid = secrets.token_urlsafe(32)
+        _sessions[sid] = {}
+        return sid
 
     @property
     def session_id(self) -> str:
@@ -83,7 +144,7 @@ class FastAPILTIRequest(LTIRequest):
 
     @property
     def session(self) -> dict[str, Any]:
-        return _sessions.setdefault(self._session_id, {})
+        return _sessions[self._session_id]
 
     def is_secure(self) -> bool:
         return self._request.url.scheme == "https"
@@ -131,6 +192,7 @@ class FastAPICookieService(_CookieService):
             key="lti_session_id",
             value=self._request.session_id,
             max_age=3600,
+            secure=self._request.is_secure(),
             path="/",
             httponly=True,
             samesite="none" if self._request.is_secure() else "lax",
@@ -145,21 +207,17 @@ class FastAPIRedirect(Redirect):
         self._cookie_service = cookie_service
 
     def do_redirect(self) -> Response:
-        response = RedirectResponse(url=self._location, status_code=302)
+        if urllib.parse.urlsplit(self._location).scheme not in {"", "http", "https"}:
+            raise ValueError("Invalid redirect scheme")
+        response = RedirectResponse(url=self._location, status_code=302,
+                                    headers={"Cache-Control": "no-store"})
         if self._cookie_service:
             self._cookie_service.update_response(response)
         return response
 
     def do_js_redirect(self) -> Response:
-        html = (
-            '<html><head><title>Redirecting...</title></head><body>'
-            f'<script type="text/javascript">window.location="{self._location}";</script>'
-            "</body></html>"
-        )
-        response = HTMLResponse(content=html)
-        if self._cookie_service:
-            self._cookie_service.update_response(response)
-        return response
+        # HTTP redirects avoid interpolating attacker-controlled URLs into script HTML.
+        return self.do_redirect()
 
     def set_redirect_url(self, location: str) -> None:
         self._location = location
@@ -187,7 +245,7 @@ class FastAPIOIDCLogin(OIDCLogin):
         return FastAPIRedirect(url, self._cookie_service)
 
     def get_response(self, html: str) -> Response:
-        return HTMLResponse(content=html)
+        return HTMLResponse(content=html, headers={"Cache-Control": "no-store"})
 
 
 class FastAPIMessageLaunch(MessageLaunch):
@@ -288,7 +346,26 @@ def get_private_key() -> str:
 # FastAPI Router with LTI endpoints
 # ---------------------------------------------------------------------------
 
-router = APIRouter(prefix="/lti", tags=["lti"])
+class _NoStoreRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def no_store(request: Request) -> Response:
+            try:
+                response = await handler(request)
+            except HTTPException as exc:
+                exc.headers = {**(exc.headers or {}), "Cache-Control": "no-store"}
+                raise
+            except RequestValidationError:
+                return JSONResponse({"detail": "Invalid LTI request"}, status_code=422,
+                                    headers={"Cache-Control": "no-store"})
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
+        return no_store
+
+
+router = APIRouter(prefix="/lti", tags=["lti"], route_class=_NoStoreRoute)
 
 
 @router.get("/jwks")
@@ -306,18 +383,20 @@ async def lti_login(request: Request) -> Response:
     """
     form_data = dict(await request.form())
     lti_request = FastAPILTIRequest(request, form_data)
-    tool_config = _get_tool_config()
-
     try:
+        tool_config = _get_tool_config()
         oidc_login = FastAPIOIDCLogin(lti_request, tool_config)
         target_link_uri = form_data.get("target_link_uri", str(request.url_for("lti_launch")))
         # redirect() already returns a Response (calls do_redirect internally)
         return oidc_login.redirect(target_link_uri, js_redirect=True)
     except Exception as e:
+        if is_locked(e):
+            raise
         logger.error("LTI login failed: %s", e)
         return HTMLResponse(
-            content=f"<h1>LTI Login Error</h1><p>{e}</p>",
+            content="<h1>LTI Login Error</h1><p>Unable to validate login.</p>",
             status_code=400,
+            headers={"Cache-Control": "no-store"},
         )
 
 
@@ -330,9 +409,8 @@ async def lti_launch(request: Request) -> Response:
     """
     form_data = dict(await request.form())
     lti_request = FastAPILTIRequest(request, form_data)
-    tool_config = _get_tool_config()
-
     try:
+        tool_config = _get_tool_config()
         launch = FastAPIMessageLaunch(lti_request, tool_config)
         launch.validate()
 
@@ -376,10 +454,13 @@ async def lti_launch(request: Request) -> Response:
         username = f"lti_{moodle_id}" if moodle_id else f"lti_user_{launch_id[:8]}"
         existing = get_user_by_username(username)
         if existing:
+            if not existing.get("active", 1) or existing["role"] == "admin":
+                raise ValueError("LTI account is unavailable")
             local_user = _row_to_user(existing)
         else:
-            random_pw = hashlib.sha256(f"{username}-{time.time()}".encode()).hexdigest()
-            local_user = create_user(
+            random_pw = secrets.token_urlsafe(32)
+            local_user = await run_in_threadpool(
+                create_user,
                 RegisterRequest(
                     username=username,
                     password=random_pw,
@@ -388,12 +469,12 @@ async def lti_launch(request: Request) -> Response:
                     moodle_user_id=moodle_id or None,
                 )
             )
-        token = create_access_token(local_user)
-
-        # 2. Decide where to send the browser. If FRONTEND_URL is set,
-        #    drop into the Next.js /lti/return handler with token + context.
+        # Browser URLs carry only a short-lived, single-use code, never the JWT.
+        code = secrets.token_urlsafe(32)
+        account = get_user_by_id(local_user.id)
+        _exchange_codes[code] = (local_user.id, account["token_version"])
         target_path = "/lti/return"
-        params["token"] = token
+        params["code"] = code
         params["role"] = "instructor" if instructor else "learner"
         params["username"] = local_user.username
 
@@ -409,15 +490,45 @@ async def lti_launch(request: Request) -> Response:
             base_path = "/teacher" if instructor else "/"
             redirect_url = f"{base_path}?{urllib.parse.urlencode(params)}"
 
-        response = RedirectResponse(url=redirect_url, status_code=302)
+        response = RedirectResponse(url=redirect_url, status_code=302,
+                                    headers={"Cache-Control": "no-store",
+                                             "Referrer-Policy": "no-referrer"})
+        FastAPICookieService(lti_request).update_response(response)
         return response
 
     except Exception as e:
+        if is_locked(e):
+            raise
         logger.error("LTI launch failed: %s", e)
         return HTMLResponse(
-            content=f"<h1>LTI Launch Error</h1><p>{e}</p>",
+            content="<h1>LTI Launch Error</h1><p>Unable to validate launch.</p>",
             status_code=400,
+            headers={"Cache-Control": "no-store"},
         )
+
+
+class ExchangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/exchange", response_model=TokenResponse)
+def lti_exchange(req: ExchangeRequest, response: Response) -> TokenResponse:
+    response.headers["Cache-Control"] = "no-store"
+    identity = _exchange_codes.pop(req.code, None)
+    if identity is None:
+        raise HTTPException(401, "Invalid or expired exchange code",
+                            headers={"Cache-Control": "no-store"})
+    user_id, version = identity
+    row = get_user_by_id(user_id)
+    if (row is None or not row.get("active", 1) or row["role"] == "admin"
+            or row["token_version"] != version):
+        raise HTTPException(401, "LTI account is unavailable",
+                            headers={"Cache-Control": "no-store"})
+    user = _row_to_user(row)
+    return TokenResponse(
+        access_token=create_access_token(user, expected_version=version), user=user,
+    )
 
 
 @router.get("/config")

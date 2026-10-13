@@ -294,7 +294,7 @@ class TestQuizGenerator:
 
 class TestQuizAPI:
     @pytest.fixture
-    def client(self):
+    def client(self, auth_headers):
         """Create a test client with mocked LLM for quiz generation."""
 
         from fastapi.testclient import TestClient
@@ -309,7 +309,7 @@ class TestQuizAPI:
         mock_llm = MockLLM(_valid_quiz_json(3))
         quiz_gen = QuizGenerator(rag, mock_llm)
 
-        with TestClient(app_module.app) as c:
+        with TestClient(app_module.app, headers=auth_headers()) as c:
             # Save originals created by lifespan, override for test
             orig_llm = app_module._llm
             app_module._memory = mem
@@ -347,7 +347,7 @@ class TestQuizAPI:
     def test_generate_quiz_no_materials(self, client):
         resp = client.post("/courses/EMPTY/quiz/generate", json={"num_questions": 3})
         assert resp.status_code == 404
-        assert "No materials found" in resp.json()["detail"]
+        assert resp.json()["detail"] == "resource_not_found"
 
     def test_generate_quiz_default_params(self, client):
         resp = client.post("/courses/CS101/quiz/generate", json={})
@@ -356,7 +356,7 @@ class TestQuizAPI:
         assert data["topic"] == ""
 
     @pytest.fixture
-    def client_no_llm(self):
+    def client_no_llm(self, auth_headers):
         """Test client without LLM (quiz disabled)."""
         from fastapi.testclient import TestClient
 
@@ -364,7 +364,7 @@ class TestQuizAPI:
 
         mem = Memory(":memory:")
 
-        with TestClient(app_module.app) as c:
+        with TestClient(app_module.app, headers=auth_headers()) as c:
             # Save originals created by lifespan, override for test
             orig_llm = app_module._llm
             app_module._memory = mem

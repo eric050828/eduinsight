@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -25,8 +28,25 @@ class Settings(BaseSettings):
     memory_embedder: str = "auto"  # "auto", "stub", "gemini", or "" to disable
 
     # Server
+    env: Literal["development", "production"] = "development"
+    demo_mode: bool | None = None  # None derives from env; production always disables demos
+    enable_lti_bridge: bool = False
+    login_throttle_enabled: bool = True
     host: str = "127.0.0.1"
     port: int = 8000
+
+    # Resource limits (bytes use binary MB). Checked before multipart spooling.
+    max_material_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    max_lecture_bytes: int = Field(default=200 * 1024 * 1024, gt=0)
+    max_import_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
+    max_body_bytes: int = Field(default=1024 * 1024, gt=0)
+    max_zip_uncompressed_bytes: int = Field(default=200 * 1024 * 1024, gt=0)
+    max_zip_entries: int = Field(default=5000, gt=0)
+    max_zip_compression_ratio: float = Field(default=100, gt=0)
+    max_document_pages: int = Field(default=500, gt=0)
+    llm_cli_timeout_seconds: float = Field(default=120, gt=0)
+    llm_cli_max_output_bytes: int = Field(default=1024 * 1024, gt=0)
+    sqlite_busy_timeout_ms: int = Field(default=10000, ge=0)
 
     # CORS — comma-separated origins, e.g. "http://localhost:3000,https://edu-insight-two.vercel.app"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
@@ -49,6 +69,31 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def production_settings(self) -> Settings:
+        validate_production_settings(self)
+        return self
+
+
+def validate_production_settings(config: Settings | None = None) -> None:
+    """Fail before startup/DB writes when production signing credentials are unsafe."""
+    config = config if config is not None else settings
+    if config.env != "production":
+        return
+    secret = config.jwt_secret.strip()
+    placeholders = ("dev-only-secret", "change-me", "change_me", "changeme", "replace-with",
+                    "replace_with", "replace-me", "replace_me", "placeholder",
+                    "your-secret", "your_secret", "your_jwt_secret", "your-jwt-secret")
+    if len(secret) < 32 or any(value in secret.lower() for value in placeholders):
+        raise ValueError(
+            "Production requires a random EDUINSIGHT_JWT_SECRET of at least 32 characters"
+        )
+
+
+def demo_enabled() -> bool:
+    """Demo features are limited to development, with an optional explicit override."""
+    return settings.env == "development" and settings.demo_mode is not False
 
 
 settings = Settings()

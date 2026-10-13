@@ -7,20 +7,20 @@ from eduinsight.app import app
 from eduinsight.assistant import LearningAssistant
 
 
-async def _make_client(mem: Memory) -> AsyncClient:
+async def _make_client(mem: Memory, auth_headers) -> AsyncClient:
     """Create a test client with a pre-configured in-memory assistant."""
     import eduinsight.app as app_module
 
     app_module._memory = mem
     app_module._assistant = LearningAssistant(mem)
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
+    return AsyncClient(transport=transport, base_url="http://test", headers=auth_headers())
 
 
 class TestTeacherStudents:
     async def test_empty_dashboard(self, auth_headers) -> None:
         mem = Memory()
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/teacher/students", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
@@ -35,7 +35,7 @@ class TestTeacherStudents:
         assistant.record_question(2, "Explain recursion")
         assistant.record_struggle(2, "pointers", details="segfault when dereferencing")
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/teacher/students", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
@@ -58,7 +58,7 @@ class TestTeacherStudents:
         assistant = LearningAssistant(mem)
         assistant.record_question(1, "What is OOP?")
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/teacher/students", headers=auth_headers())
             data = resp.json()
             assert data["total_students"] == 1
@@ -72,7 +72,7 @@ class TestTeacherStudentMemories:
         assistant.record_question(1, "What is a linked list?")
         assistant.record_struggle(1, "pointers")
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/teacher/students/1/memories", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
@@ -82,7 +82,7 @@ class TestTeacherStudentMemories:
 
     async def test_empty_memories(self, auth_headers) -> None:
         mem = Memory()
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/teacher/students/999/memories", headers=auth_headers())
             assert resp.status_code == 200
             data = resp.json()
