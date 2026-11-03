@@ -19,12 +19,14 @@ Usage::
 from __future__ import annotations
 
 import statistics
+from copy import copy
 from dataclasses import dataclass, field
 
 from litemem import Memory
 
 from .analytics import analyze_class, assess_risk
 from .attendance import AttendanceManager
+from .courses import list_enrolled
 from .grades import GradeManager
 from .interaction import InteractionManager
 from .live_quiz import QuizSessionManager, SessionStatus
@@ -176,7 +178,8 @@ class ReportGenerator:
         report = WeeklyReport(course_id=course_id)
 
         # 1. Memory / AI engagement (class-wide)
-        class_analytics = analyze_class(self._memory)
+        enrolled = list_enrolled(course_id)
+        class_analytics = analyze_class(self._memory, enrolled_ids=enrolled)
         report.total_students = class_analytics.total_students
         report.total_facts = class_analytics.total_facts
         report.avg_facts_per_student = (
@@ -203,7 +206,10 @@ class ReportGenerator:
 
         # 2. Grades (if configured for this course)
         try:
-            overview = self._grades.class_overview(course_id)
+            scoped_grades = copy(self._grades)
+            scoped_grades._scores = {course_id: [r for r in self._grades.get_scores(course_id)
+                                               if r.student_id in enrolled]}
+            overview = scoped_grades.class_overview(course_id)
             report.grade_mean = round(overview.mean, 2)
             report.grade_median = round(overview.median, 2)
             report.grade_std_dev = round(overview.std_dev, 2)
@@ -217,9 +223,9 @@ class ReportGenerator:
         if sessions:
             rates = []
             for s in sessions:
-                stats = self._attendance.session_stats(s.session_id)
+                checkins = sum(r.student_id in enrolled for r in self._attendance.get_records(s.session_id))
                 if report.total_students > 0:
-                    rates.append(stats.total_checkins / report.total_students * 100)
+                    rates.append(checkins / report.total_students * 100)
             if rates:
                 report.avg_attendance_rate = round(statistics.mean(rates), 1)
 
@@ -230,9 +236,9 @@ class ReportGenerator:
         ]
         report.total_polls = len(polls)
         questions = self._interaction.list_questions(course_id=course_id)
-        report.total_questions = len(questions)
+        report.total_questions = sum(q.student_id in enrolled for q in questions)
         danmaku = self._interaction.get_danmaku(course_id=course_id)
-        report.total_danmaku = len(danmaku)
+        report.total_danmaku = sum(m.student_id in enrolled for m in danmaku)
 
         # 5. Quiz sessions
         quiz_sessions = self._quiz.list_sessions(course_id=course_id)
@@ -242,9 +248,12 @@ class ReportGenerator:
         quiz_scores: list[float] = []
         for qs in quiz_sessions:
             if qs.status == SessionStatus.CLOSED:
-                stats = self._quiz.get_stats(qs.session_id)
-                if stats.overall_correct_rate is not None:
-                    quiz_scores.append(stats.overall_correct_rate * 100)
+                rates = []
+                for idx in range(len(qs.questions)):
+                    answers = [a for a in qs.answers if a.student_id in enrolled and a.question_idx == idx]
+                    rates.append(sum(a.is_correct for a in answers) / len(answers) if answers else 0.0)
+                if rates:
+                    quiz_scores.append(statistics.mean(rates) * 100)
         if quiz_scores:
             report.avg_quiz_score = round(statistics.mean(quiz_scores), 1)
 
@@ -291,7 +300,8 @@ class ReportGenerator:
         """
         result = AIGradeCorrelation(course_id=course_id)
 
-        class_analytics = analyze_class(self._memory)
+        enrolled = list_enrolled(course_id)
+        class_analytics = analyze_class(self._memory, enrolled_ids=enrolled)
         avg_facts = (
             class_analytics.total_facts / class_analytics.total_students
             if class_analytics.total_students > 0

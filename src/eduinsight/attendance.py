@@ -212,7 +212,7 @@ class AttendanceManager:
             raise ValueError("Session is closed, check-in not allowed")
 
         # Code validation
-        if code is not None and code.upper() != session.checkin_code:
+        if session.checkin_code and (not code or code.upper() != session.checkin_code):
             raise ValueError("Invalid check-in code")
 
         # GPS validation

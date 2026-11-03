@@ -93,14 +93,14 @@ def _make_test_pdf() -> bytes:
 
 
 @pytest.fixture
-def client():
+def client(auth_headers):
     """Test client with RAG + mock LLM for the full pipeline."""
     mem = Memory(":memory:")
     rag = CourseRAG(mem)
     mock_llm = _MockQuizLLM()
     quiz_gen = QuizGenerator(rag, mock_llm)
 
-    with TestClient(app_module.app) as c:
+    with TestClient(app_module.app, headers=auth_headers()) as c:
         orig_llm = app_module._llm
         app_module._memory = mem
         app_module._assistant = app_module.LearningAssistant(mem)
@@ -123,7 +123,7 @@ class TestE2EQuizFlow:
         # ── Step 1: Upload course material (PDF) ──
         pdf_bytes = _make_test_pdf()
         resp = client.post(
-            "/courses/ds101/materials",
+            "/courses/ds101/materials?wait=true",
             files={"file": ("search_algorithms.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
         )
         assert resp.status_code == 200, f"Upload failed: {resp.text}"

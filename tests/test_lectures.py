@@ -184,12 +184,15 @@ class TestLectureManager:
 
     @pytest.mark.asyncio
     async def test_lectures_sorted_by_time(self, manager, audio_file):
-        await manager.process_lecture(
+        first = await manager.process_lecture(
             "CS101", audio_file, "First", generate_summary=False,
         )
-        await manager.process_lecture(
+        second = await manager.process_lecture(
             "CS101", audio_file, "Second", generate_summary=False,
         )
+        # Distinct fixed timestamps avoid depending on platform clock resolution.
+        first.created_at = 1000.0
+        second.created_at = 2000.0
         lectures = manager.list_lectures("CS101")
         # Most recent first
         assert lectures[0].title == "Second"
@@ -226,7 +229,7 @@ class TestLectureManager:
 
 class TestLectureAPI:
     @pytest.fixture
-    def client(self, mem):
+    def client(self, mem, auth_headers, monkeypatch):
         """Create a test client with lecture manager initialized."""
         from fastapi.testclient import TestClient
 
@@ -234,13 +237,16 @@ class TestLectureAPI:
 
         app_mod._memory = mem
         app_mod._lectures = LectureManager(mem)
+        from unittest.mock import AsyncMock
+
+        monkeypatch.setattr(app_mod._lectures, "_generate_summary", AsyncMock(return_value=""))
         app_mod._lectures.set_transcriber(StubTranscriber(
             text="Test lecture about algorithms and data structures.",
             language="zh",
         ))
         app_mod._rag = CourseRAG(mem)
 
-        client = TestClient(app_mod.app, raise_server_exceptions=False)
+        client = TestClient(app_mod.app, raise_server_exceptions=False, headers=auth_headers())
         yield client
 
         app_mod._memory = None

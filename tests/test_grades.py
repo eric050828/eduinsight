@@ -335,12 +335,12 @@ class TestClassOverview:
 
 
 @pytest.fixture
-def client():
+def client(auth_headers):
     from fastapi.testclient import TestClient
 
     from eduinsight.app import app
 
-    with TestClient(app) as c:
+    with TestClient(app, headers=auth_headers()) as c:
         yield c
 
 

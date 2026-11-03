@@ -13,12 +13,12 @@ from eduinsight.rag import CourseRAG
 
 
 @pytest.fixture
-def client():
+def client(auth_headers):
     """Create a test client with in-memory database."""
     mem = Memory(":memory:")
     rag = CourseRAG(mem)
 
-    with TestClient(app_module.app, raise_server_exceptions=False) as c:
+    with TestClient(app_module.app, raise_server_exceptions=False, headers=auth_headers()) as c:
         # Save originals created by lifespan, override for test
         orig_llm = app_module._llm
         app_module._memory = mem
@@ -61,7 +61,7 @@ class TestMaterialUpload:
     def test_upload_pdf(self, client):
         pdf_bytes = _make_test_pdf()
         resp = client.post(
-            "/courses/CS101/materials",
+            "/courses/CS101/materials?wait=true",
             files={"file": ("lecture01.pdf", pdf_bytes, "application/pdf")},
         )
         assert resp.status_code == 200
@@ -75,7 +75,7 @@ class TestMaterialUpload:
     def test_upload_pptx(self, client):
         pptx_bytes = _make_test_pptx()
         resp = client.post(
-            "/courses/CS101/materials",
+            "/courses/CS101/materials?wait=true",
             files={"file": ("slides.pptx", pptx_bytes, "application/vnd.openxmlformats")},
         )
         assert resp.status_code == 200

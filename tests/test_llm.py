@@ -87,7 +87,8 @@ class TestLLMClient:
                 reply = await client.chat("Hi")
                 assert reply == "Hello!"
                 payload = mock_post.call_args.kwargs["json"]
-                assert len(payload["messages"]) == 1  # No system prompt
+                assert len(payload["messages"]) == 2  # Untrusted-context policy is always present
+                assert "untrusted data" in payload["messages"][0]["content"]
 
     @pytest.mark.asyncio
     async def test_context_manager_required(self) -> None:

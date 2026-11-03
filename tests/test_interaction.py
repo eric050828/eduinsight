@@ -223,7 +223,8 @@ class TestDanmaku:
     def test_get_danmaku_since(self, mgr: InteractionManager):
         mgr.post_danmaku("CS101", text="old", student_id=2001)
         cutoff = time.time()
-        mgr.post_danmaku("CS101", text="new", student_id=2002)
+        new = mgr.post_danmaku("CS101", text="new", student_id=2002)
+        new.created_at = cutoff + 1
         messages = mgr.get_danmaku("CS101", since=cutoff)
         assert len(messages) == 1
         assert messages[0].text == "new"
@@ -244,12 +245,12 @@ class TestDanmaku:
 
 
 @pytest.fixture
-def client():
+def client(auth_headers):
     from fastapi.testclient import TestClient
 
     from eduinsight.app import app
 
-    with TestClient(app) as c:
+    with TestClient(app, headers=auth_headers()) as c:
         yield c
 
 

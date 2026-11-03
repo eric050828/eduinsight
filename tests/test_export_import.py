@@ -9,21 +9,21 @@ from eduinsight.app import app
 from eduinsight.assistant import LearningAssistant
 
 
-async def _make_client(mem: Memory) -> AsyncClient:
+async def _make_client(mem: Memory, auth_headers) -> AsyncClient:
     """Create a test client with a pre-configured in-memory assistant."""
     import eduinsight.app as app_module
 
     app_module._memory = mem
     app_module._assistant = LearningAssistant(mem)
     transport = ASGITransport(app=app)
-    return AsyncClient(transport=transport, base_url="http://test")
+    return AsyncClient(transport=transport, base_url="http://test", headers=auth_headers())
 
 
 class TestExportStudent:
-    async def test_export_empty_student(self) -> None:
+    async def test_export_empty_student(self, auth_headers) -> None:
         """Exporting a student with no memories returns empty bundle."""
         mem = Memory(":memory:")
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/export/student/9999")
             assert resp.status_code == 200
             data = resp.json()
@@ -32,13 +32,13 @@ class TestExportStudent:
             assert data["bundle"]["user_id"] == "moodle:9999"
             assert data["bundle"]["records"] == []
 
-    async def test_export_student_with_memories(self) -> None:
+    async def test_export_student_with_memories(self, auth_headers) -> None:
         """Exporting a student returns their memories as a MemoryBundle."""
         mem = Memory(":memory:")
         mem.add("moodle:101", "Struggling with recursion", category="struggling", extract=False)
         mem.add("moodle:101", "Prefers visual explanations", category="preference", extract=False)
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/export/student/101")
             assert resp.status_code == 200
             data = resp.json()
@@ -52,10 +52,10 @@ class TestExportStudent:
 
 
 class TestExportAll:
-    async def test_export_all_empty(self) -> None:
+    async def test_export_all_empty(self, auth_headers) -> None:
         """Exporting all with no students returns empty list."""
         mem = Memory(":memory:")
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/export/all")
             assert resp.status_code == 200
             data = resp.json()
@@ -63,14 +63,14 @@ class TestExportAll:
             assert data["total_records"] == 0
             assert data["bundles"] == []
 
-    async def test_export_all_multiple_students(self) -> None:
+    async def test_export_all_multiple_students(self, auth_headers) -> None:
         """Exporting all returns bundles for each moodle student."""
         mem = Memory(":memory:")
         mem.add("moodle:201", "Fact A", extract=False)
         mem.add("moodle:202", "Fact B", extract=False)
         mem.add("moodle:202", "Fact C", extract=False)
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/export/all")
             assert resp.status_code == 200
             data = resp.json()
@@ -78,13 +78,13 @@ class TestExportAll:
             assert data["total_records"] == 3
             assert len(data["bundles"]) == 2
 
-    async def test_export_all_skips_non_moodle_users(self) -> None:
+    async def test_export_all_skips_non_moodle_users(self, auth_headers) -> None:
         """Non-moodle users are excluded from export."""
         mem = Memory(":memory:")
         mem.add("moodle:301", "Student fact", extract=False)
         mem.add("internal:system", "System fact", extract=False)
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.get("/export/all")
             assert resp.status_code == 200
             data = resp.json()
@@ -95,10 +95,10 @@ class TestExportAll:
 
 
 class TestImport:
-    async def test_import_valid_bundle(self) -> None:
+    async def test_import_valid_bundle(self, auth_headers) -> None:
         """Importing a valid bundle adds memories to the database."""
         mem = Memory(":memory:")
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             bundle = {
                 "schema_version": "1.0",
                 "user_id": "moodle:401",
@@ -145,20 +145,20 @@ class TestImport:
             facts = mem.list("moodle:401")
             assert len(facts) == 2
 
-    async def test_import_invalid_json(self) -> None:
+    async def test_import_invalid_json(self, auth_headers) -> None:
         """Importing invalid JSON returns 400."""
         mem = Memory(":memory:")
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             resp = await client.post(
                 "/import",
                 files={"file": ("bad.json", b"not json", "application/json")},
             )
             assert resp.status_code == 400
 
-    async def test_import_missing_fields(self) -> None:
+    async def test_import_missing_fields(self, auth_headers) -> None:
         """Importing JSON missing required fields returns 400."""
         mem = Memory(":memory:")
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             content = json.dumps({"foo": "bar"}).encode()
             resp = await client.post(
                 "/import",
@@ -166,13 +166,13 @@ class TestImport:
             )
             assert resp.status_code == 400
 
-    async def test_roundtrip_export_import(self) -> None:
+    async def test_roundtrip_export_import(self, auth_headers) -> None:
         """Export then import produces identical memories."""
         mem = Memory(":memory:")
         mem.add("moodle:501", "Fact one", category="general", extract=False)
         mem.add("moodle:501", "Fact two", category="struggling", extract=False)
 
-        async with await _make_client(mem) as client:
+        async with await _make_client(mem, auth_headers) as client:
             # Export
             export_resp = await client.get("/export/student/501")
             assert export_resp.status_code == 200

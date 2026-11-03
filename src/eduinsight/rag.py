@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from functools import wraps
+from threading import RLock
 
 from litemem import Memory
 
@@ -33,6 +35,14 @@ logger = logging.getLogger(__name__)
 def _course_uid(course_id: str) -> str:
     """Convert a course ID to a Lite-Mem user_id string."""
     return f"course:{course_id}"
+
+
+def _locked(method):
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return call
 
 
 @dataclass
@@ -57,7 +67,10 @@ class CourseRAG:
 
     def __init__(self, memory: Memory) -> None:
         self._memory = memory
+        self._lock = RLock()
+        self._material_lock = RLock()
 
+    @_locked
     def index_document(self, course_id: str, doc: ParsedDocument) -> int:
         """Index a legacy ParsedDocument (no markdown anchors)."""
         uid = _course_uid(course_id)
@@ -73,6 +86,7 @@ class CourseRAG:
         )
         return indexed
 
+    @_locked
     def index_markdown(self, course_id: str, doc: ParsedMarkdown) -> int:
         """Index a ParsedMarkdown's chunks with anchor metadata.
 
@@ -93,12 +107,14 @@ class CourseRAG:
         )
         return indexed
 
+    @_locked
     def search(
         self,
         course_id: str,
         query: str,
         *,
         top_k: int = 5,
+        material_filenames: list[str] | None = None,
     ) -> list[RAGResult]:
         """Search course materials for relevant content.
 
@@ -114,11 +130,20 @@ class CourseRAG:
             List of RAGResult with text, source, page, and score.
         """
         uid = _course_uid(course_id)
-        results = self._memory.query_detail(uid, query, top_k=top_k)
+        if material_filenames == []:
+            return []
+        # Retrieve the full ranked candidate pool before filtering: selected files
+        # may otherwise be crowded out by unselected files in the first top_k.
+        candidate_count = top_k
+        if material_filenames is not None:
+            candidate_count = max(top_k, len(self._memory.list(uid, category="course_material")))
+        results = self._memory.query_detail(uid, query, top_k=candidate_count)
 
         rag_results: list[RAGResult] = []
         for r in results:
             source, page, heading, anchor, text = _parse_tagged_text(r.text)
+            if material_filenames is not None and source not in material_filenames:
+                continue
             rag_results.append(
                 RAGResult(
                     text=text, source=source, page=page, score=r.score,
@@ -126,8 +151,9 @@ class CourseRAG:
                 )
             )
 
-        return rag_results
+        return rag_results[:top_k]
 
+    @_locked
     def list_documents(self, course_id: str) -> list[str]:
         """List all indexed document filenames for a course."""
         uid = _course_uid(course_id)
@@ -139,6 +165,16 @@ class CourseRAG:
                 filenames.add(source)
         return sorted(filenames)
 
+    @_locked
+    def document_counts(self, course_id: str) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for fact in self._memory.list(_course_uid(course_id), category="course_material"):
+            source, _, _, _, _ = _parse_tagged_text(fact)
+            if source:
+                counts[source] = counts.get(source, 0) + 1
+        return counts
+
+    @_locked
     def remove_document(self, course_id: str, filename: str) -> int:
         """Remove all chunks from a specific document.
 
@@ -175,6 +211,7 @@ class CourseRAG:
         query: str,
         *,
         top_k: int = 5,
+        material_filenames: list[str] | None = None,
     ) -> str:
         """Get formatted context string for LLM prompt injection.
 
@@ -189,7 +226,12 @@ class CourseRAG:
         Returns:
             Formatted context string, or empty string if no results.
         """
-        results = self.search(course_id, query, top_k=top_k)
+        results = self.search(course_id, query, top_k=top_k, material_filenames=material_filenames)
+        return self.format_context(results)
+
+    @staticmethod
+    def format_context(results: list[RAGResult]) -> str:
+        """Format the same retrieval used to produce the response's citations."""
         if not results:
             return ""
 

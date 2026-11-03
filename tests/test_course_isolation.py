@@ -1,5 +1,7 @@
 """Course-level data isolation on teacher / class-wide endpoints (report ch.2 2.4.2)."""
 
+from eduinsight.courses import enroll
+
 from httpx import ASGITransport, AsyncClient
 from litemem import Memory
 
@@ -21,7 +23,9 @@ def _seed(mem: Memory) -> None:
     a = LearningAssistant(mem)
     a.record_question(1001, "What is a BST?", topic="ds101")
     a.record_question(1002, "What is STP?", topic="mk201")
+    enroll("ds101", 1001, source="test")
     sessions_mod.create_session(1001, "ds101", "bst")
+    enroll("mk201", 1002, source="test")
     sessions_mod.create_session(1002, "mk201", "stp")
 
 
@@ -65,9 +69,9 @@ class TestTeacherScope:
             r = await c.get("/teacher/students", params={"course_id": "mk201"}, headers=h)
             assert r.status_code == 403
             r = await c.get("/teacher/students", params={"course_id": "ds101"}, headers=h)
-            assert r.status_code == 200
+            assert r.status_code == 403
             assert (await c.get("/teacher/students/1002/memories", headers=h)).status_code == 403
-            assert (await c.get("/teacher/students/1001/memories", headers=h)).status_code == 200
+            assert (await c.get("/teacher/students/1001/memories", headers=h)).status_code == 403
 
     async def test_admin_unrestricted(self, auth_headers) -> None:
         mem = Memory()
