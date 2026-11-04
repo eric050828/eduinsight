@@ -145,6 +145,9 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         raise RuntimeError("Production settings validator is unavailable")
     init_auth_db()
     courses.init_enrollments()
+    interrupted = MaterialMetadata().recover_interrupted()
+    if interrupted:
+        logger.warning("Marked %d interrupted material index job(s) as failed", interrupted)
     seeded = []
     if _demo_enabled():
         seeded = seed_demo_users()
