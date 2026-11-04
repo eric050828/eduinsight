@@ -366,15 +366,18 @@ async def chat(
         rag_context = _rag.format_context(rag_results)
 
     if assistant._llm is not None:
+        # Save the question first: answers take seconds, and a student who reloads
+        # meanwhile should find it in history (the frontend then waits for the answer).
+        user_msg_id = _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
+        sessions_mod.save_message_metadata(session_id, user_msg_id, mention_user_ids=req.mention_user_ids)
+        sessions_mod.touch_session(session_id)
         response = await assistant.answer(
             req.moodle_user_id, req.message, topic=req.topic,
             material_context=rag_context,
         )
-        user_msg_id = _memory._store.store_message(uid, req.message, session_id=session_id, role="user")
         assistant_msg_id = _memory._store.store_message(
             uid, response.answer, session_id=session_id, role="assistant"
         )
-        sessions_mod.save_message_metadata(session_id, user_msg_id, mention_user_ids=req.mention_user_ids)
         sessions_mod.save_message_metadata(
             session_id, assistant_msg_id, material_context=[c.model_dump() for c in citations],
         )
