@@ -66,6 +66,24 @@ curl --fail http://localhost:8080/health
 
 健康檢查為 **`GET /health`**，未登入或非管理員只會得到 `{"status": "ok"}`（不含版本、路徑）；管理員才看得到 LLM、資料庫路徑與記憶統計。Dockerfile 已包含此檢查，也可在部署服務設定 HTTP health check；它不代表外部 LLM 或 Moodle 一定可連線。公開後端應提供 HTTPS。
 
+## 本地部署＋ngrok（目前採用的方式，2026-11-04 決定）
+
+後端與前端都跑在組員的電腦，只透過 ngrok 公開前端；前端以 `/api/backend` 代理到只綁 `127.0.0.1` 的後端。一鍵啟動：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-local-deploy.ps1 -FrontendDir ..\edu-insight-frontend
+powershell -ExecutionPolicy Bypass -File scripts\start-local-deploy.ps1 -Stop      # 停止
+```
+
+- 以 **production** 模式執行：沒有示範帳號、`/demo/*` 回 404。對公網開放的版本不能用示範資料（見交接規則 2）；報告現場要用示範資料時，改用 `scripts/start-offline-demo.ps1`，不要開 ngrok。
+- 設定與資料在 `%USERPROFILE%\.eduinsight\`：`.env.deploy`（第一次執行時產生隨機 JWT 密鑰）、`data\`（SQLite、教材快取、附件）、`admin-credentials.txt`（第一次執行時以隨機密碼建立的管理員 `eduadmin`）。這些都不在 repo 內，不要 commit。
+- 後端在主機上執行，而不是 Docker：本機沒有 LLM API 金鑰，要用已登入的 `claude` CLI 產生 AI 回答（`/health` 的管理員檢視會顯示 `llm_provider: ClaudeCLIClient`）。Docker 映像仍可用，只是需要 API 金鑰才有 AI 回答。
+- 老師、學生、課程由管理員登入後在「用戶管理」「課程管理」建立（production 預設不開放自助註冊）。
+- ngrok 使用帳號設定的固定網域；免費方案的瀏覽器第一次進入會看到 ngrok 的提示頁，按「Visit Site」即可。
+- 這台電腦關機或睡眠時服務就會中斷。
+
+實測（2026-11-04）：公開網址 `/login` 200；匿名 `/health` 只回 `{"status":"ok"}`；`admin/admin123` 回 401；`POST /demo/reset` 回 404；透過公開網址呼叫 `/chat` 取得 AI 回答；管理員以瀏覽器從公開網址登入，可進入「網站管理中心」與「用戶管理」，過程沒有錯誤；`-Stop` 後重新啟動，管理員仍可登入（資料保留）。
+
 ## Vercel 前端連線
 
 前端 repo 的 `next.config.ts` 已定義 rewrite：
