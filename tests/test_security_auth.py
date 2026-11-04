@@ -336,7 +336,7 @@ def test_login_throttle_username_ip_backoff_and_success_reset(client, api, monke
     provision()
     monkeypatch.setattr(settings, "login_throttle_enabled", True)
     clock = [1000.0]
-    monkeypatch.setattr(auth.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(auth.time, "time", lambda: clock[0])
     wrong = {"username": "trusted-user", "password": "wrong-password"}
     for _ in range(4):
         assert client.post("/auth/login", json=wrong).status_code == 401
@@ -496,7 +496,7 @@ def test_lti_exchange_code_is_single_use(client, valid_launch):
 
 def test_lti_exchange_code_expires_at_60_seconds(client, valid_launch, monkeypatch):
     clock = [1000.0]
-    monkeypatch.setattr(lti.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(lti.time, "time", lambda: clock[0])
     code = launch_code(client)
     clock[0] += 60
     response = client.post("/lti/exchange", json={"code": code})
@@ -546,7 +546,7 @@ def test_lti_session_ids_are_server_generated_and_cookie_secure():
 def test_lti_stores_have_ttl_and_max_size(monkeypatch, store_name):
     store = getattr(lti, store_name)
     clock = [1000.0]
-    monkeypatch.setattr(lti.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(lti.time, "time", lambda: clock[0])
     monkeypatch.setattr(store, "max_size", 2)
     for key in ("first", "second", "third"):
         store[key] = {"value": key}
