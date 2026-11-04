@@ -258,7 +258,10 @@ def update_assignment(
                 (*changes.values(), assignment_id),
             )
             assignment = _assignment(conn, assignment_id, user)
-        return _assignment_view(conn, assignment, user)
+        result = _assignment_view(conn, assignment, user)
+    # Title and max_score feed grade center items.
+    sync_grade_center(assignment["course_id"])
+    return result
 
 
 @router.delete("/assignments/{assignment_id}", status_code=204)
@@ -267,8 +270,9 @@ def delete_assignment(
     user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> Response:
     with _db(write=True) as conn:
-        _assignment(conn, assignment_id, user)
+        course_id = _assignment(conn, assignment_id, user)["course_id"]
         conn.execute("DELETE FROM assignments WHERE id = ?", (assignment_id,))
+    sync_grade_center(course_id)
     return Response(status_code=204)
 
 
@@ -377,7 +381,83 @@ def grade_submission(
             "graded_at = ?, updated_at = ? WHERE assignment_id = ? AND student_id = ?",
             (body.score, body.feedback, now, now, assignment_id, student_id),
         )
-        return _submission_view(assignment, _submission(conn, assignment_id, student_id))
+        result = _submission_view(assignment, _submission(conn, assignment_id, student_id))
+    sync_grade_center(assignment["course_id"])
+    return result
+
+
+GRADE_CENTER_CATEGORY = "作業"
+# (course_id) -> {(student_id, item)} written by the last sync, to drop stale items
+# after a regrade to draft, an assignment rename or deletion, or a new duplicate title.
+_SYNCED_ITEMS: dict[str, set[tuple[int, str]]] = {}
+
+
+def sync_grade_center(course_id: str | None = None) -> int:
+    """Mirror graded submissions into the grade center under the 「作業」 category.
+
+    The grade manager is in-memory, so call this after grading, at startup and after
+    a demo reset. A course without categories gets 「作業」 at 100%; a course whose
+    staff configured categories without 「作業」 is left untouched. Items are keyed by
+    assignment title (suffixed when titles repeat). Each course is rebuilt as a whole:
+    items from the previous sync that no longer apply are removed. Returns the number
+    of scores written.
+    """
+    from .analytics_extra import get_grade_manager
+
+    manager = get_grade_manager()
+    query = (
+        "SELECT a.course_id, a.id, a.title, a.max_score, s.student_id, s.score "
+        "FROM assignment_submissions s JOIN assignments a ON a.id = s.assignment_id "
+        "WHERE s.state = 'graded' AND s.score IS NOT NULL"
+    )
+    params: tuple = ()
+    if course_id is not None:
+        query += " AND a.course_id = ?"
+        params = (course_id,)
+    with _db() as conn:
+        query += " ORDER BY a.course_id, a.due_at, a.id"
+        rows = [dict(row) for row in conn.execute(query, params)]
+        titles = {
+            (row["course_id"], row["title"]): row["n"]
+            for row in conn.execute("SELECT course_id, title, COUNT(*) AS n FROM assignments "
+                                    "GROUP BY course_id, title")
+        }
+    by_course: dict[str, list[dict]] = {}
+    for row in rows:
+        by_course.setdefault(row["course_id"], []).append(row)
+    targets = {course_id} if course_id is not None else set(by_course) | set(_SYNCED_ITEMS)
+    written = 0
+    for course in sorted(targets):
+        course_rows = by_course.get(course, [])
+        try:
+            names = [category.name for category in manager.get_categories(course)]
+        except KeyError:
+            if not course_rows:
+                _SYNCED_ITEMS.pop(course, None)
+                continue
+            names = [category.name for category in manager.set_categories(
+                course, [{"name": GRADE_CENTER_CATEGORY, "weight": 100}],
+            )]
+        if GRADE_CENTER_CATEGORY not in names:
+            _SYNCED_ITEMS.pop(course, None)
+            continue
+        current: set[tuple[int, str]] = set()
+        for row in course_rows:
+            item = row["title"]
+            if titles.get((course, item), 1) > 1:
+                item = f"{item}（{row['id'][-6:]}）"
+            manager.record_score(
+                course, student_id=row["student_id"], category=GRADE_CENTER_CATEGORY,
+                item=item, score=row["score"], total=row["max_score"],
+            )
+            current.add((row["student_id"], item))
+            written += 1
+        for student_id, item in _SYNCED_ITEMS.get(course, set()) - current:
+            manager.delete_score(
+                course, student_id=student_id, category=GRADE_CENTER_CATEGORY, item=item,
+            )
+        _SYNCED_ITEMS[course] = current
+    return written
 
 
 def seed_demo_assignments() -> dict[str, int]:
