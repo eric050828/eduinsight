@@ -174,9 +174,11 @@ def skills(course_id: str, user: AuthUser = Depends(require_role("teacher", "adm
 
 def _assignment_data(course_id: str) -> tuple[list[dict], dict[tuple[str, int], dict]]:
     enrolled = set(_enrolled(course_id))
+    # Targeted (intervention) assignments are tracked per intervention, not class-wide.
     with assignments._db() as conn:
         work = [dict(row) for row in conn.execute(
-            "SELECT * FROM assignments WHERE course_id = ? ORDER BY due_at, id", (course_id,),
+            f"SELECT * FROM assignments a WHERE course_id = ? AND {assignments.untargeted()} "
+            "ORDER BY due_at, id", (course_id,),
         )]
         submitted = {(row["assignment_id"], row["student_id"]): dict(row) for row in conn.execute(
             "SELECT s.* FROM assignment_submissions s JOIN assignments a ON a.id = s.assignment_id "

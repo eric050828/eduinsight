@@ -294,8 +294,9 @@ async def assignment_completion(
         for course_id in sorted({row["course_id"] for row in rows}):
             work = conn.execute(
                 "SELECT a.due_at, s.state FROM assignments a LEFT JOIN assignment_submissions s "
-                "ON s.assignment_id = a.id AND s.student_id = ? WHERE a.course_id = ?",
-                (moodle_user_id, course_id),
+                "ON s.assignment_id = a.id AND s.student_id = ? WHERE a.course_id = ? "
+                f"AND {assignments.assigned_to()}",
+                (moodle_user_id, course_id, moodle_user_id),
             ).fetchall()
             courses.append(
                 {
