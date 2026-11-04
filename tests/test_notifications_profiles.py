@@ -172,6 +172,26 @@ def test_notification_seed_preserves_valid_custom_demo_link(auth_headers):
         )} == {"/course/ds101"}
 
 
+def test_notification_seed_is_traditional_chinese_and_translates_legacy_rows(auth_headers):
+    assert notifications.seed_demo_notifications() == 30
+    legacy = {"assignment_due": "Assignment due", "grade_released": "Grade released",
+              "ai_tip": "AI study tip"}
+    with notifications._db() as conn:
+        for kind, title in legacy.items():
+            conn.execute(
+                "UPDATE notifications SET title = ?, body = 'old', is_read = 1 WHERE demo_key = ?",
+                (title, kind),
+            )
+        conn.commit()
+    assert notifications.seed_demo_notifications() == 0
+    with notifications._db() as conn:
+        rows = conn.execute(
+            "SELECT title, body, is_read FROM notifications WHERE demo_key IS NOT NULL"
+        ).fetchall()
+    assert {row["title"] for row in rows} == {"作業即將截止", "成績已公布", "AI 學習提示"}
+    assert all(row["body"] != "old" and row["is_read"] == 1 for row in rows)
+
+
 def test_profiles_defaults_partial_updates_and_isolation(client, auth_headers):
     headers = auth_headers("student1001")
     original_user = auth.get_user_by_id(user_id())

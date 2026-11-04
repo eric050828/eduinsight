@@ -328,7 +328,7 @@ async def test_health_only_discloses_details_to_admin(client, auth_headers, monk
         assert response.json()["total_facts"] == 5
         stats.assert_called_once()
     else:
-        assert response.json() == {"status": "ok", "version": "0.1.0"}
+        assert response.json() == {"status": "ok"}
         stats.assert_not_called()
 
 

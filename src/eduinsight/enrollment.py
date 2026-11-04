@@ -278,8 +278,8 @@ def _decide(request_id: int, user: AuthUser, status: str) -> dict:
         result = _request_view(_request(conn, request_id))
     create_notification(
         result["user_id"],
-        f"Enrollment {status}",
-        f"Your request for {course_name} was {status}.",
+        "選課申請已核准" if status == "approved" else "選課申請未通過",
+        f"你申請的「{course_name}」{'已核准' if status == 'approved' else '未通過'}。",
         "enrollment",
         f"/courses/{result['course_id']}",
     )
@@ -349,8 +349,8 @@ def create_invitation(
     if recipient is not None:
         create_notification(
             recipient["id"],
-            "Course invitation",
-            f"You are invited to {course_name}.",
+            "課程邀請",
+            f"你受邀加入「{course_name}」。",
             "invitation",
             f"/invitations/{result['token']}",
         )
@@ -423,15 +423,15 @@ def accept_invitation(
         )
     create_notification(
         user.id,
-        "Enrollment confirmed",
-        f"You have joined {course_name}.",
+        "已加入課程",
+        f"你已加入「{course_name}」。",
         "enrollment",
         f"/courses/{result['course_id']}",
     )
     create_notification(
         result["created_by"],
-        "Invitation accepted",
-        f"{user.display_name} joined {result['course_id']}.",
+        "邀請已接受",
+        f"{user.display_name} 已加入 {result['course_id']}。",
         "enrollment",
         f"/courses/{result['course_id']}",
     )

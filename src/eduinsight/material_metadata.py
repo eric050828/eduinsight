@@ -11,6 +11,9 @@ from pathlib import Path
 from .config import settings
 from .db import connect
 
+# Error code for an index job lost when the process stopped mid-way.
+INTERRUPTED = "material_index_interrupted"
+
 
 def material_kind(filename: str) -> str:
     if filename.endswith(".youtube.md"):
@@ -78,6 +81,18 @@ class MaterialMetadata:
             """, ("failed" if error is not None else "done", chunk_count, error,
                   course_id, filename))
 
+    def recover_interrupted(self) -> int:
+        """Fail rows left 'indexing' by a crashed process so they can be re-uploaded.
+
+        Indexing runs in-process; after a restart no job will ever finish them.
+        Call once at startup (single-worker deployment).
+        """
+        with self._db() as conn:
+            return conn.execute("""
+                UPDATE course_material_metadata SET status='failed', error=?
+                WHERE status='indexing'
+            """, (INTERRUPTED,)).rowcount
+
     def backfill(self, course_id: str, counts: dict[str, int]) -> None:
         with self._db() as conn:
             conn.executemany("""
@@ -108,7 +123,7 @@ class MaterialMetadata:
         item = dict(row)
         # Older databases may contain exception text from before phase 2.
         if item["error"] is not None and item["error"] not in (
-            "material_index_failed", "material_upload_failed",
+            "material_index_failed", "material_upload_failed", INTERRUPTED,
         ):
             item["error"] = "material_index_failed"
         return item

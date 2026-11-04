@@ -364,3 +364,34 @@ async def test_invalid_filename_does_not_create_metadata(client):
     response = await upload(client, "../escape.md")
     assert response.status_code == 400
     assert MaterialMetadata().list("CS101") == []
+
+
+def test_startup_fails_materials_left_indexing_by_crash(auth_headers):
+    """A process killed mid-index leaves 'indexing' rows; startup must release them."""
+    from fastapi.testclient import TestClient
+
+    from eduinsight.material_metadata import INTERRUPTED
+
+    metadata = MaterialMetadata()
+    assert metadata.start("CS101", "stuck.md", 10, "text/markdown", 1)
+    assert metadata.get("CS101", "stuck.md")["status"] == "indexing"
+
+    with TestClient(app_module.app, headers=auth_headers()) as client:
+        item = metadata.get("CS101", "stuck.md")
+        assert item["status"] == "failed"
+        assert item["error"] == INTERRUPTED
+        listed = client.get("/courses/CS101/materials").json()["items"]
+        assert [i["status"] for i in listed if i["filename"] == "stuck.md"] == ["failed"]
+        status = client.get("/courses/CS101/materials/stuck.md/status").json()
+        assert status["status"] == "failed"
+        assert status["error"] == INTERRUPTED
+        # Re-uploading the same filename is allowed again (the UI's retry path).
+        assert metadata.start("CS101", "stuck.md", 10, "text/markdown", 1)
+
+
+def test_recover_interrupted_is_noop_without_stuck_rows():
+    metadata = MaterialMetadata()
+    metadata.start("CS101", "ok.md", 1, None, 1)
+    metadata.finish("CS101", "ok.md", 3)
+    assert metadata.recover_interrupted() == 0
+    assert metadata.get("CS101", "ok.md")["status"] == "done"

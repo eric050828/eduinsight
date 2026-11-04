@@ -69,6 +69,7 @@ from .live_quiz import (
 from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
 from .lti import router as lti_router
 from .material_metadata import MaterialMetadata
+from .memory_lock import locked
 from .messaging import router as messaging_router
 from .messaging import seed_demo_messages
 from .moodle import MoodleClient
@@ -144,6 +145,9 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         raise RuntimeError("Production settings validator is unavailable")
     init_auth_db()
     courses.init_enrollments()
+    interrupted = MaterialMetadata().recover_interrupted()
+    if interrupted:
+        logger.warning("Marked %d interrupted material index job(s) as failed", interrupted)
     seeded = []
     if _demo_enabled():
         seeded = seed_demo_users()
@@ -153,7 +157,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         seed_demo_admin_data()
     logger.info("Auth DB ready: seeded users = %s", seeded)
     embedder = settings.memory_embedder or None  # "" means disabled
-    _memory = Memory(settings.memory_db_path, embedder=embedder)
+    _memory = locked(Memory(settings.memory_db_path, embedder=embedder))
 
     # Try to initialize LLM: API key > Claude CLI > no LLM
     try:
@@ -280,7 +284,7 @@ class TeacherDashboardResponse(BaseModel):
 @app.get("/health")
 async def health(user: AuthUser | None = Depends(get_optional_user)) -> dict[str, Any]:
     if user is None or user.role != "admin":
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok"}  # no version/path details for non-admins
     llm_name = "None"
     if _llm is not None:
         llm_name = getattr(_llm, "model", None) or type(_llm).__name__
@@ -2164,7 +2168,7 @@ async def demo_reset(
         for uid in DEMO_STUDENTS:
             _memory.forget(uid)
 
-    _memory = Memory(db_path, embedder=embedder)
+    _memory = locked(Memory(db_path, embedder=embedder))
     _assistant = LearningAssistant(_memory, llm=_llm)
     _rag = CourseRAG(_memory)
     _quiz = QuizGenerator(_rag, _llm) if _llm is not None else None
@@ -2227,6 +2231,14 @@ async def demo_reset(
     from .demo_materials import seed_demo_materials
 
     chunks_indexed = seed_demo_materials(_rag)
+    # Full-text cache for the evidence panel; demo materials have no source file.
+    from .demo_materials import DEMO_MATERIALS, demo_material_markdown
+
+    for course_id, docs in DEMO_MATERIALS:
+        for doc in docs:
+            md_path = _material_markdown_path(course_id, doc.filename)
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+            md_path.write_text(demo_material_markdown(doc), encoding="utf-8")
     logger.info("Demo seed: %d material chunks indexed for RAG", chunks_indexed)
 
     # Seed demo live quiz session (pre-built questions + student answers)
@@ -2271,7 +2283,7 @@ async def demo_semester(
     if _memory is not None:
         _memory.forget(SEMESTER_STUDENT_ID)
 
-    _memory = Memory(db_path, embedder=embedder)
+    _memory = locked(Memory(db_path, embedder=embedder))
     _assistant = LearningAssistant(_memory, llm=_llm)
 
     # Calculate timestamps: week 1 starts 18 weeks ago from now
