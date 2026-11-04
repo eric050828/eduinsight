@@ -50,6 +50,12 @@ CREATE TABLE IF NOT EXISTS course_invitations (
     accepted_by INTEGER REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS ix_invitations_course ON course_invitations(course_id);
+-- Courses listed in the student catalog; absent means invitation or known code only.
+CREATE TABLE IF NOT EXISTS course_open_enrollment (
+    course_id TEXT PRIMARY KEY,
+    opened_by INTEGER NOT NULL REFERENCES users(id),
+    opened_at REAL NOT NULL
+);
 """
 
 
@@ -76,6 +82,11 @@ class EnrollmentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     course_id: str = Field(min_length=1, max_length=200)
     message: str = Field(default="", max_length=5000)
+
+
+class OpenEnrollment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    open: bool
 
 
 class InvitationCreate(BaseModel):
@@ -234,6 +245,57 @@ def cancel_request(
             (time.time(), user.id, request_id),
         )
     return Response(status_code=204)
+
+
+@router.get("/enrollment/catalog")
+def enrollment_catalog(user: AuthUser = Depends(require_role("student"))) -> list[dict]:
+    """Courses whose staff opted in to applications, excluding the student's own.
+
+    Only id, name and teacher name are disclosed; course content stays enrollment-gated.
+    """
+    student_id = _student(user)
+    entries = courses.catalog_entries()
+    with _db() as conn:
+        open_ids = [row[0] for row in conn.execute(
+            "SELECT course_id FROM course_open_enrollment ORDER BY course_id",
+        ).fetchall()]
+        listed = [cid for cid in open_ids if cid in entries and not entries[cid]["archived"]
+                  and not _enrolled(conn, cid, student_id)]
+        teachers = {row[0]: row[1] for row in conn.execute(
+            "SELECT username, display_name FROM users WHERE role = 'teacher'",
+        ).fetchall()}
+    return [{"id": cid, "name": entries[cid]["name"],
+             "teacher_name": teachers.get(entries[cid]["teacher_username"])} for cid in listed]
+
+
+@router.get("/courses/{course_id}/enrollment/open")
+def get_open_enrollment(
+    course_id: str,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> dict:
+    courses._check_course_access(user, course_id)
+    with _db() as conn:
+        row = conn.execute("SELECT 1 FROM course_open_enrollment WHERE course_id = ?",
+                           (course_id,)).fetchone()
+    return {"course_id": course_id, "open": row is not None}
+
+
+@router.put("/courses/{course_id}/enrollment/open")
+def set_open_enrollment(
+    course_id: str,
+    body: OpenEnrollment,
+    user: AuthUser = Depends(require_role("teacher", "admin")),
+) -> dict:
+    courses._check_course_access(user, course_id)
+    _catalog(course_id)
+    with _db(write=True) as conn:
+        if body.open:
+            conn.execute("INSERT OR IGNORE INTO course_open_enrollment "
+                         "(course_id, opened_by, opened_at) VALUES (?, ?, ?)",
+                         (course_id, user.id, time.time()))
+        else:
+            conn.execute("DELETE FROM course_open_enrollment WHERE course_id = ?", (course_id,))
+    return {"course_id": course_id, "open": body.open}
 
 
 @router.get("/courses/{course_id}/enrollment/requests")

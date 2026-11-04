@@ -293,3 +293,19 @@ async def test_demo_reset_data_is_visible_to_standalone_router(client, auth_head
         assert group["size"] == len(group["members"])
         assert all(1001 <= member["moodle_user_id"] <= 1005 for member in group["members"])
         assert group["suggested_intervention"]
+
+
+async def test_facts_without_struggles_do_not_claim_full_mastery(
+    client, auth_headers, diagnostic_app,
+):
+    # The trial showed 「班級掌握度 100%」 when learners only asked questions.
+    memory = app_module._memory
+    enroll("ds101", 1001, source="test")
+    sessions.create_session(1001, "ds101")
+    memory.add("moodle:1001", "[SQL] Asked about SELECT", extract=False)
+    response = await client.get("/diagnostics/ds101/overview", headers=auth_headers("teacher"))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_facts"] == 1
+    assert data["struggle_fact_count"] == 0
+    assert data["mastery_estimate"] is None

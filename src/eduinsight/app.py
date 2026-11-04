@@ -39,7 +39,7 @@ from .analytics import (
 )
 from .analytics_extra import router as analytics_extra_router
 from .assignments import router as assignments_router
-from .assignments import seed_demo_assignments
+from .assignments import seed_demo_assignments, sync_grade_center
 from .assistant import LearningAssistant
 from .attendance import AttendanceManager, GPSLocation
 from .auth import AuthUser, get_current_user, get_optional_user, require_role, seed_demo_users
@@ -148,6 +148,8 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     interrupted = MaterialMetadata().recover_interrupted()
     if interrupted:
         logger.warning("Marked %d interrupted material index job(s) as failed", interrupted)
+    # The grade center is in-memory; restore assignment grades persisted in SQLite.
+    sync_grade_center()
     seeded = []
     if _demo_enabled():
         seeded = seed_demo_users()
@@ -2226,6 +2228,7 @@ async def demo_reset(
     from .demo_grades import seed_demo_grades
 
     seed_demo_grades(_grades)
+    sync_grade_center()
 
     # Seed demo course materials for RAG (enables AI quiz demo flow)
     from .demo_materials import seed_demo_materials

@@ -189,7 +189,9 @@ def _mentions_topic(text: str, topic: str) -> bool:
 def overview(evidence: _Evidence = Depends(_evidence)) -> Overview:
     """Mastery = 100 * (1 - struggle_fact_count / total_facts), rounded to 2 dp.
 
-    No facts means unknown mastery (null), not demonstrated proficiency.
+    No facts means unknown mastery (null), not demonstrated proficiency. Facts
+    without any struggle are also null: the ratio cannot tell "no difficulty"
+    from "no difficulty signal yet" (e.g. the stub extractor never emits one).
     At-risk ratio counts assess_risk levels medium/high divided by enrollment;
     the helper's class average uses this course's students, including zero facts.
     Active learners have a fact or course user message within the last 14 days.
@@ -211,7 +213,7 @@ def overview(evidence: _Evidence = Depends(_evidence)) -> Overview:
         active += any(now - _ACTIVE_DAYS * 86400 <= ts <= now for ts in timestamps)
     return Overview(
         course_id=evidence.course_id,
-        mastery_estimate=round(100 * (1 - struggles / total), 2) if total else None,
+        mastery_estimate=round(100 * (1 - struggles / total), 2) if total and struggles else None,
         total_students=count, total_facts=total, struggle_fact_count=struggles,
         at_risk_student_count=at_risk, at_risk_student_ratio=at_risk / count if count else 0,
         active_learner_count=active,
