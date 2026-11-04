@@ -76,16 +76,25 @@ class Settings(BaseSettings):
         return self
 
 
+_SECRET_PLACEHOLDERS = (
+    "dev-only-secret", "change-me", "change_me", "changeme", "replace-with",
+    "replace_with", "replace-me", "replace_me", "placeholder",
+    "your-secret", "your_secret", "your_jwt_secret", "your-jwt-secret",
+)
+
+
+def jwt_secret_is_strong(secret: str) -> bool:
+    """At least 32 characters and not an example value (production startup rule)."""
+    secret = secret.strip()
+    return len(secret) >= 32 and not any(value in secret.lower() for value in _SECRET_PLACEHOLDERS)
+
+
 def validate_production_settings(config: Settings | None = None) -> None:
     """Fail before startup/DB writes when production signing credentials are unsafe."""
     config = config if config is not None else settings
     if config.env != "production":
         return
-    secret = config.jwt_secret.strip()
-    placeholders = ("dev-only-secret", "change-me", "change_me", "changeme", "replace-with",
-                    "replace_with", "replace-me", "replace_me", "placeholder",
-                    "your-secret", "your_secret", "your_jwt_secret", "your-jwt-secret")
-    if len(secret) < 32 or any(value in secret.lower() for value in placeholders):
+    if not jwt_secret_is_strong(config.jwt_secret):
         raise ValueError(
             "Production requires a random EDUINSIGHT_JWT_SECRET of at least 32 characters"
         )

@@ -175,6 +175,7 @@ Both commit messages should end with:
 
 - `GET /public/settings` is intentionally public. It returns only `site_name` and `maintenance_banner`; every other platform setting is admin-only (`/admin/settings`).
 - Routes added later (messaging, forum, submission files, enrollment, class analytics, achievements, admin management, preferences) all require login and follow the same ownership rules; see their tests for the exact 401/403 coverage.
+- `GET /platform/security` is admin-only (401/403 otherwise). It reports whether settings meet the rules but never returns the JWT secret or password hashes; checking admins against the published demo password runs only over admin accounts. See `tests/test_security_center.py`.
 
 ## Security hardening
 
