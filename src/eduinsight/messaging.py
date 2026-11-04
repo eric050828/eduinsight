@@ -271,7 +271,7 @@ def send_message(
             "SELECT * FROM direct_messages WHERE id = ?", (cur.lastrowid,),
         ).fetchone()
     create_notification(
-        peer_user_id, f"Message from {user.display_name}", body.text, "direct_message",
+        peer_user_id, f"{user.display_name} 傳來新訊息", body.text, "direct_message",
         f"/messages/conversations/{user.id}",
     )
     return _message(row)

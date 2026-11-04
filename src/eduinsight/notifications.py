@@ -97,9 +97,9 @@ def seed_demo_notifications() -> int:
     """
     usernames = [*auth.TEACHER_COURSE_MAP, *(f"student{i}" for i in range(1001, 1006))]
     demos = [
-        ("assignment_due", "Assignment due", "Your next assignment is due soon.", "/my"),
-        ("grade_released", "Grade released", "A new grade is available.", "/analytics"),
-        ("ai_tip", "AI study tip", "Review one difficult concept with your AI tutor.",
+        ("assignment_due", "作業即將截止", "你有一份作業即將到期，記得在期限前提交。", "/my"),
+        ("grade_released", "成績已公布", "有新的成績可以查看。", "/analytics"),
+        ("ai_tip", "AI 學習提示", "挑一個不熟的概念，請 AI 助教陪你複習。",
          "/ai-assistant"),
     ]
     inserted = 0
@@ -121,6 +121,13 @@ def seed_demo_notifications() -> int:
                     "UPDATE notifications SET link = ? WHERE user_id = ? AND demo_key = ? "
                     "AND link IN ('/assignments', '/grades', '/chat')",
                     (link, user["id"], kind),
+                )
+                # Earlier demo databases seeded English text; translate it in place.
+                conn.execute(
+                    "UPDATE notifications SET title = ?, body = ? WHERE user_id = ? "
+                    "AND demo_key = ? AND title IN ('Assignment due', 'Grade released', "
+                    "'AI study tip')",
+                    (title, body, user["id"], kind),
                 )
         conn.commit()
     return inserted
