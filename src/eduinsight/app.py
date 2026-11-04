@@ -284,7 +284,7 @@ class TeacherDashboardResponse(BaseModel):
 @app.get("/health")
 async def health(user: AuthUser | None = Depends(get_optional_user)) -> dict[str, Any]:
     if user is None or user.role != "admin":
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok"}  # no version/path details for non-admins
     llm_name = "None"
     if _llm is not None:
         llm_name = getattr(_llm, "model", None) or type(_llm).__name__

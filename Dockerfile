@@ -21,6 +21,10 @@ ENV EDUINSIGHT_ENV=production \
     EDUINSIGHT_MEMORY_DB_PATH=/data/eduinsight.db \
     EDUINSIGHT_AUTH_DB_PATH=/data/eduinsight_auth.db
 
+# Relative runtime paths (material Markdown cache `_materials_md/`, uploads next to
+# the auth DB) must land on the persistent volume, so run from /data.
+WORKDIR /data
+
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/health', timeout=4)" || exit 1

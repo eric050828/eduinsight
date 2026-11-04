@@ -60,11 +60,11 @@ docker run -d --name eduinsight-backend --env-file .env.deploy -p 8080:8000 -v e
 curl --fail http://localhost:8080/health
 ```
 
-將整個 `/data` 掛載至持久化 volume，讓 `EDUINSIGHT_MEMORY_DB_PATH` 與 `EDUINSIGHT_AUTH_DB_PATH` 都指向此目錄；這也保留 SQLite 的 WAL／SHM 檔案。複製 `.env.example` 後務必覆寫資料庫路徑，否則其相對路徑會寫入容器可丟棄的檔案系統。部署服務若使用 `PORT=8080`，請同步修改容器目標連接埠。
+將整個 `/data` 掛載至持久化 volume，讓 `EDUINSIGHT_MEMORY_DB_PATH` 與 `EDUINSIGHT_AUTH_DB_PATH` 都指向此目錄；這也保留 SQLite 的 WAL／SHM 檔案。容器的工作目錄就是 `/data`，因此教材原文快取 `_materials_md/` 與作業附件 `uploads/` 也都寫在 volume 內。複製 `.env.example` 後務必覆寫資料庫路徑，否則其相對路徑會寫入容器可丟棄的檔案系統。部署服務若使用 `PORT=8080`，請同步修改容器目標連接埠。
 
 目前部分管理功能（例如講義清單）保存在程序記憶體，掛載 SQLite 不代表所有狀態都會跨重啟保留。先採單一容器與單一 Uvicorn worker，避免程序間的記憶體狀態不一致。
 
-健康檢查為 **`GET /health`**，正常回應包含 `"status": "ok"`。Dockerfile 已包含此檢查，也可在部署服務設定 HTTP health check；它不代表外部 LLM 或 Moodle 一定可連線。公開後端應提供 HTTPS。
+健康檢查為 **`GET /health`**，未登入或非管理員只會得到 `{"status": "ok"}`（不含版本、路徑）；管理員才看得到 LLM、資料庫路徑與記憶統計。Dockerfile 已包含此檢查，也可在部署服務設定 HTTP health check；它不代表外部 LLM 或 Moodle 一定可連線。公開後端應提供 HTTPS。
 
 ## Vercel 前端連線
 
@@ -78,15 +78,15 @@ curl --fail http://localhost:8080/health
 
 ## 展示資料初始化
 
-僅 `EDUINSIGHT_ENV=development` 且未設 `EDUINSIGHT_DEMO_MODE=false` 時會建立 demo 帳號，完整展示資料需以教師身分呼叫 **`POST /demo/reset`**。以下僅供本機開發展示使用：
+僅 `EDUINSIGHT_ENV=development` 且未設 `EDUINSIGHT_DEMO_MODE=false` 時會建立 demo 帳號，完整展示資料需以**管理員**身分呼叫 **`POST /demo/reset`**。以下僅供本機開發展示使用：
 
 ```powershell
 $backend = 'http://localhost:8080'
-$login = Invoke-RestMethod -Method Post -Uri "$backend/auth/login" -ContentType 'application/json' -Body '{"username":"teacher","password":"teacher123"}'
+$login = Invoke-RestMethod -Method Post -Uri "$backend/auth/login" -ContentType 'application/json' -Body '{"username":"admin","password":"admin123"}'
 Invoke-RestMethod -Method Post -Uri "$backend/demo/reset" -Headers @{ Authorization = "Bearer $($login.access_token)" }
 ```
 
-此端點要求 `teacher` 或 `admin` 角色，會重設展示學生資料並重新植入展示內容；只在開發環境要重設展示資料時執行。Production 必須停用所有 demo 入口與 seed。
+此端點只允許 `admin`（教師呼叫回 403），會重設展示學生的記憶與示範內容；為了不覆蓋真實操作，**已存在的作業提交不會被還原**。要完全回到初始狀態，請用 `scripts/start-offline-demo.ps1`（預設會清空資料後重灌）。只在開發環境要重設展示資料時執行。Production 必須停用所有 demo 入口與 seed。
 
 ## Production 安全檢查
 
@@ -107,7 +107,24 @@ Invoke-RestMethod -Method Post -Uri "$backend/demo/reset" -Headers @{ Authorizat
 uv run --python 3.12 --frozen python -c 'from getpass import getpass; from eduinsight.auth import init_db, create_user, RegisterRequest; init_db(); create_user(RegisterRequest(username=input("Admin username: "), password=getpass("Admin password: "), display_name="Administrator", role="admin"))'
 ```
 
+在 Docker 容器內則用 `docker exec -it`（同樣以提示輸入帳密）：
+
+```sh
+docker exec -it eduinsight-backend python -c 'from getpass import getpass; from eduinsight.auth import init_db, create_user, RegisterRequest; init_db(); create_user(RegisterRequest(username=input("Admin username: "), password=getpass("Admin password: "), display_name="Administrator", role="admin"))'
+```
+
 後續 teacher/student 建帳使用需管理員 JWT 的 `POST /admin/users`。禁止透過公開註冊或 development bridge 建立 admin。
+
+### 實測紀錄（2026-11-04，Docker Desktop 29.2）
+
+依本文件從零操作，以下皆實際執行確認：
+
+- `docker build` 成功（約 2 分鐘，需連網下載 Lite-Mem）。
+- `EDUINSIGHT_JWT_SECRET` 使用開發預設值時，容器啟動即失敗並顯示「Production requires a random EDUINSIGHT_JWT_SECRET of at least 32 characters」。
+- 正確設定後：`/health` 匿名回 `{"status":"ok"}`；容器 healthcheck 為 `healthy`；`admin/admin123` 登入回 401（production 不建立示範帳號）；以管理員呼叫 `POST /demo/reset` 回 **404**。
+- 以 `docker exec` 建立管理員、上傳教材後，`docker restart` 與「刪除容器後以同一 volume 重建」兩種情況，帳號、教材索引、教材原文都仍存在。
+
+尚未決定公開主機；報告現場的備援方式見 `scripts/start-offline-demo.ps1`（本機一鍵啟動前後端並灌示範資料）。
 
 ### app.py 整合責任
 
