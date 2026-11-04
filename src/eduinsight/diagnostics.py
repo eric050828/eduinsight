@@ -9,10 +9,8 @@ legacy/orphan messages without a course mapping are deliberately excluded.
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import re
-import threading
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -25,6 +23,7 @@ from pydantic import BaseModel, Field
 from . import sessions
 from .analytics import StudentAnalytics, analyze_student, assess_risk
 from .auth import AuthUser, require_role
+from .memory_lock import serialized
 from .rag import CourseRAG
 
 router = APIRouter(prefix="/diagnostics", tags=["diagnostics"])
@@ -70,17 +69,9 @@ class Cluster(BaseModel):
     suggested_intervention: str
 
 
-# Lite-Mem 共用同一條 SQLite 連線；診斷頁會同時送出多個請求（在執行緒池並行），
-# 並行讀取會造成 cursor 競爭（偶發 IndexError → 500），因此所有碰記憶庫的處理函式一律序列化。
-_MEMORY_LOCK = threading.RLock()
-
-
-def _serialized(func):
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        with _MEMORY_LOCK:
-            return func(*args, **kwargs)
-    return wrapper
+# 診斷頁會同時送出多個請求（在執行緒池並行）；碰記憶庫的處理函式一律以全域 Lite-Mem 鎖序列化，
+# 見 memory_lock。
+_serialized = serialized
 
 
 def get_memory() -> Memory:

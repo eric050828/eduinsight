@@ -69,6 +69,7 @@ from .live_quiz import (
 from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
 from .lti import router as lti_router
 from .material_metadata import MaterialMetadata
+from .memory_lock import locked
 from .messaging import router as messaging_router
 from .messaging import seed_demo_messages
 from .moodle import MoodleClient
@@ -153,7 +154,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         seed_demo_admin_data()
     logger.info("Auth DB ready: seeded users = %s", seeded)
     embedder = settings.memory_embedder or None  # "" means disabled
-    _memory = Memory(settings.memory_db_path, embedder=embedder)
+    _memory = locked(Memory(settings.memory_db_path, embedder=embedder))
 
     # Try to initialize LLM: API key > Claude CLI > no LLM
     try:
@@ -2164,7 +2165,7 @@ async def demo_reset(
         for uid in DEMO_STUDENTS:
             _memory.forget(uid)
 
-    _memory = Memory(db_path, embedder=embedder)
+    _memory = locked(Memory(db_path, embedder=embedder))
     _assistant = LearningAssistant(_memory, llm=_llm)
     _rag = CourseRAG(_memory)
     _quiz = QuizGenerator(_rag, _llm) if _llm is not None else None
@@ -2271,7 +2272,7 @@ async def demo_semester(
     if _memory is not None:
         _memory.forget(SEMESTER_STUDENT_ID)
 
-    _memory = Memory(db_path, embedder=embedder)
+    _memory = locked(Memory(db_path, embedder=embedder))
     _assistant = LearningAssistant(_memory, llm=_llm)
 
     # Calculate timestamps: week 1 starts 18 weeks ago from now
