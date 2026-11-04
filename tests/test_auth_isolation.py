@@ -19,7 +19,7 @@ from eduinsight.live_quiz import QuizSessionManager
 from eduinsight.office_hours import OfficeHourManager
 
 
-PUBLIC = {"/", "/health", "/auth/register", "/auth/login", "/auth/lti-bridge", "/public/settings"}
+PUBLIC = {"/", "/health", "/auth/register", "/auth/login", "/auth/logout", "/auth/lti-bridge", "/public/settings"}
 DATA_ROUTES = [
     (method, route.path)
     for route in app_module.app.routes

@@ -23,7 +23,7 @@ from typing import Any, Literal
 
 import bcrypt
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.concurrency import run_in_threadpool
@@ -357,12 +357,40 @@ def _row_to_user(row: dict[str, Any]) -> AuthUser:
 # ---------------------------------------------------------------- Dependencies
 
 
+# Browsers authenticate with an HttpOnly cookie that scripts cannot read; API
+# clients and tests keep using the bearer header, which takes precedence.
+# Cookie-authenticated unsafe requests must carry X-Requested-With: a page on
+# another site cannot add it without passing CORS, so it blocks CSRF together
+# with SameSite=Lax.
+SESSION_COOKIE = "edu_session"
+CSRF_HEADER = "X-Requested-With"
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        SESSION_COOKIE, token, max_age=settings.jwt_expire_minutes * 60, path="/",
+        httponly=True, secure=settings.env == "production", samesite="lax",
+    )
+
+
+def _request_token(request: Request, creds: HTTPAuthorizationCredentials | None) -> str | None:
+    if creds is not None and creds.credentials:
+        return creds.credentials
+    token = request.cookies.get(SESSION_COOKIE)
+    if token and request.method not in _SAFE_METHODS and not request.headers.get(CSRF_HEADER):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, f"Missing {CSRF_HEADER} header")
+    return token or None
+
+
 async def get_current_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> AuthUser:
-    if creds is None or not creds.credentials:
+    token = _request_token(request, creds)
+    if token is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing bearer token")
-    payload = decode_token(creds.credentials)
+    payload = decode_token(token)
     user_id = int(payload["sub"])
     row = get_user_by_id(user_id)
     if row is None:
@@ -375,12 +403,11 @@ async def get_current_user(
 
 
 async def get_optional_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> AuthUser | None:
-    if creds is None or not creds.credentials:
-        return None
     try:
-        return await get_current_user(creds)
+        return await get_current_user(request, creds)
     except HTTPException:
         return None
 
@@ -516,18 +543,20 @@ def _record_login_failure(keys: tuple[tuple[str, str], ...]) -> None:
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(req: PublicRegisterRequest) -> TokenResponse:
+async def register(req: PublicRegisterRequest, response: Response) -> TokenResponse:
     with _db() as conn:
         value = conn.execute("SELECT value FROM platform_settings WHERE key = ?",
                              ("allow_self_register",)).fetchone()[0]
     if value != "true":
         raise HTTPException(403, "Self registration is disabled")
     user = await run_in_threadpool(create_user, RegisterRequest(**req.model_dump()))
-    return TokenResponse(access_token=create_access_token(user), user=user)
+    token = create_access_token(user)
+    set_session_cookie(response, token)
+    return TokenResponse(access_token=token, user=user)
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(req: LoginRequest, request: Request) -> TokenResponse:
+async def login(req: LoginRequest, request: Request, response: Response) -> TokenResponse:
     keys = (("username", req.username),
             ("ip", request.client.host if request.client else "unknown"))
     await run_in_threadpool(_check_login_throttle, keys)
@@ -541,9 +570,18 @@ async def login(req: LoginRequest, request: Request) -> TokenResponse:
     if settings.login_throttle_enabled:
         await run_in_threadpool(_login_failures.reset, keys)
     user = _row_to_user(row)
-    return TokenResponse(
-        access_token=create_access_token(user, expected_version=row["token_version"]), user=user,
-    )
+    token = create_access_token(user, expected_version=row["token_version"])
+    set_session_cookie(response, token)
+    return TokenResponse(access_token=token, user=user)
+
+
+@router.post("/logout", status_code=204)
+async def logout() -> Response:
+    """Clear the session cookie. Bearer tokens stay valid until they expire."""
+    response = Response(status_code=204)
+    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True,
+                           secure=settings.env == "production", samesite="lax")
+    return response
 
 
 @router.get("/me", response_model=AuthUser)
@@ -558,7 +596,7 @@ class LTIBridgeRequest(BaseModel):
 
 
 @router.post("/lti-bridge", response_model=TokenResponse)
-async def lti_bridge_dev(req: LTIBridgeRequest) -> TokenResponse:
+async def lti_bridge_dev(req: LTIBridgeRequest, response: Response) -> TokenResponse:
     """Dev-only: simulate an LTI launch by issuing a JWT for an arbitrary moodle_user_id.
 
     Explicit development opt-in only; existing identities can never be impersonated.
@@ -585,7 +623,9 @@ async def lti_bridge_dev(req: LTIBridgeRequest) -> TokenResponse:
             moodle_user_id=req.moodle_user_id,
         ),
     )
-    return TokenResponse(access_token=create_access_token(user), user=user)
+    token = create_access_token(user)
+    set_session_cookie(response, token)
+    return TokenResponse(access_token=token, user=user)
 
 
 # ---------------------------------------------------------------- Seed

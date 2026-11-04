@@ -46,6 +46,7 @@ from .auth import (
     create_user,
     get_user_by_id,
     get_user_by_username,
+    set_session_cookie,
 )
 from .config import settings
 from .db import is_locked, schema_once
@@ -648,9 +649,9 @@ def lti_exchange(req: ExchangeRequest, response: Response) -> TokenResponse:
         raise HTTPException(401, "LTI account is unavailable",
                             headers={"Cache-Control": "no-store"})
     user = _row_to_user(row)
-    return TokenResponse(
-        access_token=create_access_token(user, expected_version=version), user=user,
-    )
+    token = create_access_token(user, expected_version=version)
+    set_session_cookie(response, token)
+    return TokenResponse(access_token=token, user=user)
 
 
 @router.get("/config")
