@@ -70,6 +70,7 @@ from .llm import ClaudeCLIClient, LLMClient, resolve_llm_config
 from .lti import router as lti_router
 from .material_metadata import MaterialMetadata
 from .memory_lock import locked
+from .message_groups import router as message_groups_router
 from .messaging import router as messaging_router
 from .messaging import seed_demo_messages
 from .moodle import MoodleClient
@@ -3523,6 +3524,7 @@ app.include_router(class_analytics_router)
 app.include_router(enrollment_router)
 app.include_router(forum_router)
 app.include_router(messaging_router)
+app.include_router(message_groups_router)
 app.include_router(preferences_router)
 app.include_router(submission_files_router)
 app.include_router(assignments_router)
