@@ -2231,6 +2231,14 @@ async def demo_reset(
     from .demo_materials import seed_demo_materials
 
     chunks_indexed = seed_demo_materials(_rag)
+    # Full-text cache for the evidence panel; demo materials have no source file.
+    from .demo_materials import DEMO_MATERIALS, demo_material_markdown
+
+    for course_id, docs in DEMO_MATERIALS:
+        for doc in docs:
+            md_path = _material_markdown_path(course_id, doc.filename)
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+            md_path.write_text(demo_material_markdown(doc), encoding="utf-8")
     logger.info("Demo seed: %d material chunks indexed for RAG", chunks_indexed)
 
     # Seed demo live quiz session (pre-built questions + student answers)

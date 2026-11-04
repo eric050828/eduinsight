@@ -221,6 +221,19 @@ DEMO_MATERIALS: list[tuple[str, list[ParsedDocument]]] = [
 ]
 
 
+def demo_material_markdown(doc: ParsedDocument) -> str:
+    """Rebuild a readable source document from the demo chunks.
+
+    Demo materials have no original file, so this is what the AI assistant's
+    evidence panel shows as the full text of a cited material.
+    """
+    parts = [f"# {doc.filename}"]
+    for chunk in sorted(doc.chunks, key=lambda c: c.chunk_index):
+        title = chunk.heading or (f"第 {chunk.page} 頁" if chunk.page else "")
+        parts.append(f"## {title}\n\n{chunk.text}" if title else chunk.text)
+    return "\n\n".join(parts) + "\n"
+
+
 def seed_demo_materials(rag: CourseRAG) -> int:
     """Seed demo course materials into RAG.
 

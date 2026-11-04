@@ -16,6 +16,8 @@ def _isolate_databases(monkeypatch, tmp_path):
     settings.memory_db_path; without this guard they silently wipe the demo
     data used for live walkthroughs.
     """
+    # Relative runtime paths (material Markdown cache) must not land in the repo.
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(settings, "memory_db_path", str(tmp_path / "memory.db"))
     monkeypatch.setattr(settings, "auth_db_path", str(tmp_path / "auth.db"))
     auth.init_db()

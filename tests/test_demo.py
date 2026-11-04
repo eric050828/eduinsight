@@ -120,6 +120,12 @@ class TestDemoReset:
                 docs = resp.json()["documents"]
                 assert len(docs) >= 1
                 assert "ds101_lecture_notes.pdf" in docs
+                # The evidence panel can open the full text of every demo material.
+                md = await client.get("/courses/ds101/materials/ds101_lecture_notes.pdf/markdown")
+                assert md.status_code == 200
+                text = md.json()["markdown"]
+                assert text.startswith("# ds101_lecture_notes.pdf")
+                assert "## 第 1 頁" in text and "陣列（Array）" in text
         finally:
             app_module.settings.memory_db_path = original_path
 
