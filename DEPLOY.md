@@ -62,7 +62,23 @@ curl --fail http://localhost:8080/health
 
 將整個 `/data` 掛載至持久化 volume，讓 `EDUINSIGHT_MEMORY_DB_PATH` 與 `EDUINSIGHT_AUTH_DB_PATH` 都指向此目錄；這也保留 SQLite 的 WAL／SHM 檔案。容器的工作目錄就是 `/data`，因此教材原文快取 `_materials_md/` 與作業附件 `uploads/` 也都寫在 volume 內。複製 `.env.example` 後務必覆寫資料庫路徑，否則其相對路徑會寫入容器可丟棄的檔案系統。部署服務若使用 `PORT=8080`，請同步修改容器目標連接埠。
 
-目前部分管理功能（例如講義清單）保存在程序記憶體，掛載 SQLite 不代表所有狀態都會跨重啟保留。先採單一容器與單一 Uvicorn worker，避免程序間的記憶體狀態不一致。
+目前部分管理功能（例如講義清單）保存在程序記憶體，掛載 SQLite 不代表所有狀態都會跨重啟保留。**仍須採單一容器與單一 Uvicorn worker**（不要加 `--workers`），避免程序間的記憶體狀態不一致；原因見下一節。
+
+### 多 worker 現況
+
+已改存在共用 SQLite（`EDUINSIGHT_AUTH_DB_PATH` 指向的 auth DB），多個 worker 或重啟後都看到同一份狀態：
+
+- **登入限速**：`login_throttle` 表。username 與 IP 的失敗次數、鎖定到期時間在所有 worker 間共用（在 A 失敗 5 次，B 也回 429）；每次更新是單一 `BEGIN IMMEDIATE` 交易，過期列（30 分鐘）會刪除，總列數上限 10000。時間改用 wall clock，因此主機時鐘大幅回撥會影響鎖定時長。
+- **LTI 暫存**：`lti_state` 表，存 OIDC session（含 nonce／state）、launch data 與 60 秒單次 exchange code。code 的取用是原子的，任何 worker 交換過後在其他 worker 也無法重放；TTL 與容量上限與先前相同。
+
+因此登入限速與 LTI **已不是**多 worker 的阻礙，但下列狀態仍在程序內，**多 worker 目前仍不可行**：
+
+- **記憶體內的管理器**：成績中心 `GradeManager` 只在啟動與批改後從 SQLite 同步，其他 worker 看不到別處新增的分類／成績；即時測驗、出席、課堂互動、Office hours 與講義清單（`LectureManager`）完全在記憶體，各 worker 會各有一份、重啟即消失。
+- **Lite-Mem 共用連線鎖**（`memory_lock.py`）：`MEMORY_LOCK` 只序列化同一程序內的存取，未驗證多程序同時寫 memory DB 的行為。
+- **背景教材索引**：上傳後以 FastAPI background task 在接收請求的 worker 內執行，教材鎖（`_material_lock`）也是程序內的；程序結束時進行中的索引會中斷。
+- **`schema_once`**：快取是程序內的，每個 worker 會各自初始化一次；建表與 migration 都是 `IF NOT EXISTS`／交易保護，本身不是阻礙，但列在這裡以免誤以為已共用。
+
+要支援多 worker，需先把上述管理器改為以 SQLite 為準（或改用外部儲存），並處理 Lite-Mem 與背景索引的跨程序協調。
 
 健康檢查為 **`GET /health`**，未登入或非管理員只會得到 `{"status": "ok"}`（不含版本、路徑）；管理員才看得到 LLM、資料庫路徑與記憶統計。Dockerfile 已包含此檢查，也可在部署服務設定 HTTP health check；它不代表外部 LLM 或 Moodle 一定可連線。公開後端應提供 HTTPS。
 
@@ -114,7 +130,7 @@ Invoke-RestMethod -Method Post -Uri "$backend/demo/reset" -Headers @{ Authorizat
 - 新 production DB 的 `platform_settings.allow_self_register` 預設為 false；既有 DB 保留原設定，升級時檢查 `/admin/settings`。只有管理員可修改。公開註冊只接受 username/password/display_name，永遠建立 student，由伺服器配發 Moodle ID。Teacher/admin 必須透過受信任的管理流程建立。
 - 註冊、後端建帳與密碼重設的密碼長度為 8..72 UTF-8 bytes（development 為 4..72）。重設密碼、變更角色與停用帳號會撤銷既有 JWT；重新啟用帳號也不恢復舊 JWT。升級後沒有 `ver` 的舊 token 均需重新登入。
 - 保持 `EDUINSIGHT_LOGIN_THROTTLE_ENABLED=true`：username 與來源 IP 各自累計，5 次失敗開始退避，最高 15 分鐘；429 的 `Retry-After` 指示等待時間。Proxy 必須提供正確、受信任的 client IP；不要信任任意使用者的 forwarded headers。
-- 使用 HTTPS、精確 CORS origin，以及單一 Uvicorn worker。登入限速與 LTI session/launch/code 是有 TTL 與容量上限的程序記憶體；多副本需共用限速及 session/code store，重啟會清空記憶體狀態。
+- 使用 HTTPS、精確 CORS origin，以及單一 Uvicorn worker（理由見「多 worker 現況」）。登入限速與 LTI session/launch/code 存在 auth DB，有 TTL 與容量上限，跨 worker 與重啟共用；多副本必須掛載同一個 auth DB 檔案（SQLite 不適合放在網路檔案系統上跨主機共用）。
 - `/auth/lti-bridge` 須同時為 development demo 且 `EDUINSIGHT_ENABLE_LTI_BRIDGE=true` 才可用；拒絕 admin 和所有既有帳號。正式 LTI 必須通過平台 launch 驗證。LTI redirect 僅帶 60 秒單次 code，前端以 `POST /lti/exchange` 的 JSON body 交換 JWT，隨即從 history 移除 code。相關回應使用 `Cache-Control: no-store`；目前前端未使用 LTI。
 
 ### 建立第一個管理員
