@@ -17,11 +17,10 @@ import hashlib
 import json
 import logging
 import secrets
-import threading
 import time
 import urllib.parse
-from collections import OrderedDict
-from collections.abc import Iterator, MutableMapping
+from collections.abc import Callable, Iterator, MutableMapping
+from contextlib import contextmanager
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -42,73 +41,196 @@ from .auth import (
     RegisterRequest,
     TokenResponse,
     _row_to_user,
+    _state_db,
     create_access_token,
     create_user,
     get_user_by_id,
     get_user_by_username,
+    set_session_cookie,
 )
 from .config import settings
-from .db import is_locked
+from .db import is_locked, schema_once
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# In-memory stores (sufficient for single-process demo)
+# Shared stores (SQLite auth DB, so every worker sees the same LTI state)
 # ---------------------------------------------------------------------------
 
-class _TTLStore(MutableMapping[str, Any]):
-    """Bounded process-local state; expired entries are never returned."""
 
-    def __init__(self, ttl: int, max_size: int = 1000) -> None:
+def _encode(value: Any) -> str:
+    def tag(item: Any) -> Any:
+        if isinstance(item, tuple):
+            return {"__tuple__": [tag(part) for part in item]}
+        if isinstance(item, list):
+            return [tag(part) for part in item]
+        if isinstance(item, dict):
+            return {key: tag(part) for key, part in item.items()}
+        return item
+    return json.dumps(tag(value), separators=(",", ":"))
+
+
+def _decode(text: str) -> Any:
+    return json.loads(text, object_hook=lambda item: (
+        tuple(item["__tuple__"]) if item.keys() == {"__tuple__"} else item
+    ))
+
+
+class _TTLStore(MutableMapping[str, Any]):
+    """Bounded state in the shared auth DB; expired entries are never returned.
+
+    Rows are visible to every worker process. Writes and consumes run in one
+    ``BEGIN IMMEDIATE`` transaction, so a value popped by one worker cannot be
+    popped again by another. Expired rows are deleted on each write and the
+    least recently set rows beyond ``max_size`` are evicted. Times are
+    wall-clock seconds, since monotonic clocks differ between processes.
+    """
+
+    def __init__(self, name: str, ttl: int, max_size: int = 1000) -> None:
+        self.name = name
         self.ttl = ttl
         self.max_size = max_size
-        self._entries: OrderedDict[str, tuple[float, Any]] = OrderedDict()
-        self._lock = threading.RLock()
 
-    def _prune(self) -> None:
-        now = time.monotonic()
-        for key, (expires, _) in list(self._entries.items()):
-            if expires <= now:
-                del self._entries[key]
+    @contextmanager
+    def _conn(self, *, write: bool = False):
+        with _state_db() as conn:
+            with schema_once(conn, "lti_state") as initialize:
+                if initialize:
+                    conn.executescript("""
+                        CREATE TABLE IF NOT EXISTS lti_state (
+                            store      TEXT NOT NULL,
+                            key        TEXT NOT NULL,
+                            value      TEXT NOT NULL,
+                            expires_at REAL NOT NULL,
+                            seq        INTEGER NOT NULL,
+                            PRIMARY KEY (store, key)
+                        );
+                        CREATE INDEX IF NOT EXISTS ix_lti_state_expires
+                            ON lti_state(store, expires_at);
+                        CREATE INDEX IF NOT EXISTS ix_lti_state_seq ON lti_state(store, seq);
+                    """)
+            if not write:
+                yield conn
+                return
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+
+    def _prune(self, conn: Any, now: float) -> None:
+        conn.execute("DELETE FROM lti_state WHERE store = ? AND expires_at <= ?",
+                     (self.name, now))
+
+    def _read(self, conn: Any, key: str, now: float) -> Any:
+        row = conn.execute(
+            "SELECT value FROM lti_state WHERE store = ? AND key = ? AND expires_at > ?",
+            (self.name, key, now),
+        ).fetchone()
+        if row is None:
+            raise KeyError(key)
+        return _decode(row[0])
 
     def __getitem__(self, key: str) -> Any:
-        with self._lock:
-            self._prune()
-            return self._entries[key][1]
+        with self._conn() as conn:
+            return self._read(conn, key, time.time())
 
     def __setitem__(self, key: str, value: Any) -> None:
-        with self._lock:
-            self._prune()
-            self._entries[key] = (time.monotonic() + self.ttl, value)
-            self._entries.move_to_end(key)
-            while len(self._entries) > self.max_size:
-                self._entries.popitem(last=False)
+        encoded = _encode(value)
+        now = time.time()
+        with self._conn(write=True) as conn:
+            self._prune(conn, now)
+            conn.execute(
+                "INSERT INTO lti_state (store, key, value, expires_at, seq) VALUES "
+                "(?, ?, ?, ?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM lti_state WHERE store = ?)) "
+                "ON CONFLICT(store, key) DO UPDATE SET value = excluded.value, "
+                "expires_at = excluded.expires_at, seq = excluded.seq",
+                (self.name, key, encoded, now + self.ttl, self.name),
+            )
+            excess = conn.execute("SELECT COUNT(*) FROM lti_state WHERE store = ?",
+                                  (self.name,)).fetchone()[0] - self.max_size
+            if excess > 0:
+                conn.execute(
+                    "DELETE FROM lti_state WHERE store = ? AND seq IN "
+                    "(SELECT seq FROM lti_state WHERE store = ? ORDER BY seq LIMIT ?)",
+                    (self.name, self.name, excess),
+                )
 
     def __delitem__(self, key: str) -> None:
-        with self._lock:
-            del self._entries[key]
+        with self._conn(write=True) as conn:
+            deleted = conn.execute("DELETE FROM lti_state WHERE store = ? AND key = ?",
+                                   (self.name, key)).rowcount
+        if not deleted:
+            raise KeyError(key)
 
     def __iter__(self) -> Iterator[str]:
-        with self._lock:
-            self._prune()
-            return iter(list(self._entries))
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT key FROM lti_state WHERE store = ? AND expires_at > ? ORDER BY seq",
+                (self.name, time.time()),
+            ).fetchall()
+        return iter([row[0] for row in rows])
 
     def __len__(self) -> int:
-        with self._lock:
-            self._prune()
-            return len(self._entries)
+        with self._conn() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM lti_state WHERE store = ? AND expires_at > ?",
+                (self.name, time.time()),
+            ).fetchone()[0]
 
     def pop(self, key: str, default: Any = None) -> Any:
-        # Atomic consume, including when multiple test/server threads exchange a code.
-        with self._lock:
-            self._prune()
-            entry = self._entries.pop(key, None)
-            return entry[1] if entry else default
+        # Atomic consume across threads and worker processes sharing the DB.
+        now = time.time()
+        with self._conn(write=True) as conn:
+            self._prune(conn, now)
+            try:
+                value = self._read(conn, key, now)
+            except KeyError:
+                return default
+            conn.execute("DELETE FROM lti_state WHERE store = ? AND key = ?", (self.name, key))
+            return value
+
+    def modify(self, key: str, change: Callable[[Any], None]) -> None:
+        """Atomically update a stored value in place, keeping its expiry and order."""
+        with self._conn(write=True) as conn:
+            value = self._read(conn, key, time.time())
+            change(value)
+            conn.execute("UPDATE lti_state SET value = ? WHERE store = ? AND key = ?",
+                         (_encode(value), self.name, key))
+
+    def clear(self) -> None:
+        with self._conn(write=True) as conn:
+            conn.execute("DELETE FROM lti_state WHERE store = ?", (self.name,))
 
 
-_sessions = _TTLStore(ttl=3600)
-_launch_cache = _TTLStore(ttl=3600)
-_exchange_codes = _TTLStore(ttl=60)
+class _SessionView(MutableMapping[str, Any]):
+    """Write-through view of one stored session; PyLTI1p3 mutates sessions in place."""
+
+    def __init__(self, store: _TTLStore, session_id: str) -> None:
+        self._store = store
+        self._session_id = session_id
+
+    def __getitem__(self, key: str) -> Any:
+        return self._store[self._session_id][key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._store.modify(self._session_id, lambda data: data.__setitem__(key, value))
+
+    def __delitem__(self, key: str) -> None:
+        self._store.modify(self._session_id, lambda data: data.__delitem__(key))
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(list(self._store[self._session_id]))
+
+    def __len__(self) -> int:
+        return len(self._store[self._session_id])
+
+
+_sessions = _TTLStore("sessions", ttl=3600)
+_launch_cache = _TTLStore("launch", ttl=3600)
+_exchange_codes = _TTLStore("exchange", ttl=60)
 
 
 # ---------------------------------------------------------------------------
@@ -143,8 +265,9 @@ class FastAPILTIRequest(LTIRequest):
         return self._session_id
 
     @property
-    def session(self) -> dict[str, Any]:
-        return _sessions[self._session_id]
+    def session(self) -> MutableMapping[str, Any]:
+        _sessions[self._session_id]  # KeyError once the session has expired or been evicted
+        return _SessionView(_sessions, self._session_id)
 
     def is_secure(self) -> bool:
         return self._request.url.scheme == "https"
@@ -526,9 +649,9 @@ def lti_exchange(req: ExchangeRequest, response: Response) -> TokenResponse:
         raise HTTPException(401, "LTI account is unavailable",
                             headers={"Cache-Control": "no-store"})
     user = _row_to_user(row)
-    return TokenResponse(
-        access_token=create_access_token(user, expected_version=version), user=user,
-    )
+    token = create_access_token(user, expected_version=version)
+    set_session_cookie(response, token)
+    return TokenResponse(access_token=token, user=user)
 
 
 @router.get("/config")

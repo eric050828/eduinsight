@@ -15,9 +15,7 @@ import math
 import re
 import secrets
 import sqlite3
-import threading
 import time
-from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -25,7 +23,7 @@ from typing import Any, Literal
 
 import bcrypt
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from starlette.concurrency import run_in_threadpool
@@ -103,6 +101,20 @@ def _db():
     conn.row_factory = sqlite3.Row
     try:
         _ensure_active_column(conn)
+        yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
+def _state_db():
+    """Auth DB connection for short-lived state shared by all workers (throttle, LTI).
+
+    Unlike ``_db()`` it does not run the users-table upgrade, which that state never reads.
+    """
+    _ensure_dir(settings.auth_db_path)
+    conn = connect(settings.auth_db_path)
+    try:
         yield conn
     finally:
         conn.close()
@@ -345,12 +357,40 @@ def _row_to_user(row: dict[str, Any]) -> AuthUser:
 # ---------------------------------------------------------------- Dependencies
 
 
+# Browsers authenticate with an HttpOnly cookie that scripts cannot read; API
+# clients and tests keep using the bearer header, which takes precedence.
+# Cookie-authenticated unsafe requests must carry X-Requested-With: a page on
+# another site cannot add it without passing CORS, so it blocks CSRF together
+# with SameSite=Lax.
+SESSION_COOKIE = "edu_session"
+CSRF_HEADER = "X-Requested-With"
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        SESSION_COOKIE, token, max_age=settings.jwt_expire_minutes * 60, path="/",
+        httponly=True, secure=settings.env == "production", samesite="lax",
+    )
+
+
+def _request_token(request: Request, creds: HTTPAuthorizationCredentials | None) -> str | None:
+    if creds is not None and creds.credentials:
+        return creds.credentials
+    token = request.cookies.get(SESSION_COOKIE)
+    if token and request.method not in _SAFE_METHODS and not request.headers.get(CSRF_HEADER):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, f"Missing {CSRF_HEADER} header")
+    return token or None
+
+
 async def get_current_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> AuthUser:
-    if creds is None or not creds.credentials:
+    token = _request_token(request, creds)
+    if token is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing bearer token")
-    payload = decode_token(creds.credentials)
+    payload = decode_token(token)
     user_id = int(payload["sub"])
     row = get_user_by_id(user_id)
     if row is None:
@@ -363,12 +403,11 @@ async def get_current_user(
 
 
 async def get_optional_user(
+    request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> AuthUser | None:
-    if creds is None or not creds.credentials:
-        return None
     try:
-        return await get_current_user(creds)
+        return await get_current_user(request, creds)
     except HTTPException:
         return None
 
@@ -390,16 +429,99 @@ def require_role(*roles: Role):
 _DUMMY_HASH = "$2b$12$l/MOpBPqNhpKl1M5zNd5BejRHcGNF9QPgluYnreL1nwULLK3/hLXG"
 _THROTTLE_TTL = 1800
 _THROTTLE_MAX = 10000
-_login_failures: OrderedDict[tuple[str, str], tuple[int, float, float]] = OrderedDict()
-_throttle_lock = threading.Lock()
 
 
-def _prune_login_failures(now: float) -> None:
-    for key, (_, _, expires) in list(_login_failures.items()):
-        if expires <= now:
-            _login_failures.pop(key, None)
-    while len(_login_failures) > _THROTTLE_MAX:
-        _login_failures.popitem(last=False)
+class _LoginFailures:
+    """Failure counters keyed by (scope, value), stored in the shared auth DB.
+
+    Every Uvicorn worker reads and updates the same rows, so a lockout earned
+    against one worker applies to all. Each operation is one ``BEGIN IMMEDIATE``
+    transaction; expired rows and the least recently updated rows beyond
+    ``_THROTTLE_MAX`` are deleted. Times are wall-clock seconds, since monotonic
+    clocks are not comparable across processes or restarts.
+    """
+
+    @contextmanager
+    def _transaction(self):
+        with _state_db() as conn:
+            with schema_once(conn, "login_throttle") as initialize:
+                if initialize:
+                    conn.executescript("""
+                        CREATE TABLE IF NOT EXISTS login_throttle (
+                            scope        TEXT NOT NULL,
+                            value        TEXT NOT NULL,
+                            count        INTEGER NOT NULL,
+                            locked_until REAL NOT NULL,
+                            expires_at   REAL NOT NULL,
+                            seq          INTEGER NOT NULL,
+                            PRIMARY KEY (scope, value)
+                        );
+                        CREATE INDEX IF NOT EXISTS ix_login_throttle_expires
+                            ON login_throttle(expires_at);
+                        CREATE INDEX IF NOT EXISTS ix_login_throttle_seq
+                            ON login_throttle(seq);
+                    """)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+
+    @staticmethod
+    def _prune(conn: sqlite3.Connection, now: float) -> None:
+        conn.execute("DELETE FROM login_throttle WHERE expires_at <= ?", (now,))
+        excess = conn.execute("SELECT COUNT(*) FROM login_throttle").fetchone()[0] - _THROTTLE_MAX
+        if excess > 0:
+            conn.execute("DELETE FROM login_throttle WHERE seq IN "
+                         "(SELECT seq FROM login_throttle ORDER BY seq LIMIT ?)", (excess,))
+
+    def remaining(self, keys: tuple[tuple[str, str], ...], now: float) -> float:
+        with self._transaction() as conn:
+            self._prune(conn, now)
+            locks = [conn.execute(
+                "SELECT locked_until FROM login_throttle WHERE scope = ? AND value = ?", key,
+            ).fetchone() for key in keys]
+        return max(((row[0] if row else 0) - now for row in locks), default=0)
+
+    def record(self, keys: tuple[tuple[str, str], ...], now: float) -> float:
+        delay = 0
+        with self._transaction() as conn:
+            self._prune(conn, now)
+            for key in keys:
+                row = conn.execute(
+                    "SELECT count FROM login_throttle WHERE scope = ? AND value = ?", key,
+                ).fetchone()
+                count = (row[0] if row else 0) + 1
+                lockout = min(900, 30 * 2 ** min(count - 5, 5)) if count >= 5 else 0
+                conn.execute(
+                    "INSERT INTO login_throttle "
+                    "(scope, value, count, locked_until, expires_at, seq) VALUES "
+                    "(?, ?, ?, ?, ?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM login_throttle)) "
+                    "ON CONFLICT(scope, value) DO UPDATE SET count = excluded.count, "
+                    "locked_until = excluded.locked_until, expires_at = excluded.expires_at, "
+                    "seq = excluded.seq",
+                    (*key, count, now + lockout, now + _THROTTLE_TTL),
+                )
+                delay = max(delay, lockout)
+            self._prune(conn, now)
+        return delay
+
+    def reset(self, keys: tuple[tuple[str, str], ...]) -> None:
+        with self._transaction() as conn:
+            conn.executemany("DELETE FROM login_throttle WHERE scope = ? AND value = ?", keys)
+
+    def clear(self) -> None:
+        with self._transaction() as conn:
+            conn.execute("DELETE FROM login_throttle")
+
+    def __len__(self) -> int:
+        with self._transaction() as conn:
+            return conn.execute("SELECT COUNT(*) FROM login_throttle").fetchone()[0]
+
+
+_login_failures = _LoginFailures()
 
 
 def _locked_response(seconds: float) -> None:
@@ -411,62 +533,55 @@ def _locked_response(seconds: float) -> None:
 def _check_login_throttle(keys: tuple[tuple[str, str], ...]) -> None:
     if not settings.login_throttle_enabled:
         return
-    now = time.monotonic()
-    with _throttle_lock:
-        _prune_login_failures(now)
-        remaining = max((_login_failures.get(key, (0, 0, 0))[1] - now for key in keys),
-                        default=0)
-    _locked_response(remaining)
+    _locked_response(_login_failures.remaining(keys, time.time()))
 
 
 def _record_login_failure(keys: tuple[tuple[str, str], ...]) -> None:
     if not settings.login_throttle_enabled:
         return
-    now = time.monotonic()
-    delay = 0
-    with _throttle_lock:
-        _prune_login_failures(now)
-        for key in keys:
-            count = _login_failures.get(key, (0, 0, 0))[0] + 1
-            lockout = min(900, 30 * 2 ** min(count - 5, 5)) if count >= 5 else 0
-            _login_failures[key] = (count, now + lockout, now + _THROTTLE_TTL)
-            _login_failures.move_to_end(key)
-            delay = max(delay, lockout)
-        _prune_login_failures(now)
-    _locked_response(delay)
+    _locked_response(_login_failures.record(keys, time.time()))
 
 
 @router.post("/register", response_model=TokenResponse)
-async def register(req: PublicRegisterRequest) -> TokenResponse:
+async def register(req: PublicRegisterRequest, response: Response) -> TokenResponse:
     with _db() as conn:
         value = conn.execute("SELECT value FROM platform_settings WHERE key = ?",
                              ("allow_self_register",)).fetchone()[0]
     if value != "true":
         raise HTTPException(403, "Self registration is disabled")
     user = await run_in_threadpool(create_user, RegisterRequest(**req.model_dump()))
-    return TokenResponse(access_token=create_access_token(user), user=user)
+    token = create_access_token(user)
+    set_session_cookie(response, token)
+    return TokenResponse(access_token=token, user=user)
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(req: LoginRequest, request: Request) -> TokenResponse:
+async def login(req: LoginRequest, request: Request, response: Response) -> TokenResponse:
     keys = (("username", req.username),
             ("ip", request.client.host if request.client else "unknown"))
-    _check_login_throttle(keys)
+    await run_in_threadpool(_check_login_throttle, keys)
     row = get_user_by_username(req.username)
     valid = await run_in_threadpool(
         verify_password, req.password, row["password_hash"] if row else _DUMMY_HASH,
     )
     if not valid or row is None or not row.get("active", 1):
-        _record_login_failure(keys)
+        await run_in_threadpool(_record_login_failure, keys)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid username or password")
     if settings.login_throttle_enabled:
-        with _throttle_lock:
-            for key in keys:
-                _login_failures.pop(key, None)
+        await run_in_threadpool(_login_failures.reset, keys)
     user = _row_to_user(row)
-    return TokenResponse(
-        access_token=create_access_token(user, expected_version=row["token_version"]), user=user,
-    )
+    token = create_access_token(user, expected_version=row["token_version"])
+    set_session_cookie(response, token)
+    return TokenResponse(access_token=token, user=user)
+
+
+@router.post("/logout", status_code=204)
+async def logout() -> Response:
+    """Clear the session cookie. Bearer tokens stay valid until they expire."""
+    response = Response(status_code=204)
+    response.delete_cookie(SESSION_COOKIE, path="/", httponly=True,
+                           secure=settings.env == "production", samesite="lax")
+    return response
 
 
 @router.get("/me", response_model=AuthUser)
@@ -481,7 +596,7 @@ class LTIBridgeRequest(BaseModel):
 
 
 @router.post("/lti-bridge", response_model=TokenResponse)
-async def lti_bridge_dev(req: LTIBridgeRequest) -> TokenResponse:
+async def lti_bridge_dev(req: LTIBridgeRequest, response: Response) -> TokenResponse:
     """Dev-only: simulate an LTI launch by issuing a JWT for an arbitrary moodle_user_id.
 
     Explicit development opt-in only; existing identities can never be impersonated.
@@ -508,7 +623,9 @@ async def lti_bridge_dev(req: LTIBridgeRequest) -> TokenResponse:
             moodle_user_id=req.moodle_user_id,
         ),
     )
-    return TokenResponse(access_token=create_access_token(user), user=user)
+    token = create_access_token(user)
+    set_session_cookie(response, token)
+    return TokenResponse(access_token=token, user=user)
 
 
 # ---------------------------------------------------------------- Seed

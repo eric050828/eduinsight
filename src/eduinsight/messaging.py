@@ -203,7 +203,8 @@ def unread_count(user: AuthUser = Depends(get_current_user)) -> dict:
             "SELECT COUNT(*) FROM direct_messages WHERE recipient_id = ? "
             "AND read_at IS NULL AND deleted_at IS NULL", (user.id,),
         ).fetchone()[0]
-    return {"unread_count": count}
+    from .message_groups import group_unread_count  # Import late: it imports this module.
+    return {"unread_count": count + group_unread_count(user.id)}
 
 
 @router.get("/messages/conversations", response_model=list[Conversation])
