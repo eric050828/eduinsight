@@ -118,6 +118,7 @@ Student ownership uses the authenticated `moodle_user_id`, never the auth databa
 - `GET /health`: service health and existing diagnostic metadata.
 - `GET /`: landing/login entry page.
 - `POST /auth/register`, `POST /auth/login`: establish authentication; existing account provisioning behavior preserved.
+- `POST /auth/logout`: only clears the caller's own `edu_session` cookie; it reads no data and needs no login.
 - `POST /auth/lti-bridge`: existing development bridge; retained within the requested public auth scope because `tests/test_auth.py` explicitly exercises unauthenticated launches and identity reuse. This bridge can issue tokens for supplied identities/roles; it remains a development trust assumption, not a production-safe identity verification mechanism.
 - `GET /lti/jwks`, `POST /lti/login`, `POST /lti/launch`, `GET /lti/config`: public LTI discovery/setup/launch protocol; existing LTI verification retained.
 - `/static/*` and framework documentation/schema: static assets and API discovery, without student data handlers.
@@ -172,6 +173,8 @@ Both commit messages should end with:
 `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`
 
 ## Added after the audit
+
+- Browser sessions use an HttpOnly, SameSite=Lax `edu_session` cookie (Secure in production) set by login, register, the dev LTI bridge and `/lti/exchange`; the frontend no longer stores the JWT in localStorage. A bearer header still works and takes precedence. Cookie-authenticated POST/PUT/PATCH/DELETE requests must send `X-Requested-With` (403 otherwise), which a cross-site page cannot add without passing CORS. See `tests/test_session_cookie.py`.
 
 - `GET /public/settings` is intentionally public. It returns only `site_name` and `maintenance_banner`; every other platform setting is admin-only (`/admin/settings`).
 - Routes added later (messaging, forum, submission files, enrollment, class analytics, achievements, admin management, preferences) all require login and follow the same ownership rules; see their tests for the exact 401/403 coverage.
