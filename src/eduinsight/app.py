@@ -60,6 +60,7 @@ from .forum import router as forum_router
 from .forum import seed_demo_forum
 from .grades import GradeManager
 from .interaction import InteractionManager
+from .interventions import router as interventions_router
 from .lectures import LectureManager
 from .live_quiz import (
     QuizSessionManager,
@@ -3532,6 +3533,7 @@ app.include_router(preferences_router)
 app.include_router(submission_files_router)
 app.include_router(assignments_router)
 app.include_router(diagnostics_router)
+app.include_router(interventions_router)
 app.include_router(notifications_router)
 app.include_router(profiles_router)
 

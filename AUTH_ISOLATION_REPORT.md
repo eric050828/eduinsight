@@ -178,6 +178,7 @@ Both commit messages should end with:
 
 - `GET /public/settings` is intentionally public. It returns only `site_name` and `maintenance_banner`; every other platform setting is admin-only (`/admin/settings`).
 - Routes added later (messaging, forum, submission files, enrollment, class analytics, achievements, admin management, preferences) all require login and follow the same ownership rules; see their tests for the exact 401/403 coverage.
+- Diagnostic interventions (`POST/GET /diagnostics/{course_id}/interventions`) are teacher/admin only with the same course scope as `/diagnostics/*`; every target student must be enrolled (422 otherwise). The review assignment is targeted: other students get 404 on it and do not see it in lists, calendars or their submission rate. See `tests/test_interventions.py`.
 - Group conversations and starred messages (`/message-groups/*`, `/messages/{id}/star`, `/messages/starred`) require login. Groups are created only from the creator's current course contacts (403 otherwise); every group read/write checks membership and answers 404 to non-members; only the owner adds members; stars only apply to messages the user can still see. See `tests/test_message_groups.py`.
 
 ## Security hardening

@@ -2,6 +2,8 @@
 
 Tables are created lazily in settings.auth_db_path, alongside chat enrollment.
 Deadlines must include a timezone. Only course staff can enable allow_late.
+An assignment with audience rows (e.g. a diagnostic intervention) is visible
+only to those students; it is invisible, not forbidden, to other students.
 """
 
 from __future__ import annotations
@@ -123,6 +125,11 @@ def _db(*, write: bool = False):
                         updated_at REAL NOT NULL,
                         PRIMARY KEY (assignment_id, student_id)
                     );
+                    CREATE TABLE IF NOT EXISTS assignment_audience (
+                        assignment_id TEXT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+                        student_id INTEGER NOT NULL,
+                        PRIMARY KEY (assignment_id, student_id)
+                    );
                 """)
         if write:
             conn.execute("BEGIN IMMEDIATE")
@@ -136,11 +143,37 @@ def _db(*, write: bool = False):
         conn.close()
 
 
+def assigned_to(alias: str = "a") -> str:
+    """SQL condition: the assignment has no audience or includes the bound student ID."""
+    return (
+        f"(NOT EXISTS (SELECT 1 FROM assignment_audience x WHERE x.assignment_id = {alias}.id) "
+        f"OR EXISTS (SELECT 1 FROM assignment_audience x "
+        f"WHERE x.assignment_id = {alias}.id AND x.student_id = ?))"
+    )
+
+
+def untargeted(alias: str = "a") -> str:
+    """SQL condition: the assignment is for the whole course."""
+    return f"NOT EXISTS (SELECT 1 FROM assignment_audience x WHERE x.assignment_id = {alias}.id)"
+
+
+def _audience(conn: sqlite3.Connection, assignment_id: str) -> list[int] | None:
+    rows = conn.execute(
+        "SELECT student_id FROM assignment_audience WHERE assignment_id = ? ORDER BY student_id",
+        (assignment_id,),
+    ).fetchall()
+    return [row[0] for row in rows] or None
+
+
 def _assignment(conn: sqlite3.Connection, assignment_id: str, user: AuthUser) -> dict:
     row = conn.execute("SELECT * FROM assignments WHERE id = ?", (assignment_id,)).fetchone()
     if row is None:
         raise HTTPException(404, "Assignment not found")
     _check_course_access(user, row["course_id"])
+    if user.role == "student":
+        audience = _audience(conn, assignment_id)
+        if audience is not None and user.moodle_user_id not in audience:
+            raise HTTPException(404, "Assignment not found")
     return dict(row)
 
 
@@ -176,6 +209,10 @@ def _assignment_view(conn: sqlite3.Connection, assignment: dict, user: AuthUser)
     result = dict(assignment)
     result["due_at"] = datetime.fromtimestamp(assignment["due_at"], UTC).isoformat()
     result["allow_late"] = bool(result["allow_late"])
+    audience = _audience(conn, assignment["id"])
+    result["targeted"] = audience is not None
+    if user.role != "student":
+        result["audience"] = audience
     if user.role == "student":
         own = _submission(conn, assignment["id"], user.moodle_user_id)
         result["status"] = _status(assignment, own)
@@ -191,34 +228,52 @@ def create_assignment(
     user: AuthUser = Depends(require_role("teacher", "admin")),
 ) -> dict:
     _check_course_access(user, body.course_id)
+    with _db(write=True) as conn:
+        assignment_id = insert_assignment(conn, body)
+        return _assignment_view(conn, _assignment(conn, assignment_id, user), user)
+
+
+def insert_assignment(
+    conn: sqlite3.Connection, body: AssignmentCreate, audience: list[int] | None = None,
+) -> str:
+    """Insert in the caller's write transaction; the caller checks course access."""
     now = time.time()
     assignment_id = f"assignment-{uuid.uuid4().hex}"
-    with _db(write=True) as conn:
-        conn.execute(
-            "INSERT INTO assignments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                assignment_id,
-                body.course_id,
-                body.title,
-                body.description,
-                body.due_at.timestamp(),
-                body.max_score,
-                int(body.allow_late),
-                now,
-                now,
-            ),
-        )
-        return _assignment_view(conn, _assignment(conn, assignment_id, user), user)
+    conn.execute(
+        "INSERT INTO assignments VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            assignment_id,
+            body.course_id,
+            body.title,
+            body.description,
+            body.due_at.timestamp(),
+            body.max_score,
+            int(body.allow_late),
+            now,
+            now,
+        ),
+    )
+    conn.executemany(
+        "INSERT INTO assignment_audience (assignment_id, student_id) VALUES (?, ?)",
+        [(assignment_id, student_id) for student_id in dict.fromkeys(audience or [])],
+    )
+    return assignment_id
 
 
 @router.get("/courses/{course_id}/assignments")
 def list_assignments(course_id: str, user: AuthUser = Depends(get_current_user)) -> list[dict]:
     _check_course_access(user, course_id)
     with _db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM assignments WHERE course_id = ? ORDER BY due_at, id",
-            (course_id,),
-        ).fetchall()
+        if user.role == "student":
+            rows = conn.execute(
+                f"SELECT * FROM assignments a WHERE course_id = ? AND {assigned_to()} "
+                "ORDER BY due_at, id", (course_id, user.moodle_user_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM assignments WHERE course_id = ? ORDER BY due_at, id",
+                (course_id,),
+            ).fetchall()
         return [_assignment_view(conn, dict(row), user) for row in rows]
 
 
