@@ -93,6 +93,7 @@ from .security import (
     server_error_handler,
     stage_upload,
 )
+from .security_center import router as security_router
 from .submission_files import router as submission_files_router
 
 logger = logging.getLogger(__name__)
@@ -3528,6 +3529,7 @@ app.include_router(class_analytics_router)
 app.include_router(enrollment_router)
 app.include_router(forum_router)
 app.include_router(messaging_router)
+app.include_router(security_router)
 app.include_router(message_groups_router)
 app.include_router(preferences_router)
 app.include_router(submission_files_router)
