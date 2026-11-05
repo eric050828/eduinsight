@@ -120,6 +120,12 @@ $env:BACKEND_URL = "http://127.0.0.1:$BackendPort"
 Push-Location $FrontendDir
 try {
     if (-not $SkipBuild) {
+        # 自行代管的 Pyodide（Python 執行器）不在 git 中；npx next 不會觸發 prebuild/predev，
+        # 這裡明確下載與驗證。檔案已存在且正確時會略過，因此首次下載後可離線執行。
+        if (Test-Path "scripts/fetch-pyodide.mjs") {
+            & node scripts/fetch-pyodide.mjs
+            if ($LASTEXITCODE -ne 0) { throw "Pyodide 檔案下載或驗證失敗" }
+        }
         Write-Host "[2/3] 建置前端（next build --webpack）…"
         & npx next build --webpack | Out-Host
         if ($LASTEXITCODE -ne 0) { throw "前端建置失敗" }

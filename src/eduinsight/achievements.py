@@ -265,7 +265,10 @@ def calendar(user: AuthUser = Depends(require_role("student"))) -> dict:
             "SELECT * FROM student_calendar_events WHERE student_id = ? ORDER BY start, id", (sid,),
         )]
         for course_id in sorted(courses):
-            for row in conn.execute("SELECT * FROM assignments WHERE course_id = ?", (course_id,)):
+            for row in conn.execute(
+                f"SELECT * FROM assignments a WHERE course_id = ? AND {assignments.assigned_to()}",
+                (course_id, sid),
+            ):
                 events.append({"id": f"assignment:{row['id']}", "source": "assignment",
                                "assignment_id": row["id"], "course_id": course_id,
                                "title": row["title"],
