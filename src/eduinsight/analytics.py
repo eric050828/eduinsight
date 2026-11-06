@@ -53,6 +53,8 @@ _STRUGGLE_INDICATORS = (
 # Q/A turn prefixes used by record_interaction()
 _QA_RE = re.compile(r"^(?:Q|A|Question|Answer)\s*[:：]\s*(.+)$", re.IGNORECASE)
 _ANSWER_RE = re.compile(r"^(?:A|Answer)\s*[:：]", re.IGNORECASE)
+# Sources Lite-Mem generates when a fact was not tied to a chat session.
+_UNLINKED_SOURCES = ("conv_", "add_")
 
 # Proper-noun / jargon extraction patterns used to derive a topic for natural facts.
 #   - 大寫縮寫 (SWOT, STP, APA, BST, JOIN, DP)
@@ -148,14 +150,28 @@ class ClassAnalytics:
     students: list[StudentAnalytics] = field(default_factory=list)
 
 
-def analyze_student(memory: Memory, moodle_user_id: int) -> StudentAnalytics:
+def _facts_from_sessions(memory: Memory, uid: str, session_ids: set[str]) -> list[str]:
+    """Facts from these sessions, plus facts with no session (they apply everywhere)."""
+    return [
+        record.text for record in memory.export(uid).records
+        if record.source in session_ids or not record.source
+        or record.source.startswith(_UNLINKED_SOURCES)
+    ]
+
+
+def analyze_student(
+    memory: Memory, moodle_user_id: int, session_ids: set[str] | None = None,
+) -> StudentAnalytics:
     """Extract learning patterns for a single student.
 
     Parses all stored facts to identify struggles, question topics,
-    and learning preferences.
+    and learning preferences. session_ids limits this to one course's chats;
+    without it every subject the student studies is mixed together.
     """
     uid = _student_uid(moodle_user_id)
-    facts = memory.list(uid)
+    facts = memory.list(uid) if session_ids is None else _facts_from_sessions(
+        memory, uid, session_ids,
+    )
 
     result = StudentAnalytics(
         moodle_user_id=moodle_user_id,

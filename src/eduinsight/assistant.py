@@ -152,7 +152,7 @@ class LearningAssistant:
             topic: Optional topic tag (e.g. course name, subject area).
         """
         uid = _student_uid(moodle_user_id)
-        content = f"Student asked: {question}"
+        content = f"Q：{question}"  # See record_interaction for why this colon is full-width.
         if topic:
             content = f"[{topic}] {content}"
         self._memory.add(uid, content, extract=False)
@@ -240,6 +240,7 @@ class LearningAssistant:
         *,
         topic: str = "",
         material_context: str = "",
+        session_id: str = "",
     ) -> AssistantResponse:
         """Answer a student's question using memory context and LLM.
 
@@ -252,6 +253,7 @@ class LearningAssistant:
             moodle_user_id: The student's Moodle user ID.
             question: The student's question.
             topic: Optional topic tag.
+            session_id: Chat session the turn belongs to, which ties its facts to a course.
 
         Returns:
             AssistantResponse with the answer, context used, and memories stored.
@@ -275,12 +277,14 @@ class LearningAssistant:
 
         # 4. Extract facts from conversation using Lite-Mem add_conversation
         facts = self.extract_from_conversation(
-            moodle_user_id, question, reply, topic=topic
+            moodle_user_id, question, reply, topic=topic, session_id=session_id
         )
 
         # Fall back to basic recording if extraction found nothing
         if not facts:
-            self.record_interaction(moodle_user_id, question, reply, topic=topic)
+            self.record_interaction(
+                moodle_user_id, question, reply, topic=topic, session_id=session_id
+            )
             return AssistantResponse(
                 answer=reply,
                 memory_context=context,
@@ -302,6 +306,7 @@ class LearningAssistant:
         answer: str,
         *,
         topic: str = "",
+        session_id: str = "",
     ) -> list[str]:
         """Extract and store facts from a Q&A interaction using Lite-Mem's add_conversation.
 
@@ -314,6 +319,7 @@ class LearningAssistant:
             question: The student's question.
             answer: The assistant's answer.
             topic: Optional topic tag (included as context for the extractor).
+            session_id: Chat session to record as the source of the facts.
 
         Returns:
             List of extracted fact strings stored in memory.
@@ -325,11 +331,24 @@ class LearningAssistant:
             {"role": "assistant", "content": answer},
         ]
         facts = self._memory.add_conversation(uid, messages, extractor=self._extractor)
+        if session_id and facts:
+            self._link_to_session(uid, facts, session_id)
         logger.debug(
             "Extracted %d facts for user %s from conversation (extractor=%s)",
             len(facts), uid, self._extractor,
         )
         return facts
+
+    def _link_to_session(self, uid: str, facts: list[str], session_id: str) -> None:
+        """add_conversation has no source argument, so set it on the stored facts."""
+        store = self._memory._store  # noqa: SLF001
+        with store._lock:  # noqa: SLF001
+            conn = store._get_conn()  # noqa: SLF001
+            conn.executemany(
+                "UPDATE facts SET source_session_id = ? WHERE user_id = ? AND fact_text = ?",
+                [(session_id, uid, fact) for fact in facts],
+            )
+            conn.commit()
 
     def record_interaction(
         self,
@@ -338,6 +357,7 @@ class LearningAssistant:
         answer: str,
         *,
         topic: str = "",
+        session_id: str = "",
     ) -> None:
         """Record a complete Q&A interaction.
 
@@ -349,13 +369,16 @@ class LearningAssistant:
             question: The student's question.
             answer: The assistant's answer (will be summarized).
             topic: Optional topic tag.
+            session_id: Chat session to record as the source of the facts.
         """
         uid = _student_uid(moodle_user_id)
         prefix = f"[{topic}] " if topic else ""
-        self._memory.add(uid, f"{prefix}Q: {question}", extract=False)
+        # Full-width colon: Lite-Mem treats text before an ASCII colon as the fact's key,
+        # so "Q: ..." would overwrite the student's previous question.
+        self._memory.add(uid, f"{prefix}Q：{question}", extract=False, source=session_id)
         # Store a truncated version of the answer to avoid bloating memory
         answer_summary = answer[:500] + "..." if len(answer) > 500 else answer
-        self._memory.add(uid, f"{prefix}A: {answer_summary}", extract=False)
+        self._memory.add(uid, f"{prefix}A：{answer_summary}", extract=False, source=session_id)
 
     # ------------------------------------------------------------------
     # Analytics helpers (Phase 3 prep)

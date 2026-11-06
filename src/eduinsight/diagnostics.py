@@ -134,7 +134,7 @@ def _evidence(
     students = {}
     messages = {}
     for student_id, ids in sorted(session_ids.items()):
-        students[student_id] = analyze_student(memory, student_id)
+        students[student_id] = analyze_student(memory, student_id, session_ids=ids)
         messages[student_id] = [
             msg for msg in memory._store.get_messages(f"moodle:{student_id}")
             if msg["role"] == "user" and msg.get("session_id") in ids

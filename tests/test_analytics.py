@@ -599,6 +599,18 @@ class TestSummariesAPI:
                 assert s["risk"] in ("high", "medium", "low")
 
 
+class TestCourseScope:
+    def test_session_ids_limit_the_analysis_to_that_course(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "Q：我完全不懂鏈結串列", extract=False, source="ds101-chat")
+        mem.add("moodle:1", "Q：我完全不懂進步性", extract=False, source="ipr101-chat")
+        mem.add("moodle:1", "Struggling with recursion: base case", extract=False)
+
+        scoped = analyze_student(mem, 1, session_ids={"ds101-chat"})
+        assert set(scoped.weak_topics) == {"鏈結串列", "recursion"}
+        assert len(analyze_student(mem, 1).weak_topics) == 3
+
+
 class TestTaggedStruggles:
     """The frontend tags every turn with the course, so tags must not hide struggles."""
 

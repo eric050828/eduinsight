@@ -376,7 +376,7 @@ async def chat(
         sessions_mod.touch_session(session_id)
         response = await assistant.answer(
             req.moodle_user_id, req.message, topic=req.topic,
-            material_context=rag_context,
+            material_context=rag_context, session_id=session_id,
         )
         assistant_msg_id = _memory._store.store_message(
             uid, response.answer, session_id=session_id, role="assistant"
