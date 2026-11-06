@@ -597,3 +597,70 @@ class TestSummariesAPI:
                 assert "risk" in s
                 assert "text" in s
                 assert s["risk"] in ("high", "medium", "low")
+
+
+class TestTaggedStruggles:
+    """The frontend tags every turn with the course, so tags must not hide struggles."""
+
+    def test_tagged_question_stating_a_struggle_counts(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "[資料結構] Q: 我完全不懂鏈結串列", extract=False)
+
+        result = analyze_student(mem, 1)
+        assert [s.topic for s in result.struggles] == ["鏈結串列"]
+        assert result.struggles[0].details == "我完全不懂鏈結串列"
+        assert result.question_topics == {"資料結構": 1}
+
+    def test_tagged_extracted_fact_stating_a_struggle_counts(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "[資料結構] 那 BST 完全不懂", extract=False)
+
+        assert analyze_student(mem, 1).weak_topics == ["BST"]
+
+    def test_course_tag_is_the_fallback_topic(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "[行銷管理] Q: 這章我背不起來", extract=False)
+
+        assert analyze_student(mem, 1).weak_topics == ["行銷管理"]
+
+    def test_plain_tagged_question_is_not_a_struggle(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "[資料結構] Q: 什麼是雜湊表？", extract=False)
+
+        result = analyze_student(mem, 1)
+        assert result.struggles == []
+        assert result.question_topics == {"資料結構": 1}
+
+    def test_assistant_answer_is_not_a_struggle(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "[資料結構] A: 如果不懂遞迴，可以先畫呼叫堆疊。", extract=False)
+
+        result = analyze_student(mem, 1)
+        assert result.struggles == []
+        assert result.question_topics == {"資料結構": 1}
+
+    def test_untagged_question_stating_a_struggle_counts(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "Q: 我完全不懂鏈結串列", extract=False)
+
+        assert analyze_student(mem, 1).weak_topics == ["鏈結串列"]
+
+    def test_untagged_assistant_answer_is_not_a_struggle(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "A: 為什麼合併排序不會打亂相等元素？因為先取左半部。", extract=False)
+
+        assert analyze_student(mem, 1).struggles == []
+
+    def test_struggle_phrase_names_the_topic_before_question_words(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "搞不懂進步性怎麼判斷", extract=False)
+
+        assert analyze_student(mem, 1).weak_topics == ["進步性"]
+
+    def test_vague_words_after_the_phrase_are_not_topics(self) -> None:
+        mem = Memory()
+        mem.add("moodle:1", "[資料結構] Q: 陣列跟鏈結串列我看不出差異", extract=False)
+        mem.add("moodle:2", "[演算法] Q: 老師說很慢，我看不出來哪裡慢", extract=False)
+
+        assert analyze_student(mem, 1).weak_topics == ["資料結構"]
+        assert analyze_student(mem, 2).weak_topics == ["演算法"]

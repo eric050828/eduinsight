@@ -38,20 +38,21 @@ _TOPIC_RE = re.compile(r"^\[([^\]]+)\]")
 # New format: "Struggling with TOPIC: DETAILS"
 _STRUGGLE_RE = re.compile(r"^Struggling with:?\s+(.+?)(?:\s*[—:]\s*(.*))?$")
 _PREFERENCE_RE = re.compile(r"^Learning preference:\s*(.+)$")
-_QUESTION_RE = re.compile(r"^\[([^\]]+)\]\s*Q:\s*(.+)$")
 _WEEK_NOISE_RE = re.compile(r"^W\d+")
 
 # ----- Natural-language struggle detection (for LLM-extracted facts) -----
 # Chinese & English struggle indicators. Matched as substrings, case-insensitive.
 _STRUGGLE_INDICATORS = (
     "搞不懂", "不懂", "不太懂", "不會", "搞混", "混淆", "卡關", "卡住", "看不懂",
-    "聽不懂", "不知道", "不確定", "弄不清", "搞不清", "分不出",
+    "聽不懂", "不知道", "不確定", "弄不清", "搞不清", "分不出", "看不出", "記反",
+    "背不起來", "記不住",
     "confused", "don't understand", "doesn't understand", "do not understand",
     "struggling", "stuck", "unclear", "not sure", "can't tell", "cannot tell",
 )
 
 # Q/A turn prefixes used by record_interaction()
 _QA_RE = re.compile(r"^(?:Q|A|Question|Answer)\s*[:：]\s*(.+)$", re.IGNORECASE)
+_ANSWER_RE = re.compile(r"^(?:A|Answer)\s*[:：]", re.IGNORECASE)
 
 # Proper-noun / jargon extraction patterns used to derive a topic for natural facts.
 #   - 大寫縮寫 (SWOT, STP, APA, BST, JOIN, DP)
@@ -59,6 +60,11 @@ _QA_RE = re.compile(r"^(?:Q|A|Question|Answer)\s*[:：]\s*(.+)$", re.IGNORECASE)
 #   - 「XX 是什麼」「為什麼 XX」「XX 怎麼判斷」中的 XX
 _ABBR_RE = re.compile(r"\b([A-Z]{2,}(?:[\-/][A-Z]{2,})?)\b")
 _QUOTE_TOPIC_RE = re.compile(r"[「『]([^」』]{1,15})[」』]")
+#   - 「不懂 XX」「搞不清楚 XX」中緊接在困難用語後的 XX
+_STRUGGLE_TERM_RE = re.compile(
+    r"(?:搞不懂|不太懂|不懂|看不懂|聽不懂|搞不清楚?|弄不清楚?|搞混|分不出來?|看不出來?)\s*"
+    r"(?!為什麼|怎麼|什麼|哪|來|差異|差別)([一-鿿A-Za-z0-9]{2,15}?)(?:怎麼|為什麼|是什麼|跟|和|與|的|[？?，,。！!\s]|$)"
+)
 _ZH_QUERY_RE = re.compile(
     r"(?:什麼是|為什麼|怎麼|如何|何為)([一-鿿 A-Za-z0-9]{2,15}?)(?:[？?，,。！!\s]|$)"
 )
@@ -85,7 +91,12 @@ def _extract_natural_topic(fact: str) -> str | None:
     if abbrs:
         return abbrs[0]
 
-    # 3. Chinese question patterns: 什麼是 X / 為什麼 X / X 怎麼判斷
+    # 3. The term named right after a struggle phrase, before question words claim it
+    m = _STRUGGLE_TERM_RE.search(body)
+    if m:
+        return m.group(1).strip()
+
+    # 4. Chinese question patterns: 什麼是 X / 為什麼 X / X 怎麼判斷
     m = _ZH_QUERY_RE.search(body)
     if m:
         cand = m.group(1).strip()
@@ -96,7 +107,12 @@ def _extract_natural_topic(fact: str) -> str | None:
 
 
 def _is_natural_struggle(fact: str) -> bool:
-    """Detect if a free-form fact text expresses a struggle/confusion."""
+    """Detect if a free-form fact text expresses a struggle/confusion.
+
+    Assistant answers ("A: ...") describe the material, never the student.
+    """
+    if _ANSWER_RE.match(fact):
+        return False
     low = fact.lower()
     return any(ind.lower() in low for ind in _STRUGGLE_INDICATORS)
 
@@ -165,16 +181,19 @@ def analyze_student(memory: Memory, moodle_user_id: int) -> StudentAnalytics:
             result.preferences.append(m.group(1).strip())
             continue
 
-        # Check for question with topic tag (legacy "[Topic] Q: ..." form)
-        m = _QUESTION_RE.match(fact)
-        if m:
-            question_topics[m.group(1).strip()] += 1
-            continue
-
-        # Also count topic from any [Topic] tagged fact
+        # Any [Topic] tagged fact counts for its topic; the student's own words
+        # may also state a struggle.
         m = _TOPIC_RE.match(fact)
         if m:
-            question_topics[m.group(1).strip()] += 1
+            tag = m.group(1).strip()
+            question_topics[tag] += 1
+            body = fact[m.end():].strip()
+            if _is_natural_struggle(body):
+                topic = _extract_natural_topic(body) or tag
+                qa = _QA_RE.match(body)
+                details = (qa.group(1) if qa else body)[:120]
+                result.struggles.append(Struggle(topic=topic, details=details))
+                struggle_topics[topic] += 1
             continue
 
         # ---- Natural-language fallback (LLM-extracted or raw Q/A facts) ----
