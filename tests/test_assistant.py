@@ -45,6 +45,31 @@ class TestLearningAssistant:
         result = self.assistant.get_student_context(1, "linked list")
         assert len(result) >= 2  # Both Q and A stored
 
+    def test_every_interaction_stays_in_memory(self) -> None:
+        for question in ("What is a stack?", "What is a queue?", "What is a heap?"):
+            self.assistant.record_interaction(1, question, f"About {question}")
+
+        facts = self.mem.list("moodle:1")
+        assert len(facts) == 6
+        assert any("What is a stack?" in fact for fact in facts)
+
+    def test_every_question_stays_in_memory(self) -> None:
+        for question in ("What is a stack?", "What is a queue?"):
+            self.assistant.record_question(1, question)
+
+        assert len(self.mem.list("moodle:1")) == 2
+
+    def test_interaction_and_extracted_facts_record_their_session(self) -> None:
+        self.assistant.record_interaction(1, "What is a stack?", "LIFO.", session_id="s1")
+        facts = self.assistant.extract_from_conversation(
+            1, "我完全不懂鏈結串列", "好。", session_id="s2",
+        )
+
+        assert facts
+        sources = {record.text: record.source for record in self.mem.export("moodle:1").records}
+        assert sources[facts[0]] == "s2"
+        assert sources["Q：What is a stack?"] == "s1"
+
     def test_user_isolation(self) -> None:
         """Memories for one student should not leak to another."""
         self.assistant.record_question(1, "What is Python?")

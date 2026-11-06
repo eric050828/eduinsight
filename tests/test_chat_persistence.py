@@ -35,7 +35,7 @@ def test_question_is_stored_before_the_answer(client, monkeypatch):
     assistant = app_module._assistant
     monkeypatch.setattr(assistant, "_llm", object())
 
-    async def answer(student_id, message, topic=None, material_context=""):
+    async def answer(student_id, message, topic=None, material_context="", session_id=""):
         # A reload at this moment reads the session: the question must already be there.
         session_id = next(m["session_id"] for m in app_module._memory._store.get_messages(
             "moodle:1001") if m["content"] == message)

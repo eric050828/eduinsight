@@ -241,6 +241,21 @@ async def test_empty_sessions_do_not_count_as_active(client, auth_headers):
     assert data["at_risk_student_count"] == 1
 
 
+async def test_hard_topics_leave_out_the_students_other_courses(client, auth_headers):
+    memory = app_module._memory
+    enroll("ds101", 1001, source="test")
+    enroll("mk201", 1001, source="test")
+    current = sessions.create_session(1001, "ds101")
+    other = sessions.create_session(1001, "mk201")
+    memory.add("moodle:1001", "Q：我完全不懂鏈結串列", extract=False, source=current["session_id"])
+    memory.add("moodle:1001", "Q：我完全不懂定位策略", extract=False, source=other["session_id"])
+
+    response = await client.get("/diagnostics/ds101/hard-topics", headers=auth_headers("teacher"))
+
+    assert response.status_code == 200
+    assert [item["topic"] for item in response.json()] == ["鏈結串列"]
+
+
 async def test_active_learners_include_course_messages_but_not_other_course(client, auth_headers):
     memory = app_module._memory
     enroll("ds101", 1001, source="test")
