@@ -174,7 +174,7 @@ Both commit messages should end with:
 
 ## Added after the audit
 
-- Browser sessions use an HttpOnly, SameSite=Lax `edu_session` cookie (Secure in production) set by login, register, the dev LTI bridge and `/lti/exchange`; the frontend no longer stores the JWT in localStorage. A bearer header still works and takes precedence. Cookie-authenticated POST/PUT/PATCH/DELETE requests must send `X-Requested-With` (403 otherwise), which a cross-site page cannot add without passing CORS. See `tests/test_session_cookie.py`.
+- Browser sessions use an HttpOnly, SameSite=Lax `edu_session` cookie (Secure in production) set by login, register, the dev LTI bridge and `/lti/exchange`; the frontend no longer stores the JWT in localStorage, and production responses leave `access_token` null so page scripts never receive it. A bearer header still works and takes precedence. Cookie-authenticated POST/PUT/PATCH/DELETE requests must send `X-Requested-With` (403 otherwise), which a cross-site page cannot add without passing CORS. See `tests/test_session_cookie.py`.
 
 - `GET /public/settings` is intentionally public. It returns only `site_name` and `maintenance_banner`; every other platform setting is admin-only (`/admin/settings`).
 - Routes added later (messaging, forum, submission files, enrollment, class analytics, achievements, admin management, preferences) all require login and follow the same ownership rules; see their tests for the exact 401/403 coverage.
