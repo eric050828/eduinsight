@@ -62,7 +62,8 @@ def test_labels_file_reproduces_reported_numbers(ev):
     assert rep["n_messages"] == 50
     assert (rep["strict"]["tp"], rep["strict"]["fp"], rep["strict"]["fn"]) == (8, 8, 21)
     assert (rep["lenient"]["tp"], rep["lenient"]["fp"], rep["lenient"]["fn"]) == (9, 7, 20)
-    assert rep["struggle_on_dashboard"]["tp"] == 3
+    assert rep["struggle_on_dashboard"]["tp"] == 14
+    assert rep["struggle_on_dashboard"]["fp"] == 1
 
 
 def test_match_column_validation(ev):
