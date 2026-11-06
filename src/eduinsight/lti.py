@@ -46,7 +46,7 @@ from .auth import (
     create_user,
     get_user_by_id,
     get_user_by_username,
-    set_session_cookie,
+    session_response,
 )
 from .config import settings
 from .db import is_locked, schema_once
@@ -650,8 +650,7 @@ def lti_exchange(req: ExchangeRequest, response: Response) -> TokenResponse:
                             headers={"Cache-Control": "no-store"})
     user = _row_to_user(row)
     token = create_access_token(user, expected_version=version)
-    set_session_cookie(response, token)
-    return TokenResponse(access_token=token, user=user)
+    return session_response(response, token, user)
 
 
 @router.get("/config")

@@ -81,7 +81,7 @@ class RegisterRequest(LoginRequest):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
+    access_token: str | None = None  # None in production: the session lives in the cookie
     token_type: str = "bearer"
     user: AuthUser
 
@@ -374,6 +374,12 @@ def set_session_cookie(response: Response, token: str) -> None:
     )
 
 
+def session_response(response: Response, token: str, user: AuthUser) -> TokenResponse:
+    """Start a browser session; page scripts never see the production JWT."""
+    set_session_cookie(response, token)
+    return TokenResponse(access_token=None if settings.env == "production" else token, user=user)
+
+
 def _request_token(request: Request, creds: HTTPAuthorizationCredentials | None) -> str | None:
     if creds is not None and creds.credentials:
         return creds.credentials
@@ -551,8 +557,7 @@ async def register(req: PublicRegisterRequest, response: Response) -> TokenRespo
         raise HTTPException(403, "Self registration is disabled")
     user = await run_in_threadpool(create_user, RegisterRequest(**req.model_dump()))
     token = create_access_token(user)
-    set_session_cookie(response, token)
-    return TokenResponse(access_token=token, user=user)
+    return session_response(response, token, user)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -571,8 +576,7 @@ async def login(req: LoginRequest, request: Request, response: Response) -> Toke
         await run_in_threadpool(_login_failures.reset, keys)
     user = _row_to_user(row)
     token = create_access_token(user, expected_version=row["token_version"])
-    set_session_cookie(response, token)
-    return TokenResponse(access_token=token, user=user)
+    return session_response(response, token, user)
 
 
 @router.post("/logout", status_code=204)
@@ -624,8 +628,7 @@ async def lti_bridge_dev(req: LTIBridgeRequest, response: Response) -> TokenResp
         ),
     )
     token = create_access_token(user)
-    set_session_cookie(response, token)
-    return TokenResponse(access_token=token, user=user)
+    return session_response(response, token, user)
 
 
 # ---------------------------------------------------------------- Seed

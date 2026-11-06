@@ -37,6 +37,15 @@ def test_cookie_secure_in_production(client, monkeypatch):
     assert "secure" in _login(client).headers["set-cookie"].lower()
 
 
+def test_token_stays_out_of_the_production_body(client, monkeypatch):
+    assert _login(client).json()["access_token"]  # development tools read it
+    monkeypatch.setattr(settings, "env", "production")
+    response = _login(client)
+    assert response.json()["access_token"] is None
+    assert response.json()["user"]["username"] == "student1001"
+    assert "edu_session=" in response.headers["set-cookie"]
+
+
 def test_cookie_authenticates_reads(client):
     _login(client)
     me = client.get("/auth/me")
